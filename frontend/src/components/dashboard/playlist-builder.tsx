@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { closestCenter, DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { closestCenter, type CollisionDetection, DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, KeyboardSensor, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { CalendarClock, Check, ChevronDown, Clock3, GripVertical, ListVideo, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
@@ -50,6 +50,8 @@ const rotationLabel = (value: string | null) =>
 const transitionLabel = (value: TransitionName) => transitionOptions.find((option) => option.value === value)?.label || value
 
 type Selection = TransitionName | 'inherit'
+
+const shortDate = (value?: string | null) => (value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 
 function previewStyle(type: TransitionName, incoming: boolean, phase: boolean, durationMs: number): CSSProperties {
   const style: CSSProperties = {
@@ -227,7 +229,7 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, canEdit, saving, 
     >
       <CardContent className="p-4 sm:p-5">
         <div className="flex items-center gap-3">
-          <button type="button" {...attributes} {...listeners} disabled={!canEdit} className="grid size-9 shrink-0 cursor-grab place-items-center rounded-lg text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none" aria-label={`Move ${item.content.name}`}><GripVertical className="size-5" /></button>
+          <button type="button" {...attributes} {...listeners} disabled={!canEdit} className="grid size-9 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none" aria-label={`Move ${item.content.name}`}><GripVertical className="size-5" /></button>
           <MediaThumbnail item={item.content} className="size-16 shrink-0 rounded-xl" />
 
           <div className="min-w-0 flex-1">
@@ -351,14 +353,95 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, canEdit, saving, 
   )
 }
 
-interface FlyingItem {
-  id: string
+/**
+ * The timeline's drop zone.
+ *
+ * A separate component on purpose: useDroppable must run inside the DndContext subtree, and
+ * PlaylistBuilder renders that provider rather than living under it — a hook in its body
+ * registers against the default context, so the drag activates but nothing is ever "over".
+ */
+function TimelineDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'timeline' })
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn('rounded-2xl transition-colors', isOver && 'bg-primary/5 ring-2 ring-primary/40 ring-offset-4 ring-offset-background')}
+    >
+      {children}
+    </div>
+  )
+}
+
+/**
+ * A row in the content library.
+ *
+ * Extracted from an inline `libraryRow()` helper because it now calls useDraggable, and a
+ * hook cannot live in a function invoked from inside .map() — the hook order would change
+ * the moment either list changes length.
+ */
+function LibraryRow({ content, booked, placed, instant, adding, canEdit, fetchedAt, onAdd }: {
   content: ContentItem
-  startX: number
-  startY: number
-  targetX: number
-  targetY: number
-  direction?: 'forward' | 'reverse'
+  booked: boolean
+  placed: boolean
+  instant: boolean
+  adding: boolean
+  canEdit: boolean
+  fetchedAt: number
+  onAdd: () => void
+}) {
+  // Only `listeners` and the ref — deliberately not `attributes`. Those would put
+  // role="button" tabIndex={0} on a div that already contains a real button, adding a junk
+  // tab stop. The + button stays the keyboard path.
+  const { listeners, setNodeRef, isDragging } = useDraggable({
+    id: `lib-${content.id}`,
+    data: { content, instant },
+    disabled: !canEdit,
+  })
+  const startsLater = booked && Boolean(content.placement_starts_at) && new Date(content.placement_starts_at as string).getTime() > fetchedAt
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      className={cn(
+        'flex items-center gap-3 rounded-xl border border-hairline p-2.5 transition-all duration-300 hover:bg-muted animate-in fade-in duration-300',
+        canEdit && 'cursor-grab touch-none active:cursor-grabbing',
+        isDragging && 'opacity-40',
+        placed && 'bg-muted/40'
+      )}
+    >
+      <div className="relative size-12 shrink-0">
+        <MediaThumbnail item={content} className="size-12 rounded-lg" />
+        {clipDuration(content.duration_ms) && (
+          <span className="absolute right-0 bottom-0 rounded bg-black/75 px-1 text-[9px] font-semibold text-white">
+            {clipDuration(content.duration_ms)}
+          </span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-foreground">{content.name}</p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
+          {booked
+            ? <span className="text-emerald-700 dark:text-emerald-400">{startsLater ? `Starts ${shortDate(content.placement_starts_at)}` : `Booked until ${shortDate(content.placement_ends_at)}`}</span>
+            : <span className="capitalize">{content.type}{assetOrientation(content.renditions) && ` • ${assetOrientation(content.renditions)}`}</span>}
+          {content.client_name && ` • ${content.client_name}`}
+        </p>
+      </div>
+      <Button
+        size="icon-sm"
+        variant={instant ? 'default' : 'outline'}
+        disabled={!canEdit || adding}
+        onClick={onAdd}
+        aria-label={instant ? `Add ${content.name} to this screen` : `Book ${content.name}`}
+        className={cn(
+          'transition-transform active:scale-90',
+          placed && 'border-primary/40 text-primary hover:bg-primary/10'
+        )}
+      >
+        <Plus className="size-4" />
+      </Button>
+    </div>
+  )
 }
 
 export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
@@ -376,11 +459,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const [localOrder, setLocalOrder] = useState<number[] | null>(null)
   const [search, setSearch] = useState('')
   const [savingItem, setSavingItem] = useState<number | null>(null)
-  const [flyingItems, setFlyingItems] = useState<FlyingItem[]>([])
   const [highlightedItemId, setHighlightedItemId] = useState<number | null>(null)
-  const timelineRef = useRef<HTMLElement | null>(null)
-  const libraryRef = useRef<HTMLElement | null>(null)
-  const flyCounterRef = useRef(0)
 
   const serverItems = useMemo(() => [...(playlistQuery.data?.items || [])].sort((a, b) => a.order - b.order), [playlistQuery.data?.items])
   const items = useMemo(() => {
@@ -390,6 +469,19 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     return ordered.length === serverItems.length ? ordered : serverItems
   }, [localOrder, serverItems])
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
+  const [dragging, setDragging] = useState<ContentItem | null>(null)
+
+  /**
+   * closestCenter always returns the nearest droppable, even when the pointer is nowhere
+   * near it -- so dragging a library card two inches and dropping it back in the library
+   * would book an advert by accident. pointerWithin returns nothing in that case.
+   *
+   * But pointerWithin needs pointer coordinates, and a KeyboardEvent has none, so using it
+   * everywhere would silently kill the existing keyboard reorder. Branch instead: library
+   * drags (string ids, pointer only) get pointerWithin, timeline reorders keep closestCenter.
+   */
+  const collisionDetection: CollisionDetection = (args) =>
+    typeof args.active.id === 'string' && args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
   const invalidate = () => { queryClient.invalidateQueries({ queryKey: playlistKey }); queryClient.invalidateQueries({ queryKey: ['playlists'] }) }
   const reorderMutation = useMutation({ mutationFn: (orders: number[]) => api.reorderPlaylistItems(playlistId, orders), onSuccess: () => { setLocalOrder(null); invalidate(); toast.success('Order saved') }, onError: (error: Error) => { setLocalOrder(null); toast.error(error.message); playlistQuery.refetch() } })
   // An advert with no running booking opens the booking dialog: it may not reach a screen
@@ -557,16 +649,6 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     },
   })
 
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return
-    const oldIndex = items.findIndex((item) => item.id === active.id)
-    const newIndex = items.findIndex((item) => item.id === over.id)
-    const next = arrayMove(items, oldIndex, newIndex)
-    const order = next.map((item) => item.id)
-    setLocalOrder(order)
-    reorderMutation.mutate(order)
-  }
-
   // The player has no notion of "the same advert", so a second copy in one loop is simply
   // the ad airing twice a cycle -- billed once, delivered twice. The server refuses it; the
   // library marks the advert as already here instead of offering something that can only fail.
@@ -595,9 +677,8 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const playlist = playlistQuery.data
   if (!playlist) return null
   const totalDuration = items.reduce((total, item) => total + item.duration, 0)
-  const shortDate = (value?: string | null) => (value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '')
 
-  const handleAddItem = (content: ContentItem, instant: boolean, event?: React.MouseEvent) => {
+  const handleAddItem = (content: ContentItem, instant: boolean) => {
     const placed = placedContentIds.has(content.id)
     if (placed) {
       const existing = items.find((it) => it.content.id === content.id)
@@ -611,36 +692,6 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       return
     }
 
-    // Capture starting position from clicked card
-    let startX = window.innerWidth * 0.75
-    let startY = 300
-    if (event) {
-      const btn = event.currentTarget as HTMLElement
-      const row = btn.closest('[data-library-row]') as HTMLElement
-      const rect = (row || btn).getBoundingClientRect()
-      startX = rect.left
-      startY = rect.top
-    }
-
-    // Target landing point in the Playback Timeline
-    let targetX = window.innerWidth * 0.25
-    let targetY = 350
-    if (timelineRef.current) {
-      const tRect = timelineRef.current.getBoundingClientRect()
-      targetX = tRect.left + 24
-      targetY = Math.min(window.innerHeight - 120, Math.max(120, tRect.bottom - 40))
-    }
-
-    flyCounterRef.current += 1
-    const flyId = `${content.id}-${flyCounterRef.current}`
-    setFlyingItems((prev) => [
-      ...prev,
-      { id: flyId, content, startX, startY, targetX, targetY, direction: 'forward' },
-    ])
-    setTimeout(() => {
-      setFlyingItems((prev) => prev.filter((it) => it.id !== flyId))
-    }, 240)
-
     if (instant) {
       addBookedMutation.mutate(content)
     } else {
@@ -648,157 +699,54 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     }
   }
 
-  const handleRemoveItem = (item: PlaylistItem) => {
-    const rowEl = document.getElementById(`timeline-item-${item.id}`)
-    let startX = window.innerWidth * 0.25
-    let startY = 350
-    if (rowEl) {
-      const rect = rowEl.getBoundingClientRect()
-      startX = rect.left
-      startY = rect.top
-    }
-
-    let targetX = window.innerWidth * 0.75
-    let targetY = 300
-    if (libraryRef.current) {
-      const lRect = libraryRef.current.getBoundingClientRect()
-      targetX = lRect.left + 24
-      targetY = Math.min(window.innerHeight - 120, Math.max(120, lRect.top + 80))
-    }
-
-    flyCounterRef.current += 1
-    const flyId = `reverse-${item.content.id}-${flyCounterRef.current}`
-    setFlyingItems((prev) => [
-      ...prev,
-      {
-        id: flyId,
-        content: item.content,
-        startX,
-        startY,
-        targetX,
-        targetY,
-        direction: 'reverse',
-      },
-    ])
-    setTimeout(() => {
-      setFlyingItems((prev) => prev.filter((it) => it.id !== flyId))
-    }, 240)
-
-    removeMutation.mutate(item.id)
+  const handleDragStart = ({ active }: DragStartEvent) => {
+    const dragged = active.data.current?.content as ContentItem | undefined
+    setDragging(dragged ?? items.find((item) => item.id === active.id)?.content ?? null)
   }
 
-  const libraryRow = (content: ContentItem, booked: boolean) => {
-    const placed = placedContentIds.has(content.id)
-    const startsLater = booked && Boolean(content.placement_starts_at) && new Date(content.placement_starts_at as string).getTime() > fetchedAt
-    const adding = addBookedMutation.isPending && addBookedMutation.variables?.id === content.id
-    const instant = booked && Boolean(screenId)
-    return (
-      <div
-        key={content.id}
-        data-library-row
-        id={`library-item-${content.id}`}
-        className={cn(
-          'flex items-center gap-3 rounded-xl border border-hairline p-2.5 transition-all duration-300 hover:bg-muted animate-in fade-in duration-300',
-          placed && 'bg-muted/40'
-        )}
-      >
-        <div className="relative size-12 shrink-0">
-          <MediaThumbnail item={content} className="size-12 rounded-lg" />
-          {clipDuration(content.duration_ms) && (
-            <span className="absolute right-0 bottom-0 rounded bg-black/75 px-1 text-[9px] font-semibold text-white">
-              {clipDuration(content.duration_ms)}
-            </span>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{content.name}</p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
-            {booked
-              ? <span className="text-emerald-700 dark:text-emerald-400">{startsLater ? `Starts ${shortDate(content.placement_starts_at)}` : `Booked until ${shortDate(content.placement_ends_at)}`}</span>
-              : <span className="capitalize">{content.type}{assetOrientation(content.renditions) && ` • ${assetOrientation(content.renditions)}`}</span>}
-            {content.client_name && ` • ${content.client_name}`}
-          </p>
-        </div>
-        <Button
-          size="icon-sm"
-          variant={instant ? 'default' : 'outline'}
-          disabled={!canEdit || adding}
-          onClick={(e) => handleAddItem(content, instant, e)}
-          aria-label={instant ? `Add ${content.name} to this screen` : `Book ${content.name}`}
-          className={cn(
-            'transition-transform active:scale-90',
-            placed && 'border-primary/40 text-primary hover:bg-primary/10'
-          )}
-        >
-          <Plus className="size-4" />
-        </Button>
-      </div>
-    )
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setDragging(null)
+    if (!over) return
+
+    // A card from the library: same path as the + button, so placedContentIds, `instant`
+    // and the booking dialog all behave identically. Dropped items append; reorder already
+    // exists for positioning them.
+    if (typeof active.id === 'string' && active.id.startsWith('lib-')) {
+      const { content, instant } = active.data.current as { content: ContentItem; instant: boolean }
+      handleAddItem(content, instant)
+      return
+    }
+
+    // Timeline reorder -- unchanged.
+    if (active.id === over.id) return
+    const oldIndex = items.findIndex((item) => item.id === active.id)
+    const newIndex = items.findIndex((item) => item.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+    const order = arrayMove(items, oldIndex, newIndex).map((item) => item.id)
+    setLocalOrder(order)
+    reorderMutation.mutate(order)
   }
+
 
   return (
     <div className="relative space-y-8">
-      {/* Moving transition flying animation overlay */}
-      {flyingItems.map((flying) => {
-        const isReverse = flying.direction === 'reverse'
-        return (
-          <div
-            key={flying.id}
-            className="pointer-events-none fixed z-[99999] will-change-transform"
-            style={
-              {
-                left: 0,
-                top: 0,
-                width: 290,
-                animation: 'flyTranslate 240ms cubic-bezier(0.15, 1, 0.3, 1) forwards',
-                '--fly-start-x': `${flying.startX}px`,
-                '--fly-start-y': `${flying.startY}px`,
-                '--fly-end-x': `${flying.targetX}px`,
-                '--fly-end-y': `${flying.targetY}px`,
-              } as React.CSSProperties & Record<string, string | number>
-            }
-          >
-            <div
-              className={cn(
-                'flex items-center gap-3 rounded-2xl border p-3 backdrop-blur-xl shadow-2xl transition-colors will-change-transform',
-                isReverse
-                  ? 'border-amber-500/30 bg-card/90 ring-1 ring-amber-500/50 dark:bg-slate-900/90'
-                  : 'border-primary/30 bg-card/90 ring-1 ring-primary/50 dark:bg-slate-900/90'
-              )}
-              style={{
-                animation: isReverse
-                  ? 'flyElevationReverse 240ms cubic-bezier(0.15, 1, 0.3, 1) forwards'
-                  : 'flyElevationForward 240ms cubic-bezier(0.15, 1, 0.3, 1) forwards',
-              }}
-            >
-              <div className="size-11 shrink-0 overflow-hidden rounded-xl bg-black/10 ring-1 ring-black/10 dark:ring-white/10 shadow-sm">
-                <MediaThumbnail item={flying.content} className="size-11 rounded-xl object-cover" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-foreground tracking-tight">{flying.content.name}</p>
-                {isReverse ? (
-                  <span className="mt-0.5 inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                    <Sparkles className="size-2.5 animate-pulse" /> Returning to library
-                  </span>
-                ) : (
-                  <span className="mt-0.5 inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                    <Sparkles className="size-2.5 animate-spin" /> Adding to timeline
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      })}
-
       {showHeader && <PageHeader eyebrow="Playlist builder" title={playlist.name} description="Set the loop order, control each handoff, and schedule exactly when every item may play." actions={<div className="flex items-center gap-2"><Badge variant="outline">{items.length} items</Badge><Badge variant="outline">{loopDuration(totalDuration)} loop</Badge>{!canEdit && <Badge variant="warning">View only</Badge>}</div>} />}
 
-      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section id="playback-timeline-container" ref={timelineRef} aria-labelledby="timeline-title">
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <section aria-labelledby="timeline-title">
           <h2 id="timeline-title" className="mb-4 text-sm font-semibold text-foreground">Playback timeline</h2>
           <DefaultTransitionPanel key={`${playlist.default_transition}-${playlist.default_transition_ms}`} playlist={playlist} disabled={!canEdit} pending={transitionMutation.isPending} onSave={(transition, durationMs, applyToAll) => transitionMutation.mutate({ transition, durationMs, applyToAll })} />
-          {!items.length ? <EmptyState icon={ListVideo} title="This playlist has no content" description="Choose an asset from the library to start building the loop." /> : (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          {/* The drop target wraps the empty state as well: an empty loop is exactly when you
+              most want to drag the first advert in. Previously the DndContext lived inside
+              this ternary, so that was impossible. */}
+          <TimelineDropZone>
+          {!items.length ? <EmptyState icon={ListVideo} title="This playlist has no content" description="Drag an asset in from the library, or press its + button." /> : (
               <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                 {/* A row still being added has no server id yet, so nothing can be done to it until it lands. */}
                 <div className="space-y-3">
@@ -811,25 +759,29 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
                       canEdit={canEdit && item.id > 0}
                       saving={savingItem === item.id}
                       highlighted={highlightedItemId === item.id}
-                      onRemove={() => handleRemoveItem(item)}
+                      onRemove={() => removeMutation.mutate(item.id)}
                       onSave={(data) => updateMutation.mutate({ itemId: item.id, data })}
                     />
                   ))}
                 </div>
               </SortableContext>
-            </DndContext>
           )}
+          </TimelineDropZone>
         </section>
 
-        <aside ref={libraryRef} className="rounded-2xl bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1 ring-hairline xl:sticky xl:top-6" aria-labelledby="library-title">
+        <aside className="rounded-2xl bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1 ring-hairline lg:sticky lg:top-20" aria-labelledby="library-title">
           <div><h2 id="library-title" className="font-semibold text-foreground">Content library</h2><p className="mt-1 text-xs text-muted-foreground/70">{library.booked.length + library.notBooked.length} ads{screenId ? ' · booked ones add instantly' : ''}</p></div>
           <div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search assets…" className="pl-9" aria-label="Search library" /></div>
-          <div className="mt-4 max-h-[660px] space-y-5 overflow-y-auto pr-1">
+          <div className="mt-4 max-h-[min(60vh,660px)] space-y-5 overflow-y-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
             {contentQuery.isLoading ? Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-20" />) : (
               <>
                 <div>
                   <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booked <span className="font-normal normal-case">{library.booked.length}</span></p>
-                  <div className="space-y-2">{library.booked.map((content) => libraryRow(content, true))}</div>
+                  <div className="space-y-2">{library.booked.map((content) => (
+                    <LibraryRow key={content.id} content={content} booked placed={placedContentIds.has(content.id)}
+                      instant={Boolean(screenId)} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                      canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, Boolean(screenId))} />
+                  ))}</div>
                   {!library.booked.length && (
                     <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
                       {placedContentIds.size > 0 ? 'All booked ads are in this loop.' : 'No ad has a running booking.'}
@@ -839,7 +791,11 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
                 <div>
                   <p className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Not booked <span className="font-normal normal-case">{library.notBooked.length}</span></p>
                   <p className="mb-2 text-[11px] text-muted-foreground/70">Adding one asks for a plan or a custom booking.</p>
-                  <div className="space-y-2">{library.notBooked.map((content) => libraryRow(content, false))}</div>
+                  <div className="space-y-2">{library.notBooked.map((content) => (
+                    <LibraryRow key={content.id} content={content} booked={false} placed={placedContentIds.has(content.id)}
+                      instant={false} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                      canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, false)} />
+                  ))}</div>
                   {!library.notBooked.length && (
                     <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
                       {placedContentIds.size > 0 ? 'No other ads in library.' : 'Every ad is booked.'}
@@ -851,6 +807,23 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
           </div>
         </aside>
       </div>
+
+        {/* ONE overlay, with content for BOTH drag kinds. SortableContext derives
+            useDragOverlay from whether the overlay has measured a rect, and DragOverlay
+            mounts whenever a drag is active regardless of its children -- so rendering
+            content for library drags only would stop the reordered row following the
+            cursor, with no visible error.
+            Keep it as a direct child of DndContext: it is position:fixed, not portaled, so
+            any ancestor with transform/filter/backdrop-filter would clip it. */}
+        <DragOverlay dropAnimation={null}>
+          {dragging ? (
+            <div className="flex items-center gap-3 rounded-xl border border-hairline bg-card p-2.5 shadow-lg">
+              <MediaThumbnail item={dragging} className="size-12 shrink-0 rounded-lg" />
+              <p className="truncate text-sm font-medium text-foreground">{dragging.name}</p>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       {/* A new booking, or a plan change when a booked advert has run out of screens. */}
       {bookingFor && (

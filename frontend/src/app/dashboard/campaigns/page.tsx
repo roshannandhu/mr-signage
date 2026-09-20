@@ -430,15 +430,14 @@ export default function CampaignsPage() {
               description="Assign a campaign to a playlist and its playback analytics will appear here."
             />
           ) : (
-            <div className="stagger grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {legacyCampaigns.map((campaign, index) => (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {legacyCampaigns.map((campaign) => (
                 <Link
                   key={campaign.id}
                   href={`/dashboard/campaigns/${campaign.id}`}
-                  style={{ '--i': index } as React.CSSProperties}
                   className="group focus-visible:ring-primary rounded-2xl focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
                 >
-                  <Card className="lift ring-hairline bg-card h-full border-0 py-0 shadow-sm ring-1 hover:shadow-md">
+                  <Card className="ring-hairline bg-card h-full border-0 py-0 shadow-sm ring-1 transition-shadow hover:shadow-md">
                     <CardContent className="p-5">
                       <span className="bg-primary/10 text-primary dark:text-brand grid size-11 place-items-center rounded-xl">
                         <BarChart3 className="size-5" aria-hidden="true" />

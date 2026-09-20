@@ -3,13 +3,14 @@
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { LayoutGrid, Layers3, List, ListVideo, MonitorPlay, Search, Settings2, Trash2, Tv2 } from 'lucide-react'
+import { ArrowUpDown, LayoutGrid, Layers3, List, ListVideo, MonitorPlay, Search, Settings2, Trash2, Tv2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AssetCard, AssetGrid, OverlayBadge } from '@/components/dashboard/asset-card'
 import { BulkActionBar, SelectAllCheckbox } from '@/components/dashboard/bulk-action-bar'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
-import { ListToolbar, commonSorts, sortItems, type CommonSort } from '@/components/dashboard/list-toolbar'
+import { commonSorts, sortItems, type CommonSort } from '@/components/dashboard/list-toolbar'
+import { PageHeader } from '@/components/dashboard/page-header'
 import { StatusIndicator } from '@/components/dashboard/status-indicator'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -18,6 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useBulkSelection } from '@/hooks/use-bulk-selection'
 import { api } from '@/lib/api'
 import { relativeTime } from '@/lib/format'
@@ -83,16 +85,29 @@ export default function ScreensPage() {
     window.dispatchEvent(new Event(VIEW_EVENT))
   }
 
-  const filtered = useMemo(() => {
+  const searched = useMemo(() => {
     const term = search.trim().toLowerCase()
-    const matches = screens.filter((screen: Screen) => {
+    if (!term) return screens
+    return screens.filter((screen: Screen) => {
       const label = (screen.name || `Screen ${screen.id}`).toLowerCase()
-      const matchesSearch = !term || label.includes(term) || String(screen.device_id || '').toLowerCase().includes(term)
-      const matchesStatus = status === 'all' || (status === 'online' ? screen.status === 'online' : screen.status !== 'online')
-      return matchesSearch && matchesStatus
+      return label.includes(term) || String(screen.device_id || '').toLowerCase().includes(term)
     })
+  }, [screens, search])
+
+  // Counts follow the search box but NOT the status tabs — a tab that only ever reported
+  // its own selection would be a mirror, not a picker.
+  const counts = useMemo(() => ({
+    all: searched.length,
+    online: searched.filter((screen: Screen) => screen.status === 'online').length,
+    offline: searched.filter((screen: Screen) => screen.status !== 'online').length,
+  }), [searched])
+
+  const filtered = useMemo(() => {
+    const matches = status === 'all'
+      ? searched
+      : searched.filter((screen: Screen) => (status === 'online' ? screen.status === 'online' : screen.status !== 'online'))
     return sortItems(matches, sort, (s) => s.name || `Screen ${s.id}`, (s) => s.last_seen)
-  }, [screens, search, sort, status])
+  }, [searched, status, sort])
 
   const bulk = useBulkSelection(filtered)
   const groupName = (id: number | null) => groups.find((g) => g.id === id)?.name
@@ -152,7 +167,7 @@ export default function ScreensPage() {
 
   const addScreen = (
     <Dialog open={pairOpen} onOpenChange={setPairOpen}>
-      <DialogTrigger render={<Button variant="outline" className="bg-card" />}>Add Screen</DialogTrigger>
+      <DialogTrigger render={<Button />}>Add Screen</DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Add a screen</DialogTitle>
@@ -184,8 +199,66 @@ export default function ScreensPage() {
     </Dialog>
   )
 
+  /**
+   * Status lives on the page, not behind a Filters menu.
+   *
+   * "How many of my screens are dark right now" is the question this page exists to
+   * answer, and it was two clicks deep. Same visual language as the layout toggle below,
+   * so the control row reads as one bar rather than a row of unrelated widgets.
+   */
+  const statusFilter = (
+    <div className="border-hairline bg-card inline-flex items-center rounded-xl border p-0.5" role="group" aria-label="Filter by status">
+      {([['all', 'All'], ['online', 'Online'], ['offline', 'Offline']] as const).map(([value, label]) => (
+        <button
+          key={value}
+          onClick={() => setStatus(value)}
+          aria-pressed={status === value}
+          className={cn(
+            'focus-visible:ring-ring flex h-9 cursor-pointer items-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none',
+            status === value ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {label}
+          <span className="text-muted-foreground/70 tabular-nums">{counts[value]}</span>
+        </button>
+      ))}
+    </div>
+  )
+
+  const searchField = (
+    <div className="relative w-full sm:w-64">
+      <Input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search screens"
+        aria-label="Search screens"
+        className="bg-card h-10 pr-9"
+      />
+      <Search className="text-muted-foreground pointer-events-none absolute top-1/2 right-3 size-[18px] -translate-y-1/2" aria-hidden="true" />
+    </div>
+  )
+
+  const sortMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button variant="outline" className="bg-card shrink-0" />}>
+        <ArrowUpDown data-icon="inline-start" /> Sort
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-64">
+        {commonSorts.map((option) => (
+          <DropdownMenuItem
+            key={option.value}
+            onClick={() => setSort(option.value)}
+            className={cn(sort === option.value && 'bg-accent text-accent-foreground font-medium')}
+          >
+            {option.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   const viewToggle = (
-    <div className="border-hairline bg-card flex items-center rounded-lg border p-0.5" role="group" aria-label="Layout">
+    <div className="border-hairline bg-card flex shrink-0 items-center rounded-xl border p-0.5" role="group" aria-label="Layout">
       {([['cards', LayoutGrid, 'Card view'], ['list', List, 'List view']] as const).map(([mode, Icon, label]) => (
         <button
           key={mode}
@@ -193,7 +266,7 @@ export default function ScreensPage() {
           aria-label={label}
           aria-pressed={view === mode}
           className={cn(
-            'grid size-8 cursor-pointer place-items-center rounded-md transition-colors',
+            'grid size-9 cursor-pointer place-items-center rounded-lg transition-colors',
             view === mode ? 'bg-secondary text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
         >
@@ -208,33 +281,30 @@ export default function ScreensPage() {
   }
 
   return (
-    <div>
-      <ListToolbar
+    <div className="space-y-6">
+      <PageHeader
         title="Screens"
-        action={canEdit ? addScreen : undefined}
-        menu={viewToggle}
-        sort={{ value: sort, onChange: setSort, options: commonSorts }}
-        search={{ value: search, onChange: setSearch }}
-        filters={
-          <>
-            {(['all', 'online', 'offline'] as const).map((value) => (
-              <DropdownMenuItem key={value} onClick={() => setStatus(value)} className={status === value ? 'bg-accent font-medium' : undefined}>
-                <span className="capitalize">{value === 'all' ? 'All screens' : value}</span>
-              </DropdownMenuItem>
-            ))}
-          </>
-        }
+        description="Every display paired to this workspace — what it is showing, and whether it has reported in."
+        actions={canEdit ? addScreen : <Badge variant="outline">View only</Badge>}
       />
 
-      {canEdit && filtered.length > 0 && (
-        <div className="mb-3 flex items-center gap-4">
-          <SelectAllCheckbox
-            checked={bulk.allVisibleSelected}
-            indeterminate={bulk.someVisibleSelected}
-            onChange={bulk.toggleAll}
-            label={`Select all ${filtered.length}`}
-          />
+      {/* Two groups, not six loose children: nothing here can wrap into a ragged third row. */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        {statusFilter}
+        <div className="flex items-center gap-2 lg:ml-auto">
+          {searchField}
+          {sortMenu}
+          {viewToggle}
         </div>
+      </div>
+
+      {canEdit && filtered.length > 0 && (
+        <SelectAllCheckbox
+          checked={bulk.allVisibleSelected}
+          indeterminate={bulk.someVisibleSelected}
+          onChange={bulk.toggleAll}
+          label={`Select all ${filtered.length}`}
+        />
       )}
 
       {canEdit && (
@@ -278,7 +348,7 @@ export default function ScreensPage() {
       )}
 
       {screensQuery.isLoading ? (
-        <AssetGrid>{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-xl" />)}</AssetGrid>
+        <AssetGrid>{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-72 rounded-xl" />)}</AssetGrid>
       ) : !screens.length ? (
         <EmptyState
           icon={Tv2}
@@ -294,55 +364,87 @@ export default function ScreensPage() {
           action={<Button variant="outline" onClick={() => { setSearch(''); setStatus('all') }}>Clear filters</Button>}
         />
       ) : view === 'list' ? (
-        <div className="ring-hairline divide-hairline bg-card grid grid-cols-1 divide-y overflow-hidden rounded-xl ring-1">
-          {filtered.map((screen: Screen) => {
-            const label = screen.name || `Screen ${screen.id}`
-            return (
-              <div key={screen.id} className="hover:bg-muted/40 flex items-center gap-3 p-3">
-                {canEdit && (
-                  <input
-                    type="checkbox"
-                    className="accent-primary size-4 shrink-0"
-                    checked={bulk.isSelected(screen.id)}
-                    onChange={(event) => bulk.toggle(screen.id, event.target.checked)}
-                    aria-label={`Select ${label}`}
-                  />
-                )}
-                <div className="bg-muted h-9 w-16 shrink-0 overflow-hidden rounded">
-                  {screen.latest_screenshot ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs
-                    <img src={screen.latest_screenshot} alt="" className="size-full object-cover" />
-                  ) : (
-                    <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-4" /></div>
-                  )}
-                </div>
-                <Link href={`/dashboard/screens/${screen.id}`} className="min-w-0 flex-1">
-                  <p className="text-foreground truncate text-sm font-medium">{label}</p>
-                  <p className="text-muted-foreground truncate text-xs">
-                    {screen.status === 'online' ? 'Online now' : `Last seen ${relativeTime(screen.last_seen)}`}
-                    {groupName(screen.group_id) && ` · ${groupName(screen.group_id)}`}
-                  </p>
-                </Link>
-                {screen.app_version && <Badge variant="outline" className="hidden sm:inline-flex">v{screen.app_version}</Badge>}
-                <StatusIndicator status={screen.status} />
-                {canEdit && (
-                  <button
-                    onClick={() => setDeleteTarget(screen)}
-                    title="Remove display"
-                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded p-1.5 transition-colors"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                )}
-              </div>
-            )
-          })}
+        <div className="ring-hairline bg-card overflow-hidden rounded-xl ring-1">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-hairline hover:bg-transparent">
+                {canEdit && <TableHead className="w-10 pl-4" />}
+                <TableHead className="w-20">Preview</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead className="w-32">Status</TableHead>
+                <TableHead className="hidden w-40 lg:table-cell">Group</TableHead>
+                <TableHead className="hidden w-24 xl:table-cell">Version</TableHead>
+                <TableHead className="hidden w-40 sm:table-cell">Last seen</TableHead>
+                {canEdit && <TableHead className="w-12 pr-4" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((screen: Screen) => {
+                const label = screen.name || `Screen ${screen.id}`
+                return (
+                  <TableRow key={screen.id} className="border-hairline">
+                    {canEdit && (
+                      <TableCell className="pl-4">
+                        <input
+                          type="checkbox"
+                          className="accent-primary size-4"
+                          checked={bulk.isSelected(screen.id)}
+                          onChange={(event) => bulk.toggle(screen.id, event.target.checked)}
+                          aria-label={`Select ${label}`}
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell className="py-2.5">
+                      <div className="bg-muted h-10 w-[72px] overflow-hidden rounded-md">
+                        {screen.latest_screenshot ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs
+                          <img src={screen.latest_screenshot} alt="" className="size-full object-cover" />
+                        ) : (
+                          <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-4" /></div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-2.5">
+                      {/* The whole name cell is the target — previously only the text was. */}
+                      <Link href={`/dashboard/screens/${screen.id}`} className="block min-w-0">
+                        <p className="text-foreground truncate text-sm font-medium">{label}</p>
+                        {screen.device_id && <p className="text-muted-foreground mt-0.5 truncate text-sm">{screen.device_id}</p>}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="py-2.5"><StatusIndicator status={screen.status} /></TableCell>
+                    <TableCell className="text-muted-foreground hidden py-2.5 text-sm lg:table-cell">
+                      {groupName(screen.group_id) || '—'}
+                    </TableCell>
+                    <TableCell className="hidden py-2.5 xl:table-cell">
+                      {screen.app_version ? <Badge variant="outline">v{screen.app_version}</Badge> : <span className="text-muted-foreground text-sm">—</span>}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground hidden py-2.5 text-sm sm:table-cell" title={screen.last_seen || undefined}>
+                      {screen.status === 'online' ? 'Online now' : relativeTime(screen.last_seen)}
+                    </TableCell>
+                    {canEdit && (
+                      <TableCell className="py-2.5 pr-4">
+                        <button
+                          onClick={() => setDeleteTarget(screen)}
+                          title="Remove display"
+                          aria-label={`Remove ${label}`}
+                          className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md p-1.5 transition-colors"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
         </div>
       ) : (
         <AssetGrid>
           {filtered.map((screen: Screen) => {
             const label = screen.name || `Screen ${screen.id}`
             const online = screen.status === 'online'
+            const group = groupName(screen.group_id)
             return (
               <div key={screen.id} className="relative">
                 {canEdit && (
@@ -359,7 +461,12 @@ export default function ScreensPage() {
                 <AssetCard
                   href={`/dashboard/screens/${screen.id}`}
                   title={label}
-                  subtitle={online ? 'Online now' : `Last seen ${relativeTime(screen.last_seen)}`}
+                  subtitle={
+                    <>
+                      {online ? 'Online now' : `Last seen ${relativeTime(screen.last_seen)}`}
+                      {group && ` · ${group}`}
+                    </>
+                  }
                   preview={
                     screen.latest_screenshot ? (
                       // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs

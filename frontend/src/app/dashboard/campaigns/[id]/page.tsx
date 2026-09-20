@@ -82,9 +82,9 @@ export default function CampaignAnalyticsPage() {
         }
       />
 
-      <section aria-label="Campaign statistics" className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map(({ label, value, icon: Icon, note }, index) => (
-          <Card key={label} style={{ '--i': index } as React.CSSProperties} className="lift ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1">
+      <section aria-label="Campaign statistics" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {cards.map(({ label, value, icon: Icon, note }) => (
+          <Card key={label} className="ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <p className="text-muted-foreground text-sm font-medium">{label}</p>

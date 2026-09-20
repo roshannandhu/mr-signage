@@ -41,10 +41,10 @@ export function AssetCard({
         {badges && <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">{badges}</div>}
         {cornerBadge && <div className="absolute right-2.5 bottom-2.5">{cornerBadge}</div>}
       </div>
-      <div className="flex items-start gap-2 p-3.5">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-foreground text-sm leading-snug font-medium break-words">{title}</h2>
-          {subtitle && <p className="text-muted-foreground mt-0.5 text-xs">{subtitle}</p>}
+      <div className="flex items-start gap-2 p-4">
+        <div className={cn('min-w-0 flex-1', menu && 'pr-9')}>
+          <h2 className="text-foreground text-[15px] leading-snug font-medium break-words">{title}</h2>
+          {subtitle && <div className="text-muted-foreground mt-1 text-sm">{subtitle}</div>}
         </div>
       </div>
     </>
@@ -68,7 +68,7 @@ export function AssetCard({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={`Actions for ${title}`}
-            className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring absolute right-2 bottom-3 grid size-8 cursor-pointer place-items-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none"
+            className="text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:ring-ring absolute right-2 bottom-3.5 grid size-8 cursor-pointer place-items-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none"
           >
             <MoreVertical className="size-4" aria-hidden="true" />
           </DropdownMenuTrigger>
@@ -102,5 +102,5 @@ export function OverlayBadge({
 
 /** Standard grid the four list pages share. */
 export function AssetGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{children}</div>
+  return <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">{children}</div>
 }

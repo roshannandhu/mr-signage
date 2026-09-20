@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
-import { ViewTransition } from "@/components/view-transition";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +31,7 @@ export default function RootLayout({
     >
       <body className="bg-background text-foreground min-h-full">
         <Providers>
-          <ViewTransition default="page">{children}</ViewTransition>
+          {children}
         </Providers>
       </body>
     </html>

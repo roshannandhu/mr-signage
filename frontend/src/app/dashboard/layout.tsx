@@ -248,7 +248,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <main id="dashboard-content" className="mx-auto w-full max-w-[1600px] px-4 py-6 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pb-10">
+      <main id="dashboard-content" className="mx-auto w-full max-w-[1600px] px-4 py-8 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:py-10 lg:pb-12">
         {children}
       </main>
 

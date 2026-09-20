@@ -402,12 +402,11 @@ export default function AdDetailPage() {
       </header>
 
       {booking ? (
-        <section aria-label="Booking summary" className="stagger mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {kpis.map(({ label, value, icon: Icon, note }, index) => (
+        <section aria-label="Booking summary" className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {kpis.map(({ label, value, icon: Icon, note }) => (
             <Card
               key={label}
-              style={{ '--i': index } as React.CSSProperties}
-              className="lift ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1"
+              className="ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1"
             >
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-start justify-between gap-2">
