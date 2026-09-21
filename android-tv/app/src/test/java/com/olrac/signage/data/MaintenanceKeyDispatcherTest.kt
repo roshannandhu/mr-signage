@@ -21,8 +21,57 @@ class MaintenanceKeyDispatcherTest {
         nowMs: Long,
         action: Int = KeyEvent.ACTION_DOWN,
         repeatCount: Int = 0,
-        gestureEnabled: Boolean = true
-    ) = d.onKeyEvent(action, keyCode, repeatCount, gestureEnabled, nowMs)
+        gestureEnabled: Boolean = true,
+        surface: KeySurface = KeySurface.PLAYER
+    ) = d.onKeyEvent(action, keyCode, repeatCount, gestureEnabled, nowMs, surface)
+
+    private val back = KeyEvent.KEYCODE_BACK
+
+    @Test
+    fun `back over the player is swallowed rather than leaving the ads`() {
+        // Regression: BACK was handled nowhere, so the default finished the Activity and the
+        // viewer was left on the TV's launcher -- no maintenance gesture required.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 0))
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 1, action = KeyEvent.ACTION_UP))
+    }
+
+    @Test
+    fun `back on the setup gate is swallowed too`() {
+        // The gate reports itself as PLAYER: there is nothing behind it to go back to either.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 0, gestureEnabled = true))
+    }
+
+    @Test
+    fun `back cancels the pin prompt on release`() {
+        val d = MaintenanceKeyDispatcher()
+        // The press is taken but does nothing: a BACK still held from the screen before must
+        // not dismiss this prompt the instant it opens.
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 0, surface = KeySurface.PIN_PROMPT))
+        assertEquals(
+            KeyOutcome.CANCEL_PIN,
+            press(d, back, 1, action = KeyEvent.ACTION_UP, surface = KeySurface.PIN_PROMPT)
+        )
+    }
+
+    @Test
+    fun `back falls through on the server setup screen which owns its own navigation`() {
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, back, 0, surface = KeySurface.SERVER_SETUP))
+    }
+
+    @Test
+    fun `taking back does not disturb the gesture`() {
+        // BACK is matched before the gesture buffer, so it must not reset or advance it.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, up, 0))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, up, 1))
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 2))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, down, 3))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, down, 4))
+        assertEquals(KeyOutcome.REVEAL_PIN, press(d, ok, 5))
+    }
 
     @Test
     fun `the completing press reveals the pin prompt`() {

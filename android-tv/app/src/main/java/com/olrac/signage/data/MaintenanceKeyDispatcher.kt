@@ -11,7 +11,22 @@ enum class KeyOutcome {
     CONSUME,
 
     /** Take it and reveal the maintenance pin prompt. Implies consuming. */
-    REVEAL_PIN
+    REVEAL_PIN,
+
+    /** Take it and dismiss the maintenance pin prompt. Implies consuming. */
+    CANCEL_PIN
+}
+
+/** Which surface is in front, for the keys whose meaning depends on it. */
+enum class KeySurface {
+    /** The ads, or the setup gate: neither has anywhere to go BACK to. */
+    PLAYER,
+
+    /** The maintenance pin prompt: BACK is its only way out on a remote. */
+    PIN_PROMPT,
+
+    /** The server setup screen, which owns its own BACK navigation. */
+    SERVER_SETUP
 }
 
 /**
@@ -43,8 +58,23 @@ class MaintenanceKeyDispatcher(
         keyCode: Int,
         repeatCount: Int,
         gestureEnabled: Boolean,
-        nowMs: Long
+        nowMs: Long,
+        surface: KeySurface = KeySurface.PLAYER
     ): KeyOutcome {
+        // BACK was handled nowhere, so the default finished the Activity and left the viewer
+        // on the TV's launcher -- the one thing kiosk exists to prevent, and reachable without
+        // the maintenance gesture. It is taken everywhere except the screen that owns it.
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            return when (surface) {
+                KeySurface.SERVER_SETUP -> KeyOutcome.PASS_THROUGH
+                // Act on the release, so a BACK still held from the previous screen cannot
+                // dismiss this one the instant it opens.
+                KeySurface.PIN_PROMPT ->
+                    if (action == KeyEvent.ACTION_UP) KeyOutcome.CANCEL_PIN else KeyOutcome.CONSUME
+                KeySurface.PLAYER -> KeyOutcome.CONSUME
+            }
+        }
+
         if (action == KeyEvent.ACTION_UP && swallowUpFor == keyCode) {
             // The release belonging to a press we already took. Compose pairs a key down with
             // its up, so letting this through would still click the button underneath.

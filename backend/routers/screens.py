@@ -128,9 +128,13 @@ def presents_valid_device_token(device_id: str, credentials: HTTPAuthorizationCr
 # five seconds of every minute. Typing them then earns "Invalid pairing code", which is
 # exactly what was reported.
 #
+# Raised from one minute to five: one minute was still not long enough to read six digits off
+# a television, walk to a laptop, open the Screens page and type them -- especially when the
+# screen being paired is on a wall in another room.
+#
 # tests/test_pairing_code_window.py reads the player's constant and fails if the margin is
 # lost again, because nothing else connects a Python timedelta to a Kotlin Long.
-PAIR_CODE_TTL = timedelta(minutes=1)
+PAIR_CODE_TTL = timedelta(minutes=5)
 
 UNIVERSAL_PIN_KEY = "universal_maintenance_pin"
 

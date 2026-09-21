@@ -354,8 +354,10 @@ class MainActivity : ComponentActivity() {
      */
     private fun openSetupSettings(attempts: List<Intent>) {
         setupError = null
-        getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
-            .putLong(PREF_SETUP_AWAITING_UNTIL, System.currentTimeMillis() + SETUP_RETURN_WINDOW_MS).apply()
+        // Stand every relaunch path down while they are in Settings. Writing this flag was not
+        // enough on its own -- nothing read it, so PlaybackService's boot follow-up kept pulling
+        // the player back over Settings a few seconds after the gate opened it.
+        com.olrac.signage.boot.PlayerLauncher.holdForSetup(this, SETUP_RETURN_WINDOW_MS)
         // Kiosk pinning would block Settings from opening.
         enterMaintenance()
         val opened = attempts.any { intent ->
@@ -484,6 +486,10 @@ class MainActivity : ComponentActivity() {
             DeviceOwnerManager.applyKioskPolicy(this)
         }
         defaultHome = isDefaultHomeLauncher()
+        // The player is in front again, so the setup hold has done its job. Lifting it here
+        // rather than letting it expire means full protection resumes the moment they return,
+        // instead of staying off for the rest of the five-minute window.
+        com.olrac.signage.boot.PlayerLauncher.releaseSetupHold(this)
         // Back from a settings page: pick up a switch that was just turned on straight away.
         refreshPermissionState()
         askOnceToBecomeHome()
@@ -584,12 +590,18 @@ class MainActivity : ComponentActivity() {
         // Not on the pin prompt or the setup screen: there these keys are navigation, and
         // matching would swallow a press mid-form.
         val gestureEnabled = !showPinPrompt && !showServerSetup
+        val surface = when {
+            showPinPrompt -> com.olrac.signage.data.KeySurface.PIN_PROMPT
+            showServerSetup -> com.olrac.signage.data.KeySurface.SERVER_SETUP
+            else -> com.olrac.signage.data.KeySurface.PLAYER
+        }
         val outcome = maintenanceKeys.onKeyEvent(
             action = event.action,
             keyCode = event.keyCode,
             repeatCount = event.repeatCount,
             gestureEnabled = gestureEnabled,
-            nowMs = System.currentTimeMillis()
+            nowMs = System.currentTimeMillis(),
+            surface = surface
         )
         return when (outcome) {
             KeyOutcome.REVEAL_PIN -> {
@@ -597,6 +609,11 @@ class MainActivity : ComponentActivity() {
                 // entered (see onUnlocked). Dropping lock-task here let the gesture alone
                 // un-pin the TV, and cancelling then left it open until the next reboot.
                 showPinPrompt = true
+                true
+            }
+            KeyOutcome.CANCEL_PIN -> {
+                showPinPrompt = false
+                rearmLockTask()
                 true
             }
             KeyOutcome.CONSUME -> true
@@ -1162,7 +1179,8 @@ class MainActivity : ComponentActivity() {
         // stops reclaiming the screen from Settings and the home launcher while the operator works.
         const val PREF_WATCHDOG_SUPPRESS_UNTIL = "watchdog_suppress_until"
         /** While set, the operator is in Settings flipping a setup switch and wants bringing back. */
-        const val PREF_SETUP_AWAITING_UNTIL = "setup_awaiting_until"
+        /** Declared by PlayerLauncher, which is the choke point that has to honour it. */
+        const val PREF_SETUP_AWAITING_UNTIL = com.olrac.signage.boot.PlayerLauncher.PREF_SETUP_AWAITING_UNTIL
         private const val SETUP_RETURN_WINDOW_MS = 5 * 60_000L
         private const val MAINTENANCE_SUPPRESS_MS = 15 * 60_000L
         private const val EXIT_SUPPRESS_MS = 30 * 60_000L
@@ -1193,10 +1211,10 @@ class MainActivity : ComponentActivity() {
         //
         // Refreshing early costs nothing: /register hands back the SAME code while it is
         // still valid rather than minting a new one, so this only has to beat expiry.
-        private const val PAIR_CODE_REFRESH_MS = 45_000L
+        private const val PAIR_CODE_REFRESH_MS = 4 * 60_000L
 
         /** What the server actually grants, so the countdown on the TV is not a fiction. */
-        private const val PAIR_CODE_TTL_SECONDS = 60
+        private const val PAIR_CODE_TTL_SECONDS = 300
     }
 }
 

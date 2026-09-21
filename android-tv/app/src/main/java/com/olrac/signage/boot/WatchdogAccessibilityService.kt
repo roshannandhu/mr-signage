@@ -198,11 +198,17 @@ class WatchdogAccessibilityService : AccessibilityService() {
 
         /** Whether the operator has switched this service on in Accessibility settings. */
         fun isEnabled(context: Context): Boolean = runCatching {
-            val wanted = "${context.packageName}/${WatchdogAccessibilityService::class.java.name}"
-            (android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
-            ) ?: "").split(':').any { it.equals(wanted, ignoreCase = true) }
+            // Matched through SetupGate.namesService, not by string equality: the setting holds
+            // the SHORT component spelling ("pkg/.boot.Watchdog..."), so comparing with the long
+            // one read a running watchdog as off and put the setup gate back on every restart.
+            SetupGate.namesService(
+                android.provider.Settings.Secure.getString(
+                    context.contentResolver,
+                    android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+                ),
+                context.packageName,
+                WatchdogAccessibilityService::class.java.name,
+            )
         }.getOrDefault(false)
     }
 }

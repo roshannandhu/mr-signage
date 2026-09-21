@@ -54,4 +54,49 @@ class SetupGateTest {
             SetupGate.ORDER
         )
     }
+
+    // --- ENABLED_ACCESSIBILITY_SERVICES matching -------------------------------------------
+    //
+    // The regression these cover: televisions store the SHORT component spelling, the check
+    // compared the LONG one, so a running watchdog read as off and the setup gate came back on
+    // every restart instead of the adverts.
+
+    private val pkg = "com.olrac.signage"
+    private val cls = "com.olrac.signage.boot.WatchdogAccessibilityService"
+
+    @Test
+    fun `the short spelling the TV actually stores is recognised`() {
+        // Verbatim from `settings get secure enabled_accessibility_services` on the panel.
+        assertTrue(SetupGate.namesService("com.olrac.signage/.boot.WatchdogAccessibilityService", pkg, cls))
+    }
+
+    @Test
+    fun `the long spelling is still recognised`() {
+        assertTrue(SetupGate.namesService("$pkg/$cls", pkg, cls))
+    }
+
+    @Test
+    fun `found among other enabled services`() {
+        val setting = "com.google.android.marvin.talkback/.TalkBackService:" +
+            "com.olrac.signage/.boot.WatchdogAccessibilityService:" +
+            "com.example.other/.Svc"
+        assertTrue(SetupGate.namesService(setting, pkg, cls))
+    }
+
+    @Test
+    fun `absent, empty and null all read as off`() {
+        assertFalse(SetupGate.namesService("com.google.android.marvin.talkback/.TalkBackService", pkg, cls))
+        assertFalse(SetupGate.namesService("", pkg, cls))
+        assertFalse(SetupGate.namesService(null, pkg, cls))
+    }
+
+    @Test
+    fun `another app's service with the same class name is not ours`() {
+        assertFalse(SetupGate.namesService("com.evil.app/.boot.WatchdogAccessibilityService", pkg, cls))
+    }
+
+    @Test
+    fun `malformed entries are ignored rather than matching`() {
+        assertFalse(SetupGate.namesService("garbage:${'$'}pkg/:/:", pkg, cls))
+    }
 }

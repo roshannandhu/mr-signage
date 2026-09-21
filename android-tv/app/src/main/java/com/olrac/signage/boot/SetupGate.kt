@@ -44,4 +44,38 @@ object SetupGate {
      */
     fun initialFocusIndex(states: List<SetupRequirementState>): Int =
         states.indexOfFirst { !it.granted }.takeIf { it >= 0 } ?: 0
+
+    /**
+     * Does [setting] -- the raw colon-separated ENABLED_ACCESSIBILITY_SERVICES value -- name
+     * the service `packageName/className`?
+     *
+     * Android writes the component in SHORT form, `pkg/.Inner.Class`, whenever the class sits
+     * inside the package, and that is what the televisions actually store:
+     *
+     *     com.olrac.signage/.boot.WatchdogAccessibilityService
+     *
+     * The check compared against the LONG form, `pkg/pkg.Inner.Class`, so it never matched.
+     * The app therefore read its own running watchdog as switched off: the setup gate came
+     * back on every single restart however many times the installer turned the switch on, the
+     * TV never reached the adverts, the 1 Hz gate poll never stopped, and every fleet report
+     * said watchdog_enabled=false. Confirmed on the Lenovo panel, where dumpsys shows the
+     * service bound while the setting holds the short spelling.
+     *
+     * Both spellings are normalised before comparing, so either is accepted.
+     */
+    fun namesService(setting: String?, packageName: String, className: String): Boolean {
+        val wanted = normaliseComponent("$packageName/$className") ?: return false
+        return (setting ?: "").split(':').any { entry ->
+            normaliseComponent(entry.trim())?.equals(wanted, ignoreCase = true) == true
+        }
+    }
+
+    /** "pkg/.A.B" and "pkg/pkg.A.B" both become "pkg/pkg.A.B". Null when not a component. */
+    private fun normaliseComponent(entry: String): String? {
+        val slash = entry.indexOf('/')
+        if (slash <= 0 || slash == entry.length - 1) return null
+        val pkg = entry.substring(0, slash)
+        val cls = entry.substring(slash + 1)
+        return if (cls.startsWith(".")) "$pkg/$pkg$cls" else "$pkg/$cls"
+    }
 }

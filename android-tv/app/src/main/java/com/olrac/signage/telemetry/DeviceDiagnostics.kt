@@ -120,8 +120,13 @@ object DeviceDiagnostics {
             Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
         }
         probe("watchdog_enabled") {
-            (Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "")
-                .contains("$pkg/$pkg.boot.WatchdogAccessibilityService")
+            // Same short-vs-long component spelling that made the setup gate repeat forever:
+            // this probe reported false for every TV whose watchdog was in fact running.
+            com.olrac.signage.boot.SetupGate.namesService(
+                Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+                pkg,
+                "$pkg.boot.WatchdogAccessibilityService",
+            )
         }
         probe("watchdog_connected_at") {
             prefs.getLong(com.olrac.signage.boot.WatchdogAccessibilityService.PREF_CONNECTED_AT, 0L).takeIf { it > 0 }

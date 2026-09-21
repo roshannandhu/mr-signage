@@ -58,6 +58,42 @@ object PlayerLauncher {
      */
     fun holdWhileSystemDialogOpen(context: Context, maxMs: Long = 120_000L) {
         holdUntil = SystemClock.elapsedRealtime() + maxMs
+        withdrawQueuedLaunches(context)
+    }
+
+    fun releaseHold() {
+        holdUntil = 0L
+    }
+
+    /**
+     * The installer opened a Settings page from the setup gate and is standing at the TV.
+     *
+     * Every relaunch path runs through [launch] -- the boot follow-up in PlaybackService, the
+     * watchdog, the supervisor, a remote "Open app on TV" -- so holding it here is what stops
+     * the player yanking itself back over Settings mid-toggle. Held in prefs rather than in
+     * memory because the process can be killed while the operator is in Settings, and an
+     * in-memory flag would come back cleared and start fighting them again.
+     *
+     * Queued work is withdrawn as well: an alarm or full-screen notification posted a moment
+     * before the hold would otherwise still land.
+     */
+    fun holdForSetup(context: Context, windowMs: Long) {
+        context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
+            .putLong(PREF_SETUP_AWAITING_UNTIL, System.currentTimeMillis() + windowMs).apply()
+        withdrawQueuedLaunches(context)
+    }
+
+    /** The operator is back on the player: normal protection resumes immediately. */
+    fun releaseSetupHold(context: Context) {
+        context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
+            .remove(PREF_SETUP_AWAITING_UNTIL).apply()
+    }
+
+    private fun setupHoldActive(context: Context): Boolean =
+        System.currentTimeMillis() < context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+            .getLong(PREF_SETUP_AWAITING_UNTIL, 0L)
+
+    private fun withdrawQueuedLaunches(context: Context) {
         runCatching {
             (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager)
                 .cancel(createLaunchPendingIntent(context, playerIntent(context)))
@@ -68,13 +104,13 @@ object PlayerLauncher {
         }
     }
 
-    fun releaseHold() {
-        holdUntil = 0L
-    }
-
     fun launch(context: Context, delayMs: Long = BOOT_SETTLE_MS, reason: String = "unspecified") {
         if (SystemClock.elapsedRealtime() < holdUntil) {
             Log.i(TAG, "Launch held while a system dialog is open (reason=$reason)")
+            return
+        }
+        if (setupHoldActive(context)) {
+            Log.i(TAG, "Launch held while the installer is in Settings finishing setup (reason=$reason)")
             return
         }
         warnIfBackgroundStartsWillBeRefused(context, reason)
@@ -267,4 +303,11 @@ object PlayerLauncher {
 
     private const val REQUEST_BOOT_LAUNCH = 1001
     const val PREF_LAST_LAUNCH = "last_launch"
+
+    /**
+     * Until when relaunches stand down because the setup gate sent the operator into Settings.
+     * MainActivity writes the same key; it lives here because [launch] is the choke point that
+     * has to honour it, and boot-layer code must be able to read it without an Activity.
+     */
+    const val PREF_SETUP_AWAITING_UNTIL = "setup_awaiting_until"
 }
