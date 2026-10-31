@@ -1823,7 +1823,9 @@ def email_booking_report(
     organization = scope.db.query(models.Organization).filter(
         models.Organization.id == placement.organization_id
     ).first()
-    sender_name = organization.name if organization else "your signage partner"
+    # Brand first, same fallback the PDF itself already uses -- the sign-off under the
+    # tenant's own branded document used to still read "Regards, Default Organization".
+    sender_name = (organization.brand_name or organization.name) if organization else "your signage partner"
     noun = "invoice" if is_invoice else "playback report"
 
     try:

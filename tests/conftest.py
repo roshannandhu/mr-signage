@@ -81,6 +81,8 @@ ISOLATED_SCRIPTS = {
     "test_public_plans.py",
     # A custom request's company/contact fields validate, round-trip, and stay optional.
     "test_custom_request_contact.py",
+    # An emailed invoice signs off as the tenant's brand, not the raw organisation name.
+    "test_invoice_brand_signoff.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -303,6 +305,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_admin_billing.py",
     "test_public_plans.py",
     "test_custom_request_contact.py",
+    "test_invoice_brand_signoff.py",
 }
 
 
