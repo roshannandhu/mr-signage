@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
@@ -54,6 +55,9 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     const denied = params.get('error')
+    // Google echoes this back unchanged from the request /signup made -- see that page's
+    // STATE_PREFIX. Read before the history rewrite below erases the query string.
+    const state = params.get('state') || ''
     if (denied) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- reads window + rewrites history; see above
       setError('Google authentication was cancelled.')
@@ -69,7 +73,16 @@ export default function LoginPage() {
       .loginWithGoogle(code, redirectUri)
       .then((session) => {
         setSession(session.access_token, session.user)
-        router.replace(destinationFor(session.user))
+        const destination = destinationFor(session.user)
+        // A plan chosen on /signup only means anything for a freshly created (or still
+        // unapproved) workspace -- an existing active account signing in through the same
+        // button lands on its real dashboard, where the leftover state is simply irrelevant.
+        const signupPlan = state.startsWith('signup_plan:') ? state.slice('signup_plan:'.length) : null
+        router.replace(
+          signupPlan && destination === '/dashboard/pending'
+            ? `/dashboard/pending?plan=${encodeURIComponent(signupPlan)}`
+            : destination,
+        )
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : 'Google authentication failed'))
       .finally(() => setPending(false))
@@ -333,6 +346,13 @@ export default function LoginPage() {
                 </span>
               )}
             </Button>
+
+            <p className="text-center text-sm text-muted-foreground">
+              New here?{' '}
+              <Link href="/signup" className="font-medium text-emerald-400 hover:underline">
+                Create account
+              </Link>
+            </p>
           </form>
         </div>
       </section>

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import { rupees } from '@/lib/format'
+import { loadRazorpay } from '@/lib/razorpay'
 import type { CustomPlanRequestItem, PurchaseResponse } from '@/lib/types'
 
 const GIB = 1024 ** 3
@@ -28,20 +29,6 @@ const FEATURES: { key: string; label: string }[] = [
 
 const CUSTOM_BLANK = { screens: '20', clients: '20', storage: '50', days: '30', notes: '' }
 
-type RazorpayCtor = new (options: Record<string, unknown>) => { open: () => void }
-
-function loadRazorpay(): Promise<RazorpayCtor> {
-  const w = window as unknown as { Razorpay?: RazorpayCtor }
-  if (w.Razorpay) return Promise.resolve(w.Razorpay)
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js'
-    script.onload = () => (w.Razorpay ? resolve(w.Razorpay) : reject(new Error('Razorpay failed to load')))
-    script.onerror = () => reject(new Error('Razorpay failed to load'))
-    document.body.appendChild(script)
-  })
-}
-
 /**
  * The storefront a new workspace lands on. It is blocked from the dashboard until it pays --
  * paying is what flips the org to `active` (backend billing.purchase / webhook). The page
@@ -57,6 +44,7 @@ export default function ActivateWorkspacePage() {
   const [showCustom, setShowCustom] = useState(false)
   const [custom, setCustom] = useState({ ...CUSTOM_BLANK })
   const [customFeatures, setCustomFeatures] = useState<Record<string, boolean>>({})
+  const [highlightPlanId, setHighlightPlanId] = useState<number | null>(null)
   const isOwner = user?.role === 'owner'
 
   const plansQuery = useQuery({ queryKey: ['storefront-plans'], queryFn: api.getPlans })
@@ -128,6 +116,36 @@ export default function ActivateWorkspacePage() {
       setBusyKey(null)
     }
   }
+
+  // A plan chosen on /signup before any account existed, carried here through Google's OAuth
+  // state and /login (see that page's "signup_plan:" prefix). Runs once the real plan list has
+  // loaded, so an id that does not exist on THIS deployment is silently ignored rather than
+  // matched against nothing. The query param is stripped immediately either way, so refreshing
+  // or revisiting this page never re-fires it.
+  useEffect(() => {
+    if (plansQuery.isLoading) return
+    const params = new URLSearchParams(window.location.search)
+    const intent = params.get('plan')
+    if (!intent) return
+    window.history.replaceState({}, '', window.location.pathname)
+    if (intent === 'custom') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads window.location + rewrites history, same as /login's callback handler
+      setShowCustom(true)
+      return
+    }
+    const plan = (plansQuery.data ?? []).find((p) => String(p.id) === intent)
+    if (!plan) return
+    if (plan.price_paise <= 0) {
+      // Free is meant to start straight away -- no second click to confirm what signup
+      // already asked for.
+      void runPurchase(`plan-${plan.id}`, plan.name, () => api.purchasePlan(plan.id))
+    } else {
+      // A paid plan is not charged without an explicit click here; just point at it.
+      setHighlightPlanId(plan.id)
+      document.getElementById(`plan-card-${plan.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once the plan list settles, not on every render of runPurchase
+  }, [plansQuery.isLoading, plansQuery.data])
 
   const submitCustom = async () => {
     if (!isOwner) return
@@ -232,7 +250,13 @@ export default function ActivateWorkspacePage() {
               const features = Object.entries(plan.feature_flags).filter(([, on]) => on).map(([f]) => f)
               const free = plan.price_paise <= 0
               return (
-                <div key={plan.id} className="flex flex-col rounded-3xl border border-border bg-card p-6 shadow-xl backdrop-blur-xl">
+                <div
+                  key={plan.id}
+                  id={`plan-card-${plan.id}`}
+                  className={`flex flex-col rounded-3xl border bg-card p-6 shadow-xl backdrop-blur-xl transition-all ${
+                    highlightPlanId === plan.id ? 'border-emerald-500 ring-2 ring-emerald-500/40' : 'border-border'
+                  }`}
+                >
                   <h3 className="text-lg font-semibold">{plan.name}</h3>
                   <p className="mt-3 text-3xl font-bold">
                     {free ? 'Free' : rupees(plan.price_paise)}

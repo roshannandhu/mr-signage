@@ -7,8 +7,9 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func
 
-from .. import models, schemas
+from .. import database, models, schemas
 from ..billing import apply_plan, paid_window, plan_features
+from ..limiter import limiter
 from ..payments import get_payment_provider
 from ..tenancy import TenantScope, get_billing_scope, get_tenant_scope
 
@@ -27,6 +28,7 @@ def serialize_plan(plan: models.Plan) -> schemas.PlanResponse:
         duration_days=plan.duration_days,
         max_screens=plan.max_screens,
         max_clients=plan.max_clients,
+        max_ad_slots=plan.max_ad_slots,
         max_storage_bytes=plan.max_storage_bytes,
         feature_flags=plan_features(plan),
     )
@@ -45,6 +47,26 @@ def platform_contact_email(scope: TenantScope = Depends(get_billing_scope)):
         models.SystemSetting.key == "platform_contact_email"
     ).first()
     return {"email": setting.value if setting else None}
+
+
+@router.get("/public-plans", response_model=list[schemas.PlanResponse])
+@limiter.limit("60/minute")
+def list_public_plans(request: Request, db=Depends(database.get_db)):
+    """The storefront, for someone who has not signed in yet (the /signup page).
+
+    Same query and serializer as /plans, which already returns nothing but name, prices,
+    limits and features -- no internal id beyond the plan's own (needed to carry a choice
+    through `?plan=`), no owner data, no inactive or hidden rows. A custom request's minted
+    plan is seeded `is_active=False` (routers/billing.py's activate_custom_request), so it
+    is excluded here the same way it already is everywhere else.
+    """
+    return [
+        serialize_plan(plan)
+        for plan in db.query(models.Plan)
+        .filter(models.Plan.is_active.is_(True))
+        .order_by(models.Plan.price_paise)
+        .all()
+    ]
 
 
 @router.get("/plans", response_model=list[schemas.PlanResponse])

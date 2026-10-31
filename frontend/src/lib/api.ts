@@ -129,8 +129,10 @@ export const api = {
       return { google: true, password: true }
     }
   },
-  googleAuthUrl: async (redirectUri: string) => {
-    const response = await fetch(`${API_BASE}/auth/google/url?redirect_uri=${encodeURIComponent(redirectUri)}`)
+  googleAuthUrl: async (redirectUri: string, state?: string) => {
+    const params = new URLSearchParams({ redirect_uri: redirectUri })
+    if (state) params.set('state', state)
+    const response = await fetch(`${API_BASE}/auth/google/url?${params.toString()}`)
     if (!response.ok) return { url: null }
     return response.json() as Promise<{ url: string | null }>
   },
@@ -599,6 +601,12 @@ export const api = {
 
   getBillingSummary: () => fetchWithAuth<BillingSummary>('/billing/summary'),
   getPlans: () => fetchWithAuth<Plan[]>('/billing/plans'),
+  // No session yet -- the /signup storefront, before any account exists.
+  getPublicPlans: async () => {
+    const response = await fetch(`${API_BASE}/billing/public-plans`)
+    if (!response.ok) throw new ApiError('Could not load plans', response.status)
+    return response.json() as Promise<Plan[]>
+  },
   createCheckout: (planId: number, billingPeriod: 'monthly' | 'yearly') => fetchWithAuth<CheckoutSession>('/billing/checkout', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan_id: planId, billing_period: billingPeriod }),
   }),

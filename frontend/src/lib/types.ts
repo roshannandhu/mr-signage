@@ -209,6 +209,8 @@ export interface Plan {
   // null = no screen limit; 0 = a package granting none. See Package above.
   max_screens: number | null
   max_clients: number
+  // 0 = unlimited, same convention as max_clients.
+  max_ad_slots: number
   max_storage_bytes: number
   feature_flags: Record<string, boolean>
 }

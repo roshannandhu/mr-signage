@@ -860,6 +860,9 @@ class PlanResponse(BaseModel):
     # this made /api/billing/summary and /plans answer 500 for any tenant on an unlimited plan.
     max_screens: Optional[int] = None
     max_clients: int = 0
+    # Same convention as max_clients: 0 is a real package granting no ad slots, matching
+    # Plan.max_ad_slots's own column.
+    max_ad_slots: int = 0
     max_storage_bytes: int
     feature_flags: dict[str, bool] = Field(default_factory=dict)
 

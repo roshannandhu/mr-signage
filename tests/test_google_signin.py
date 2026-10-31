@@ -325,6 +325,17 @@ def run() -> None:
     assert codes[:20] == [200] * 20, "a twenty-screen install was rate limited"
     assert 429 in codes, "the per-IP cap never engages"
 
+    # --- the web sign-in URL carries an opaque state through, unchanged ------------------
+    # /signup threads a chosen plan through here (as "signup_plan:<id>") so it survives the
+    # round trip to Google and back; this is the one place that could silently drop it.
+    url_resp = client.get("/api/auth/google/url", params={
+        "redirect_uri": "http://localhost:3000/login", "state": "signup_plan:7",
+    })
+    assert url_resp.status_code == 200, url_resp.text
+    assert "state=signup_plan" in url_resp.json()["url"], url_resp.json()
+    no_state = client.get("/api/auth/google/url", params={"redirect_uri": "http://localhost:3000/login"})
+    assert "state=" not in no_state.json()["url"], "no state should mean no state param at all"
+
     # --- switched off is a supported state, not a broken one ---------------------------
     # The player reads 503 as "hide the button" rather than presenting one that fails.
     previous = os.environ.pop("GOOGLE_OAUTH_CLIENT_ID")
