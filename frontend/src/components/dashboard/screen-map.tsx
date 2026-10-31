@@ -27,6 +27,40 @@ export type MapPoint = {
 }
 
 /**
+ * The popup shown when a pin is clicked, as DOM nodes rather than an HTML string.
+ *
+ * A screen's name, location and detail line are typed by tenants. Concatenated into markup, a
+ * screen named `<img src=x onerror=...>` ran script in whoever clicked its pin -- including a
+ * platform operator inside that tenant's workspace. `textContent` makes them plain text, and
+ * both Leaflet and Google accept an element as popup content.
+ */
+function buildPopup(point: MapPoint, colour: string, textColour?: string): HTMLElement {
+  const root = document.createElement('div')
+  root.style.cssText = 'font:500 13px system-ui;min-width:150px' + (textColour ? ';color:' + textColour : '')
+
+  const line = (text: string, css: string) => {
+    const element = document.createElement('div')
+    element.style.cssText = css
+    element.textContent = text
+    root.appendChild(element)
+    return element
+  }
+  line(point.name, 'font-weight:600')
+  if (point.location) line(point.location, 'opacity:.7')
+  if (point.detail) line(point.detail, 'margin-top:3px')
+  line(point.online ? 'Online' : 'Offline', 'margin-top:3px').style.color = colour
+
+  const link = document.createElement('a')
+  link.href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(point.latitude + ',' + point.longitude)
+  link.target = '_blank'
+  link.rel = 'noreferrer'
+  link.style.cssText = 'display:inline-block;margin-top:5px'
+  link.textContent = 'Open in Google Maps'
+  root.appendChild(link)
+  return root
+}
+
+/**
  * Several places on one map, drawn with Leaflet over Carto's keyless basemap.
  *
  * Handles one pin as happily as fifty. A single place used to render Google's keyless
@@ -96,24 +130,7 @@ function LeafletMap({ points, height }: { points: MapPoint[]; height: number }) 
           }),
         }).addTo(created)
 
-        const coords = point.latitude + ',' + point.longitude
-        marker.bindPopup(
-          '<div style="font:500 13px system-ui;min-width:150px">' +
-            '<div style="font-weight:600">' +
-            point.name +
-            '</div>' +
-            (point.location ? '<div style="opacity:.7">' + point.location + '</div>' : '') +
-            (point.detail ? '<div style="margin-top:3px">' + point.detail + '</div>' : '') +
-            '<div style="margin-top:3px;color:' +
-            colour +
-            '">' +
-            (point.online ? 'Online' : 'Offline') +
-            '</div>' +
-            '<a href="https://www.google.com/maps/search/?api=1&query=' +
-            encodeURIComponent(coords) +
-            '" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:5px">Open in Google Maps</a>' +
-            '</div>',
-        )
+        marker.bindPopup(buildPopup(point, colour))
         bounds.push([point.latitude, point.longitude])
       }
 
@@ -278,20 +295,8 @@ function GoogleMap({ points, height }: { points: MapPoint[]; height: number }) {
           strokeWeight: 3,
         },
       })
-      const coords = point.latitude + ',' + point.longitude
       marker.addListener('click', () => {
-        info.setContent(
-          '<div style="font:500 13px system-ui;min-width:150px;color:#0f172a">' +
-            '<div style="font-weight:600">' + point.name + '</div>' +
-            (point.location ? '<div style="opacity:.7">' + point.location + '</div>' : '') +
-            (point.detail ? '<div style="margin-top:3px">' + point.detail + '</div>' : '') +
-            '<div style="margin-top:3px;color:' + colour + '">' +
-            (point.online ? 'Online' : 'Offline') + '</div>' +
-            '<a href="https://www.google.com/maps/search/?api=1&query=' +
-            encodeURIComponent(coords) +
-            '" target="_blank" rel="noreferrer" style="display:inline-block;margin-top:5px">Open in Google Maps</a>' +
-            '</div>',
-        )
+        info.setContent(buildPopup(point, colour, '#0f172a'))
         info.open({ map: created, anchor: marker })
       })
       bounds.extend(position)
