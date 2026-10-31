@@ -117,7 +117,6 @@ ISOLATED_SCRIPTS = {
     "test_all_five_areas_e2e.py",
     # Removing a TV: play history survives, the panel is signed out, quota is freed.
     "test_screen_removal.py",
-    "test_sequence_migration.py",
     # The screen cap: package limits, admin overrides, and the /enroll bypass.
     "test_screen_quota.py",
     # One booking, different run lengths per location.
@@ -261,11 +260,33 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_storage_attribution.py",
     "test_media_deletion.py",
     "test_tenant_purge.py",
+    # Each of these builds its own SQLite file. Without a server they were skipped and reported
+    # green while proving nothing -- test_bring_to_front, test_ad_counting_detail and
+    # test_play_log_aggregation cover offline counting and remote commands.
+    "test_bring_to_front.py",
+    "test_ad_counting_detail.py",
+    "test_play_log_aggregation.py",
+    "test_device_token_type.py",
+    "test_register_takeover.py",
+    "test_cross_tenant_binding.py",
+    "test_client_ad_contact_safety.py",
+    "test_booking_deletion_guards.py",
+    "test_ws_unauthenticated.py",
+    "test_legacy_auth_count.py",
+    "test_token_binding.py",
+    "test_upload_hardening.py",
+    "test_emergency_sync.py",
+    "test_plan_limits.py",
+    "test_plan_renewal_rules.py",
+    "test_media_supervisor_claim.py",
 }
 
 
 def pytest_collect_file(parent, file_path):
-    if file_path.name in ISOLATED_SCRIPTS:
+    # TESTS_SKIP_ISOLATED=1 leaves the isolated scripts to tests/run_isolated.py, which runs
+    # each in its own process. CI runs the pure modules through pytest and the scripts through
+    # that runner, so neither is run twice.
+    if file_path.name in ISOLATED_SCRIPTS and not os.environ.get("TESTS_SKIP_ISOLATED"):
         return ScriptFile.from_parent(parent, path=file_path)
     return None
 
@@ -298,6 +319,14 @@ class ScriptFile(pytest.File):
 class ScriptItem(pytest.Item):
     def runtest(self):
         if self.path.name in NEEDS_POSTGRES and not _postgres_reachable():
+            if os.environ.get("CI"):
+                # A skip exits 0, so a CI job that lost its database would go green having run
+                # none of these. There the absence is the bug.
+                pytest.fail(
+                    f"{self.path.name} needs PostgreSQL on localhost:5432 and CI provides one; "
+                    "the service container did not come up",
+                    pytrace=False,
+                )
             pytest.skip(
                 "PostgreSQL is not reachable on localhost:5432; this script creates its "
                 "own throwaway database and cannot run without a server"

@@ -38,6 +38,67 @@ jobs:
       - name: App imports cleanly
         run: python -c "import backend.main; print('backend imports OK')"
 
+  backend-tests:
+    name: Backend - migrations from scratch + test suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # With CI set, a test that needs PostgreSQL FAILS if it is missing instead of skipping
+      # (a skip exits 0, so a job that lost its database would otherwise go green having run
+      # none of them). See tests/conftest.py.
+      CI: "1"
+      # Throwaway values: nothing here connects to anything real. The tests refuse to bind to a
+      # database that is not on localhost (backend/database.py), so a mistake here cannot reach
+      # production either.
+      SECRET_KEY: "ci-not-a-real-secret"
+      AWS_ACCESS_KEY_ID: "mock"
+      AWS_SECRET_ACCESS_KEY: "mock"
+      REDIS_URL: "redis://localhost:6379"
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install backend deps
+        run: pip install -r backend/requirements-dev.txt
+      - name: Install ffmpeg (the media pipeline tests transcode a real clip)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Create the role the test scripts hand their databases to
+        run: psql -h localhost -U postgres -c "CREATE ROLE olrac LOGIN PASSWORD 'olrac_password' CREATEDB"
+      - name: Build a fresh database from the whole migration chain
+        # Proves `alembic upgrade head` works from nothing, which a deployment built through the
+        # chain depends on, and which no other check here exercises.
+        run: |
+          psql -h localhost -U postgres -c "CREATE DATABASE ci_migrate OWNER olrac"
+          DATABASE_URL=postgresql://olrac:olrac_password@localhost:5432/ci_migrate             python -m alembic -c backend/alembic.ini upgrade head
+      - name: Pure test modules (one process)
+        env:
+          TESTS_SKIP_ISOLATED: "1"
+        run: python -m pytest -q -p no:cacheprovider
+      - name: Isolated test scripts (one process each)
+        run: python tests/run_isolated.py
+
   frontend:
     name: Frontend — types + module boundaries + build
     runs-on: ubuntu-latest

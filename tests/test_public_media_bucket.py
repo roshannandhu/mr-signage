@@ -14,15 +14,40 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 os.environ.setdefault("SECRET_KEY", "pytest-public-bucket")
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# setdefault, not assignment: pytest's conftest has already pointed this process at an in-memory
+# database, and overwriting it here at import time changed the engine other in-process modules
+# (test_media_worker) were collected against.
+os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+
+import pytest  # noqa: E402
 
 from backend import media_urls  # noqa: E402
 
-# Blanked AFTER the import, not before: media_urls loads backend/.env at import time, so a
-# developer machine with real credentials in that file would otherwise put them straight
-# back and this suite would assert nothing. `_setting` treats blank as unset.
-for _name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-    os.environ[_name] = ""
+
+def _blank_credentials() -> None:
+    # Blanked AFTER the import, not before: media_urls loads backend/.env at import time, so a
+    # developer machine with real credentials in that file would otherwise put them straight
+    # back and this suite would assert nothing. `_setting` treats blank as unset.
+    for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+        os.environ[name] = ""
+
+
+@pytest.fixture(autouse=True)
+def _contained_environment():
+    """Blank the credentials for one test and put the environment back afterwards.
+
+    This used to blank them (and set R2_PUBLIC_BASE_URL) at import time and never restore them.
+    Every other in-process module is collected before any test runs, so they all inherited the
+    blanks -- which is why this file could not be listed in pytest.ini without breaking
+    test_media_worker.
+    """
+    saved = dict(os.environ)
+    _blank_credentials()
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 def _serve(key: str, range_header: str | None = None):
@@ -106,6 +131,7 @@ def test_database_mirror_is_absent_without_the_table():
 
 
 if __name__ == "__main__":
+    _blank_credentials()
     test_range_parsing()
     test_database_mirror_is_absent_without_the_table()
     test_public_base_is_a_location_not_a_secret()
