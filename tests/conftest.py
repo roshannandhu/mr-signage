@@ -58,6 +58,8 @@ ISOLATED_SCRIPTS = {
     "test_device_token_type.py",
     # A device id alone must not take over a claimed screen via /register.
     "test_register_takeover.py",
+    # Signing a TV in cannot delete or take over another workspace's screen; /pair is limited.
+    "test_cross_tenant_binding.py",
     "test_media_selection.py",
     # These six were written, committed, and then never run: they were absent from this
     # set and from python_files in pytest.ini, so pytest collected neither. The suite

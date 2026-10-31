@@ -378,7 +378,12 @@ def ensure_screen_quota(db: Session, organization_id: int, action: str) -> None:
 
 
 @router.post("/pair", response_model=schemas.ScreenResponse)
+# A code is six digits and any signed-in owner or editor may try one against every unclaimed
+# TV, so guessing has to cost something. Generous enough for a site pairing a few dozen TVs
+# in one sitting (a code lives five minutes), tight enough that guessing one is hopeless.
+@limiter.limit("30/minute")
 async def pair_screen(
+    request: Request,
     req: schemas.PairRequest,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
 ):
@@ -552,15 +557,33 @@ def bind_screen_to_org(
     if not screen:
         screen = db.query(models.Screen).filter(models.Screen.device_id == device_id, models.Screen.deleted_at.is_(None)).first()
 
-    # If an existing screen with installation_id was found, clean up any transient placeholder holding device_id
+    # If an existing screen with installation_id was found, the hardware has come back under
+    # a new device id. The only thing that may be in the way is the unclaimed placeholder
+    # /register made for that new id; it is removed so the real screen can take the id.
+    #
+    # This used to delete whichever row held the id, whoever owned it, before the tenant
+    # check below -- so signing in with your own screen's installation id and another
+    # workspace's device id deleted THEIR screen. A claimed row is never removed here.
     if screen and screen.device_id != device_id:
-        temp_screen = db.query(models.Screen).filter(
+        holder = db.query(models.Screen).filter(
             models.Screen.device_id == device_id,
             models.Screen.id != screen.id
         ).first()
-        if temp_screen:
-            db.delete(temp_screen)
-            db.flush()
+        if holder is not None:
+            if holder.organization_id is None and holder.status == "waiting_pairing":
+                db.delete(holder)
+                db.flush()
+            elif holder.organization_id != user.organization_id:
+                logger.warning(
+                    "Rejected cross-tenant claim for device %s: its row belongs to org %s, user belongs to org %s",
+                    device_id, holder.organization_id, user.organization_id,
+                )
+                raise conflict_error
+            else:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Another screen in this workspace already uses this device. Remove that screen first.",
+                )
 
     if screen and screen.organization_id not in (None, user.organization_id):
         logger.warning(

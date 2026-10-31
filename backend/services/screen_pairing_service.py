@@ -1,7 +1,7 @@
 """Screen Hardware Pairing and Enrollment Application Service."""
 
 import logging
-import random
+import secrets
 import string
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 def generate_pair_code() -> str:
-    """Generate a 6-digit numeric pairing code for screen display."""
-    return "".join(random.choices(string.digits, k=6))
+    """Generate a 6-digit numeric pairing code for screen display.
+
+    From `secrets`, not `random`: the Mersenne Twister is predictable from its past output,
+    and these codes are the only thing standing between a signed-in tenant and an unclaimed
+    TV that is not theirs.
+    """
+    return "".join(secrets.choice(string.digits) for _ in range(6))
 
 
 def as_aware_utc(value: datetime) -> datetime:
