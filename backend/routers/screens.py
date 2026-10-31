@@ -796,7 +796,7 @@ def google_device_poll(
         if already_bound:
             return schemas.GoogleDevicePollResponse(
                 status="bound",
-                screen=schemas.ScreenResponse.model_validate(already_bound),
+                screen=schemas.PairedScreenPublic(name=already_bound.name, status=already_bound.status),
             )
         return schemas.GoogleDevicePollResponse(status=result["status"])
 
@@ -832,8 +832,11 @@ def google_device_poll(
         ),
         how="signed in with Google",
     )
-    bound = schemas.ScreenResponse.model_validate(screen)
-    bound.device_secret = getattr(screen, "issued_device_secret", None)
+    bound = schemas.PairedScreenPublic(
+        name=screen.name,
+        status=screen.status,
+        device_secret=getattr(screen, "issued_device_secret", None),
+    )
     return schemas.GoogleDevicePollResponse(status="bound", screen=bound)
 
 

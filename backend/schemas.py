@@ -188,6 +188,20 @@ class GoogleDevicePollRequest(BaseModel):
     poll_token: str
 
 
+class PairedScreenPublic(BaseModel):
+    """What a TV that just signed in with Google is told about its own screen.
+
+    /google/poll is reachable with nothing but a poll token, which /google/start hands to
+    anyone, so it must not return the full screen record: that carries the maintenance PIN,
+    the hardware identity and the tenant's description, location and tags. The player reads
+    the name and the one-time device secret and takes everything else from /sync.
+    """
+
+    name: Optional[str] = None
+    status: str
+    device_secret: Optional[str] = None
+
+
 class GoogleDevicePollResponse(BaseModel):
     """Where the approval has got to.
 
@@ -197,7 +211,7 @@ class GoogleDevicePollResponse(BaseModel):
     """
 
     status: Literal["pending", "slow_down", "denied", "expired", "bound"]
-    screen: Optional["ScreenResponse"] = None
+    screen: Optional[PairedScreenPublic] = None
     detail: Optional[str] = None
 
 

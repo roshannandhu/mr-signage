@@ -180,6 +180,10 @@ def run() -> None:
     body = response.json()
     assert body["status"] == "bound"
     assert body["screen"]["name"] == "Lobby TV"
+    # The player is told its name and its one-time secret, nothing else: not the maintenance
+    # PIN, the hardware identity or the tenant's notes. It reads those from /sync once paired.
+    assert set(body["screen"]) == {"name", "status", "device_secret"}, body["screen"]
+    assert body["screen"]["device_secret"], "the first bind must hand over the device secret"
 
     db = TestingSessionLocal()
     bound = db.query(Screen).filter(Screen.device_id == "tv-1").one()
@@ -250,7 +254,8 @@ def run() -> None:
     # free to refuse ("App deeplink blocked"). The poll the player is already running has
     # to notice the binding by itself.
     db = TestingSessionLocal()
-    db.add(Screen(device_id="tv-web", organization_id=acme_id, name="Foyer", status="online"))
+    db.add(Screen(device_id="tv-web", organization_id=acme_id, name="Foyer", status="online",
+                  maintenance_pin="4321", installation_id="hw-secret-serial"))
     db.commit()
     db.close()
 
@@ -259,6 +264,11 @@ def run() -> None:
     assert web.status_code == 200, web.text
     assert web.json()["status"] == "bound", web.json()
     assert web.json()["screen"]["name"] == "Foyer", web.json()
+    # This branch needs no Google identity at all -- only a poll token, which /google/start
+    # gives to anyone -- so it must tell the caller nothing about the screen beyond its name.
+    assert set(web.json()["screen"]) == {"name", "status", "device_secret"}, web.json()
+    assert "4321" not in web.text and "hw-secret-serial" not in web.text, web.text
+    assert web.json()["screen"]["device_secret"] is None
 
     # ...and a panel that genuinely is not bound still waits. Reporting every device as
     # bound would send each new TV straight to a player with no playlist.
