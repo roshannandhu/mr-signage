@@ -99,9 +99,18 @@ export default function FileManagementPage() {
     onError: (error: Error) => toast.error(error.message),
   })
 
-  if (contentQuery.isError) {
-    return <ErrorState message="File management could not be loaded." onRetry={() => contentQuery.refetch()} />
+  // Usage is what separates "safe to delete" from "playing on a screen right now". If the
+  // playlists failed to load, every file would read "Unused" and a bulk delete would pull live
+  // adverts off screens, so the page does not render rather than guess.
+  if (contentQuery.isError || playlistsQuery.isError) {
+    return (
+      <ErrorState
+        message="File management could not be loaded."
+        onRetry={() => { contentQuery.refetch(); playlistsQuery.refetch() }}
+      />
+    )
   }
+  const usageKnown = playlistsQuery.isSuccess
 
   const inUseSelected = selected.filter((id) => usage.get(id)).length
 
@@ -133,7 +142,7 @@ export default function FileManagementPage() {
           {inUseSelected > 0 && <Badge variant="warning">{inUseSelected} still scheduled</Badge>}
           <div className="ml-auto flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setSelected([])}>Clear</Button>
-            <Button variant="destructive" size="sm" onClick={() => setConfirmOpen(true)}>
+            <Button variant="destructive" size="sm" disabled={!usageKnown} onClick={() => setConfirmOpen(true)}>
               <Trash2 data-icon="inline-start" /> Delete selected
             </Button>
           </div>
@@ -172,9 +181,11 @@ export default function FileManagementPage() {
                     <span className="capitalize">{item.type}</span> · added {relativeTime(item.uploaded_at)}
                   </p>
                 </div>
-                {uses > 0
-                  ? <Badge variant="secondary">In {uses} playlist{uses === 1 ? '' : 's'}</Badge>
-                  : <Badge variant="outline">Unused</Badge>}
+                {!usageKnown
+                  ? <Badge variant="outline">Checking…</Badge>
+                  : uses > 0
+                    ? <Badge variant="secondary">In {uses} playlist{uses === 1 ? '' : 's'}</Badge>
+                    : <Badge variant="outline">Unused</Badge>}
                 <span className="text-foreground w-20 shrink-0 text-right font-mono text-sm tabular-nums">
                   {formatBytes(item.file_size_bytes)}
                 </span>

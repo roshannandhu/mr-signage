@@ -109,6 +109,8 @@ ISOLATED_SCRIPTS = {
     "test_client_ad_editor.py",
     # Re-pointing an advert at another client must not overwrite that client's contact details.
     "test_client_ad_contact_safety.py",
+    # Live and paid bookings survive deletion; reviving a finished one respects the slot limit.
+    "test_booking_deletion_guards.py",
     # A paid window that closes, and closes all the way to the television.
     "test_subscription_expiry.py",
     # The operator setting a paid window, and granting limits of their own.

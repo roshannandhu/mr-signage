@@ -494,6 +494,7 @@ def update_content_client_ad(
         _unplace,
         ensure_ad_slot_quota,
         ensure_plan_locations,
+        reactivates,
         refresh_paid_state,
         sync_placement_window,
     )
@@ -562,7 +563,14 @@ def update_content_client_ad(
         # of campaign and not 45 days from today. starts_at is the date it was SOLD on and
         # is left alone.
         if payload.duration_days is not None:
-            placement.ends_at = placement.starts_at + timedelta(days=payload.duration_days)
+            new_ends_at = placement.starts_at + timedelta(days=payload.duration_days)
+            # A finished booking given a future end date is running again and takes a slot.
+            # Only new bookings were checked against the ad-slot limit, so this was a way
+            # round it. Asked before the date is written: the count would otherwise include
+            # this booking, already moved into the future.
+            if reactivates(placement, new_ends_at):
+                ensure_ad_slot_quota(scope)
+            placement.ends_at = new_ends_at
         if payload.notes is not None:
             placement.notes = notes
 
@@ -655,6 +663,12 @@ def delete_content(
     content = scope.get(models.Content, content_id)
     if not content:
         raise HTTPException(status_code=404, detail="Content not found")
+
+    from .placements import content_deletion_blocker
+
+    blocker = content_deletion_blocker(content)
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
 
     playlist_items = list(content.playlist_items)
     affected_playlists = {item.playlist for item in playlist_items}

@@ -9,7 +9,7 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
@@ -374,6 +374,51 @@ def ensure_ad_slot_quota(scope: TenantScope) -> None:
         )
 
 
+def reactivates(placement: models.AdPlacement, new_ends_at) -> bool:
+    """Whether setting this end date would bring a FINISHED booking back to life.
+
+    A finished booking no longer holds an ad slot, so reviving it takes one and has to pass
+    the same limit a new booking does. Editing the end date was a way round that limit.
+    """
+    if new_ends_at is None:
+        return False
+    now = models.utcnow()
+    if new_ends_at.tzinfo is None:
+        new_ends_at = new_ends_at.replace(tzinfo=timezone.utc)
+    return placement.effective_ends_at <= now and new_ends_at > now
+
+
+def deletion_blocker(placement: models.AdPlacement) -> str | None:
+    """Why deleting this booking would destroy something that has to be kept, or None.
+
+    Deleting a booking deletes its payment receipts with it (cascade), and a receipt is the
+    only record that money changed hands. Mistaken entries can still be removed -- one at a
+    time, deliberately -- from the booking's payments.
+    """
+    count = len(placement.payments)
+    if count:
+        return (
+            f"This booking has {count} recorded payment{'s' if count != 1 else ''}. "
+            "Payments are financial records: remove them first if they were entered by mistake."
+        )
+    return None
+
+
+def content_deletion_blocker(content: models.Content) -> str | None:
+    """Why deleting this advert would take bookings or payments with it, or None."""
+    now = models.utcnow()
+    for placement in content.ad_placements:
+        reason = deletion_blocker(placement)
+        if reason:
+            return reason
+        if placement.effective_ends_at > now:
+            return (
+                f"This advert is booked to {placement.advertiser or 'a client'} until "
+                f"{placement.effective_ends_at.date().isoformat()}. End or delete that booking first."
+            )
+    return None
+
+
 def relocate_content_to_client(scope: TenantScope, content_id: int, client: models.Client | None) -> None:
     """When an ad is assigned to a client, move its master file, thumbnail, and renditions
     into the client's ads folder if they are not already there.
@@ -518,9 +563,6 @@ def create_placement(
     client = resolve_client(scope, payload.client_id)
     plan = resolve_tenant_plan(scope, payload.plan_id)
 
-    if client:
-        relocate_content_to_client(scope, payload.content_id, client)
-
     # The client record is the name of record; `advertiser` follows it. A booking may still
     # be made on a bare name -- schemas.PlacementCreate requires one or the other.
     advertiser = client.name if client else (payload.advertiser or "").strip()
@@ -563,6 +605,12 @@ def create_placement(
     for ref in payload.targets:
         _place(scope, placement, ref, assigned_at=payload.starts_at)
 
+    # Last, once nothing can refuse the booking. This moves (or deletes) the stored files, and
+    # a rollback cannot bring them back: doing it before the plan-cap checks left the advert
+    # pointing at an object that was no longer there whenever one of them said no.
+    if client:
+        relocate_content_to_client(scope, payload.content_id, client)
+
     scope.db.commit()
     scope.db.refresh(placement)
     return _serialize(scope, placement)
@@ -579,6 +627,12 @@ def update_placement(
         raise HTTPException(status_code=404, detail="Booking not found")
 
     fields = payload.model_fields_set
+    # Before any field is written: the check counts running bookings, and a pending end date on
+    # this one would make it count itself.
+    if "ends_at" in fields and reactivates(placement, payload.ends_at):
+        ensure_ad_slot_quota(scope)
+
+    relocate_after = None
     # `is_paid` is deliberately not in this list any more. It is now the shadow of the
     # payment record, set only by POST/DELETE /payment, so the flag and the receipt cannot
     # tell different stories -- which they could when a blind PUT alongside a date edit
@@ -594,7 +648,7 @@ def update_placement(
         # longer attributed to.
         if client:
             placement.advertiser = client.name
-            relocate_content_to_client(scope, placement.content_id, client)
+            relocate_after = client
     if "plan_id" in fields:
         plan = resolve_tenant_plan(scope, payload.plan_id)
         # Against the screens the booking ALREADY reaches. Moving a six-screen booking onto
@@ -620,6 +674,10 @@ def update_placement(
     # earlier kept playing past the date it was moved to.
     if fields & {"starts_at", "ends_at"}:
         sync_placement_window(scope, placement)
+
+    # Last, for the same reason as in create_placement: every check above has passed.
+    if relocate_after:
+        relocate_content_to_client(scope, placement.content_id, relocate_after)
 
     scope.db.commit()
     scope.db.refresh(placement)
@@ -815,6 +873,9 @@ def delete_placement(
     placement = scope.get(models.AdPlacement, placement_id)
     if not placement:
         raise HTTPException(status_code=404, detail="Booking not found")
+    blocker = deletion_blocker(placement)
+    if blocker:
+        raise HTTPException(status_code=409, detail=blocker)
     for target in list(placement.targets):
         _unplace(scope, target)
     scope.db.delete(placement)

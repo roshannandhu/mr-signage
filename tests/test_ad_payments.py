@@ -315,15 +315,27 @@ try:
         assert call().status_code == 404, "another tenant reached this booking's payment"
     print("  ok  another tenant can neither record nor clear a payment on this booking")
 
-    # --- the payment dies with the booking -------------------------------------------------
+    # --- a booking with receipts cannot be deleted out from under them ---------------------
+    # A receipt is the only record that money changed hands. Deleting the booking used to take
+    # every receipt with it, silently. It now refuses until the payments are removed on purpose.
     http.post(f"/api/placements/{booking_id}/payments", headers=auth,
               json={"amount_paise": 2500000, "method": "cash"})
+    refused = http.delete(f"/api/placements/{booking_id}", headers=auth)
+    assert refused.status_code == 409, f"a booking with a payment on it was deletable ({refused.status_code})"
+    db.expire_all()
+    assert db.query(models.AdPayment).filter(models.AdPayment.placement_id == booking_id).count() > 0, (
+        "the refused delete removed the payment anyway"
+    )
+    print("  ok  a booking with payments on it cannot be deleted")
+
+    # Once the receipts are cleared deliberately the booking can go, and leaves nothing behind.
+    assert http.delete(f"/api/placements/{booking_id}/payments", headers=auth).status_code == 200
     assert http.delete(f"/api/placements/{booking_id}", headers=auth).status_code == 200
     db.expire_all()
     assert db.query(models.AdPayment).filter(models.AdPayment.placement_id == booking_id).count() == 0, (
-        "deleting a booking left its payment behind, pointing at nothing"
+        "deleting a booking left a payment behind, pointing at nothing"
     )
-    print("  ok  deleting a booking takes its payment records with it")
+    print("  ok  after the payments are cleared the booking deletes cleanly")
 
     print("ad payments: all checks passed")
 finally:
