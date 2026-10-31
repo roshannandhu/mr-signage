@@ -225,6 +225,22 @@ def _zero_is_unlimited(value: int) -> int:
     return 0 if value == UNLIMITED else value
 
 
+def _store_limits(fields: dict) -> dict:
+    """Translate the API's -1 = "unlimited" into the way each column stores it.
+
+    create_plan and update_plan wrote the request straight onto the row, so a package saved
+    with -1 screens held -1, and `screen_count >= -1` refused every TV on it; -1 storage was
+    copied onto each tenant as a quota of -1 bytes and refused every upload. Only the grant
+    route applied this mapping. One function now, used by all three.
+    """
+    if fields.get("max_screens") is not None:
+        fields["max_screens"] = _screen_limit(fields["max_screens"])
+    for name in ("max_clients", "max_storage_bytes", "max_ad_slots"):
+        if fields.get(name) is not None:
+            fields[name] = _zero_is_unlimited(fields[name])
+    return fields
+
+
 class GrantRequest(BaseModel):
     """Put one workspace on limits of your own, rather than on a published package.
 
@@ -816,7 +832,9 @@ def grant_custom_limits(
             duration_days=req.days or (source.duration_days if source else 30),
             # Seeded from whatever they are on now, so a grant that sets only one field
             # does not silently zero the rest.
-            max_screens=source.max_screens if source else 0,
+            # None, not 0, for a workspace on no package: that is "no limit" for screens, and 0
+            # is a real limit of zero. A grant that touched only clients used to zero them.
+            max_screens=source.max_screens if source else None,
             max_clients=source.max_clients if source else 0,
             max_ad_slots=source.max_ad_slots if source else 0,
             max_storage_bytes=source.max_storage_bytes if source else 0,
@@ -1091,7 +1109,7 @@ def create_plan(
     # feature_flags is a dict on the wire but a JSON string on the row. This is the fix for
     # the old create_plan, which hardcoded "{}" and made features un-settable at all.
     features = fields.pop("feature_flags")
-    plan = models.Plan(**fields, feature_flags_json=json.dumps(features, sort_keys=True))
+    plan = models.Plan(**_store_limits(fields), feature_flags_json=json.dumps(features, sort_keys=True))
     db.add(plan)
     db.commit()
     db.refresh(plan)
@@ -1119,7 +1137,7 @@ def update_plan(
     features = fields.pop("feature_flags", None)
     if features is not None:
         plan.feature_flags_json = json.dumps(features, sort_keys=True)
-    for field, value in fields.items():
+    for field, value in _store_limits(fields).items():
         setattr(plan, field, value)
     db.commit()
     db.refresh(plan)

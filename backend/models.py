@@ -152,8 +152,11 @@ class Organization(Base):
         if self.max_screens and self.max_screens > 0:
             return self.max_screens
         if self.plan is not None:
-            # Including 0: a package may legitimately grant no screens at all.
-            return self.plan.max_screens
+            # Including 0: a package may legitimately grant no screens at all. A negative value
+            # is the API's "unlimited" marker that an older save could leave on the row; it
+            # is read as no limit rather than as a cap every screen exceeds.
+            limit = self.plan.max_screens
+            return None if limit is not None and limit < 0 else limit
         return None
 
     @property

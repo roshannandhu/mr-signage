@@ -856,7 +856,9 @@ class PlanResponse(BaseModel):
     # One-time charge for `duration_days` of access — what the storefront sells on.
     price_paise: int = 0
     duration_days: int = 30
-    max_screens: int
+    # None = no screen limit (an "unlimited" package). 0 is a real limit of zero. Typed int,
+    # this made /api/billing/summary and /plans answer 500 for any tenant on an unlimited plan.
+    max_screens: Optional[int] = None
     max_clients: int = 0
     max_storage_bytes: int
     feature_flags: dict[str, bool] = Field(default_factory=dict)

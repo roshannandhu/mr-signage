@@ -58,6 +58,8 @@ ISOLATED_SCRIPTS = {
     "test_ws_unauthenticated.py",
     # Starting or cancelling an emergency broadcast reaches screens that had already settled.
     "test_emergency_sync.py",
+    # -1 means unlimited on every plan limit, and no unlimited tenant is refused.
+    "test_plan_limits.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
