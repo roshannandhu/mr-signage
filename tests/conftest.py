@@ -107,6 +107,8 @@ ISOLATED_SCRIPTS = {
     "test_playlist_resolution_parity.py",
     # The client-ad editor obeys the same booking rules as the placements routes.
     "test_client_ad_editor.py",
+    # Re-pointing an advert at another client must not overwrite that client's contact details.
+    "test_client_ad_contact_safety.py",
     # A paid window that closes, and closes all the way to the television.
     "test_subscription_expiry.py",
     # The operator setting a paid window, and granting limits of their own.

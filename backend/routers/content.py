@@ -424,10 +424,18 @@ def update_content_client_ad(
 
     # Find or create Client
     client_name = payload.client_name.strip()
+    # Exact, case-insensitive. This was `ilike(client_name)`, which treats % and _ as
+    # wildcards: a client named "%" matched whichever client sorted first.
     client = scope.db.query(models.Client).filter(
         models.Client.organization_id == scope.organization_id,
-        models.Client.name.ilike(client_name)
+        func.lower(models.Client.name) == client_name.lower(),
     ).first()
+    # Who this advert is booked to right now. Only that client's contact details are this
+    # editor's to change; see the else branch below.
+    current_client_id = scope.db.query(models.AdPlacement.client_id).filter(
+        models.AdPlacement.organization_id == scope.organization_id,
+        models.AdPlacement.content_id == content.id,
+    ).order_by(models.AdPlacement.id.desc()).limit(1).scalar()
 
     # `notes` is deliberately NOT written to the client on either branch. The field it
     # comes from is labelled "Campaign Notes / Reference" in the editor and belongs to this
@@ -456,11 +464,22 @@ def update_content_client_ad(
         )
         scope.db.add(client)
         scope.db.flush()
-    else:
+    elif client.id == current_client_id:
+        # Correcting the contact details of the client this advert is already booked to.
         if payload.client_email is not None:
             client.email = payload.client_email.strip() if payload.client_email else None
         if payload.client_phone is not None:
             client.phone = payload.client_phone.strip() if payload.client_phone else None
+    else:
+        # Re-pointing the advert at a DIFFERENT, existing client. The editor pre-fills the
+        # email and phone from the advert's previous client, so writing them here replaced
+        # this client's real contact details with someone else's -- and their reports then
+        # went to the wrong address. Fill a blank, never overwrite; the Clients page is where
+        # an existing client's details are edited.
+        if payload.client_email and not client.email:
+            client.email = payload.client_email.strip()
+        if payload.client_phone and not client.phone:
+            client.phone = payload.client_phone.strip()
 
     # Find existing placement or create new.
     #

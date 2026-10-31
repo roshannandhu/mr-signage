@@ -99,9 +99,23 @@ export function EditClientAdModal({ open, onOpenChange, contentItem }: EditClien
 
   const handleSelectClient = (c: Client) => {
     setClientName(c.name)
-    if (c.email) setClientEmail(c.email)
-    if (c.phone) setClientPhone(c.phone)
+    // Replaced outright, blanks included: keeping the previous client's phone when this one
+    // has none would send it on to be saved against the wrong client.
+    setClientEmail(c.email ?? '')
+    setClientPhone(c.phone ?? '')
     setShowClientSuggestions(false)
+  }
+
+  // The email and phone on screen belong to the client this advert is booked to. Naming a
+  // different client means they no longer apply, so they are cleared rather than quietly
+  // carried across to be saved against someone else.
+  const changeClientName = (next: string) => {
+    const sameClient = next.trim().toLowerCase() === (contentItem?.client_name || '').trim().toLowerCase()
+    setClientName(next)
+    if (!sameClient) {
+      setClientEmail('')
+      setClientPhone('')
+    }
   }
 
   if (!contentItem) return null
@@ -164,7 +178,7 @@ export function EditClientAdModal({ open, onOpenChange, contentItem }: EditClien
                     id="client-name"
                     value={clientName}
                     onChange={(e) => {
-                      setClientName(e.target.value)
+                      changeClientName(e.target.value)
                       setShowClientSuggestions(true)
                     }}
                     onFocus={() => setShowClientSuggestions(true)}
@@ -175,7 +189,7 @@ export function EditClientAdModal({ open, onOpenChange, contentItem }: EditClien
                     <button
                       type="button"
                       onClick={() => {
-                        setClientName('')
+                        changeClientName('')
                         setShowClientSuggestions(false)
                       }}
                       className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
