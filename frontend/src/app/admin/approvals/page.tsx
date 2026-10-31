@@ -115,7 +115,7 @@ export default function AdminApprovalsPage() {
                       <option value="">No package (unlimited)</option>
                       {packages.map((pkg) => (
                         <option key={pkg.id} value={pkg.id}>
-                          {pkg.name} — {pkg.max_screens || '∞'} screens, {formatBytes(pkg.max_storage_bytes)}
+                          {pkg.name} — {pkg.max_screens == null ? '∞' : pkg.max_screens} screens, {pkg.max_storage_bytes ? formatBytes(pkg.max_storage_bytes) : 'unlimited storage'}
                         </option>
                       ))}
                     </select>

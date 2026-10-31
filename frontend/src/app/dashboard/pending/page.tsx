@@ -129,7 +129,9 @@ export default function ActivateWorkspacePage() {
     setBusyKey('custom-submit')
     try {
       await api.submitCustomRequest({
-        max_screens: Number(custom.screens) || 0,
+        // At least one: a request for zero TVs is not a request, and the server would price a
+        // package with no screens.
+        max_screens: Math.max(1, Number(custom.screens) || 1),
         max_clients: Number(custom.clients) || 0,
         max_ad_slots: 0,
         max_storage_bytes: (Number(custom.storage) || 0) * GIB,
@@ -277,7 +279,7 @@ export default function ActivateWorkspacePage() {
           >
             <h3 className="font-semibold">Describe your custom plan</h3>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <NumField label="TVs" value={custom.screens} onChange={(v) => setCustom({ ...custom, screens: v })} />
+              <NumField label="TVs" value={custom.screens} onChange={(v) => setCustom({ ...custom, screens: v })} min={1} />
               <NumField label="Clients" value={custom.clients} onChange={(v) => setCustom({ ...custom, clients: v })} />
               <NumField label="Storage (GB)" value={custom.storage} onChange={(v) => setCustom({ ...custom, storage: v })} />
               <NumField label="Access period (days)" value={custom.days} onChange={(v) => setCustom({ ...custom, days: v })} min={1} />
@@ -328,7 +330,7 @@ function CustomRequestRow({ request, canPay, busy, onPay }: {
   busy: boolean
   onPay: () => void
 }) {
-  const shape = `${request.max_screens || '∞'} TVs · ${request.max_clients || '∞'} clients · ${gb(request.max_storage_bytes)} · ${request.duration_days} days`
+  const shape = `${request.max_screens} TVs · ${request.max_clients || '∞'} clients · ${gb(request.max_storage_bytes)} · ${request.duration_days} days`
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5">
       <div>

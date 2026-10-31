@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Package as PackageIcon, Plus, Save, Sparkles, Trash2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import type { CustomPlanRequestItem, CustomPlanRequestUpdate, Package, PackageWrite } from '@/lib/types'
-import { Feedback, PageHeader, formatBytes, formatPaise } from '@/components/admin/admin-ui'
+import { Feedback, LimitInput, PageHeader, UNLIMITED, formatBytes, formatPaise } from '@/components/admin/admin-ui'
 
 const GIB = 1024 ** 3
 
@@ -134,6 +134,17 @@ export default function AdminPackagesPage() {
   const fieldOf = (pkg: Package, key: keyof PackageWrite) =>
     (editing[pkg.id]?.[key] ?? pkg[key as keyof Package]) as never
 
+  // A limit as the form shows it. Screens store "no limit" as null; ad slots, clients and
+  // storage store it as 0. The form speaks one language -- UNLIMITED -- and the server
+  // translates it back, so nobody has to know which column means what.
+  type LimitKey = 'max_screens' | 'max_clients' | 'max_ad_slots' | 'max_storage_bytes'
+  const limitOf = (pkg: Package, key: LimitKey): number => {
+    const edited = editing[pkg.id]?.[key]
+    if (edited !== undefined) return edited
+    const stored = pkg[key]
+    return stored == null || (key !== 'max_screens' && stored === 0) ? UNLIMITED : stored
+  }
+
   const edit = (id: number, key: keyof PackageWrite, value: string | number | boolean | Record<string, boolean>) =>
     setEditing((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }))
 
@@ -189,21 +200,17 @@ export default function AdminPackagesPage() {
                 className={inputClass}
               />
             </Field>
-            <Field label="Max screens" hint="0 = unlimited">
-              <input type="number" min={0} value={draft.max_screens} onChange={(e) => setDraft({ ...draft, max_screens: Number(e.target.value) })} className={inputClass} />
+            <Field label="Max screens" hint="0 = none">
+              <LimitInput label="Max screens" value={draft.max_screens} onChange={(v) => setDraft({ ...draft, max_screens: v })} />
             </Field>
-            <Field label="Max clients" hint="0 = unlimited">
-              <input type="number" min={0} value={draft.max_clients} onChange={(e) => setDraft({ ...draft, max_clients: Number(e.target.value) })} className={inputClass} />
+            <Field label="Max clients">
+              <LimitInput label="Max clients" value={draft.max_clients} onChange={(v) => setDraft({ ...draft, max_clients: v })} />
             </Field>
-            <Field label="Max ad slots" hint="0 = unlimited">
-              <input type="number" min={0} value={draft.max_ad_slots} onChange={(e) => setDraft({ ...draft, max_ad_slots: Number(e.target.value) })} className={inputClass} />
+            <Field label="Max ad slots">
+              <LimitInput label="Max ad slots" value={draft.max_ad_slots} onChange={(v) => setDraft({ ...draft, max_ad_slots: v })} />
             </Field>
             <Field label="Storage (GB)">
-              <input
-                type="number" min={0} value={Math.round(draft.max_storage_bytes / GIB)}
-                onChange={(e) => setDraft({ ...draft, max_storage_bytes: Number(e.target.value) * GIB })}
-                className={inputClass}
-              />
+              <LimitInput label="Storage in GB" scale={GIB} value={draft.max_storage_bytes} onChange={(v) => setDraft({ ...draft, max_storage_bytes: v })} />
             </Field>
           </div>
           <Field label="Features">
@@ -291,22 +298,17 @@ export default function AdminPackagesPage() {
                         <input type="number" min={1} value={fieldOf(pkg, 'duration_days')} onChange={(e) => edit(pkg.id, 'duration_days', Number(e.target.value))} className={`${inputClass} w-16`} />
                       </td>
                       <td className="p-4">
-                        <input type="number" min={0} value={fieldOf(pkg, 'max_screens')} onChange={(e) => edit(pkg.id, 'max_screens', Number(e.target.value))} className={`${inputClass} w-20`} />
+                        <LimitInput label="Max screens" width="w-20" value={limitOf(pkg, 'max_screens')} onChange={(v) => edit(pkg.id, 'max_screens', v)} />
                       </td>
                       <td className="p-4">
-                        <input type="number" min={0} value={fieldOf(pkg, 'max_clients')} onChange={(e) => edit(pkg.id, 'max_clients', Number(e.target.value))} className={`${inputClass} w-20`} />
+                        <LimitInput label="Max clients" width="w-20" value={limitOf(pkg, 'max_clients')} onChange={(v) => edit(pkg.id, 'max_clients', v)} />
                       </td>
                       <td className="p-4">
-                        <input type="number" min={0} value={fieldOf(pkg, 'max_ad_slots')} onChange={(e) => edit(pkg.id, 'max_ad_slots', Number(e.target.value))} className={`${inputClass} w-20`} />
+                        <LimitInput label="Max ad slots" width="w-20" value={limitOf(pkg, 'max_ad_slots')} onChange={(v) => edit(pkg.id, 'max_ad_slots', v)} />
                       </td>
                       <td className="p-4">
-                        <input
-                          type="number" min={0}
-                          value={Math.round(Number(fieldOf(pkg, 'max_storage_bytes')) / GIB)}
-                          onChange={(e) => edit(pkg.id, 'max_storage_bytes', Number(e.target.value) * GIB)}
-                          className={`${inputClass} w-24`}
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">{formatBytes(pkg.max_storage_bytes)}</p>
+                        <LimitInput label="Storage in GB" scale={GIB} width="w-24" value={limitOf(pkg, 'max_storage_bytes')} onChange={(v) => edit(pkg.id, 'max_storage_bytes', v)} />
+                        <p className="mt-1 text-xs text-muted-foreground">{pkg.max_storage_bytes ? formatBytes(pkg.max_storage_bytes) : 'Unlimited'}</p>
                       </td>
                       <td className="p-4">
                         <div className="flex flex-col gap-1.5">

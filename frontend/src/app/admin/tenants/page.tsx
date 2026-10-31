@@ -461,18 +461,20 @@ function QuotaDialog({
 
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-            Max TV screens <span className="font-normal text-muted-foreground">(0 = unlimited)</span>
+            Max TV screens <span className="font-normal text-muted-foreground">(0 = follow the package)</span>
           </span>
           <input
             type="number" min={0} value={screens} onChange={(e) => setScreens(Number(e.target.value) || 0)}
             className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-violet-500/50"
           />
-          <p className="mt-1 text-xs text-muted-foreground">Currently using {tenant.screens_count}.</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Currently using {tenant.screens_count}. For no limit at all, use Limits &amp; features.
+          </p>
         </label>
 
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-            Max ad slots <span className="font-normal text-muted-foreground">(0 = unlimited)</span>
+            Max ad slots <span className="font-normal text-muted-foreground">(0 = follow the package)</span>
           </span>
           <input
             type="number" min={0} value={ads} onChange={(e) => setAds(Number(e.target.value) || 0)}

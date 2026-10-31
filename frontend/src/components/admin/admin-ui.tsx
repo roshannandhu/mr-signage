@@ -114,6 +114,56 @@ export function PageHeader({ title, description, children }: { title: string; de
   )
 }
 
+/** What the API takes for "no limit" on every plan limit; the server stores it where each column reads it. */
+export const UNLIMITED = -1
+
+/**
+ * A limit with an "Unlimited" box.
+ *
+ * `value` is in the stored unit (bytes for storage) or UNLIMITED; `scale` is how many stored
+ * units make one displayed unit (GiB). Before this the form said "0 = unlimited" on all four,
+ * which is true for ad slots, clients and storage but means ZERO screens -- so leaving the
+ * screens box blank gave every tenant on the package "Screen limit reached (0/0)".
+ */
+export function LimitInput({
+  value,
+  onChange,
+  scale = 1,
+  width = 'w-full',
+  label,
+}: {
+  value: number
+  onChange: (next: number) => void
+  scale?: number
+  width?: string
+  label: string
+}) {
+  const unlimited = value === UNLIMITED
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        type="number"
+        min={0}
+        aria-label={label}
+        value={unlimited ? '' : Math.round(value / scale)}
+        disabled={unlimited}
+        placeholder={unlimited ? 'No limit' : undefined}
+        onChange={(e) => onChange(Math.max(0, Number(e.target.value)) * scale)}
+        className={`rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground disabled:opacity-40 ${width}`}
+      />
+      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <input
+          type="checkbox"
+          checked={unlimited}
+          onChange={(e) => onChange(e.target.checked ? UNLIMITED : scale)}
+          className="size-3.5 accent-violet-500"
+        />
+        Unlimited
+      </label>
+    </div>
+  )
+}
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
