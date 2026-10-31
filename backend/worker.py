@@ -445,6 +445,173 @@ async def recover_stuck_processing(ctx):
 
 
 
+def alert_event_payload(event: str, alert) -> str:
+    """The message a connected dashboard receives when an alert opens or closes."""
+    return json.dumps({
+        "type": event,
+        "alert": {
+            "id": alert.id,
+            "kind": alert.kind,
+            "severity": alert.severity,
+            "title": alert.title,
+            "detail": alert.detail,
+            "screen_id": alert.screen_id,
+            "content_id": alert.content_id,
+            "raised_at": alert.raised_at.isoformat() if alert.raised_at else None,
+        },
+    })
+
+
+def reconcile_org_alerts(db, org_id: int, now) -> tuple[list, list]:
+    """Raise an alert for each condition that is newly true in one organisation, and resolve
+    the ones that have stopped being true. Returns (raised, resolved) for the caller to publish.
+
+    The one place this is decided. It used to exist twice -- here, and a cut-down copy in the
+    in-process health monitor that only ever raised. Without the arq worker (no Redis) nothing
+    resolved an alert, so a screen that came back stayed "offline" on the dashboard for ever.
+    The copy also evaluated without bookings, so reusing it to resolve would have closed every
+    campaign alert as no-longer-true.
+    """
+    from . import alerting
+
+    screens = db.query(models.Screen).filter(
+        models.Screen.organization_id == org_id
+    ).all()
+    contents = db.query(Content).filter(
+        Content.organization_id == org_id
+    ).all()
+
+    # Only bookings that have not already finished: a campaign that ended last
+    # month can never satisfy the "ending soon" window, so loading it is pure cost
+    # on an estate with years of history.
+    # On the EFFECTIVE end, not the sold one. Filtering on `ends_at` dropped any
+    # campaign kept alive by an extension or by a longer per-location window, so
+    # the booking most likely to be renewed again was the one that stopped being
+    # watched -- and its "ending soon" alert never fired a second time.
+    placements = db.query(models.AdPlacement).filter(
+        models.AdPlacement.organization_id == org_id,
+        models.AdPlacement.effective_ends_at >= now - alerting.CAMPAIGN_ENDING_WITHIN,
+    ).all()
+
+    # How many screens each booking actually reaches, groups expanded, in two
+    # queries for the whole organisation rather than one per booking. The plan
+    # cap counts expanded members, so the alert has to as well or a five-screen
+    # plan sold as one group target would read as four screens short.
+    reach: dict[int, set[int]] = {p.id: set() for p in placements}
+    if reach:
+        rows = db.query(
+            models.AdPlacementTarget.placement_id,
+            models.AdPlacementTarget.screen_id,
+            models.AdPlacementTarget.group_id,
+        ).filter(models.AdPlacementTarget.placement_id.in_(list(reach))).all()
+        members: dict[int, list[int]] = {}
+        group_ids = {group_id for _, _, group_id in rows if group_id}
+        if group_ids:
+            for screen_id, group_id in db.query(
+                models.Screen.id, models.Screen.group_id
+            ).filter(models.Screen.group_id.in_(group_ids)).all():
+                members.setdefault(group_id, []).append(screen_id)
+        for placement_id, screen_id, group_id in rows:
+            if screen_id:
+                reach[placement_id].add(screen_id)
+            elif group_id:
+                reach[placement_id].update(members.get(group_id, ()))
+
+    current = alerting.evaluate_all(
+        screens, contents, now, placements,
+        screens_used={pid: len(seen) for pid, seen in reach.items()},
+    )
+    open_alerts = {
+        a.dedupe_key: a
+        for a in db.query(models.Alert).filter(
+            models.Alert.organization_id == org_id,
+            models.Alert.resolved_at.is_(None),
+        ).all()
+    }
+
+    raised = []
+    for key, condition in current.items():
+        if key in open_alerts:
+            continue
+        alert = models.Alert(
+            organization_id=org_id,
+            kind=condition.kind,
+            severity=condition.severity,
+            screen_id=condition.screen_id,
+            content_id=condition.content_id,
+            title=condition.title,
+            detail=condition.detail,
+            dedupe_key=key,
+            notified=[],
+        )
+        db.add(alert)
+        try:
+            # Committed one at a time so a collision with a concurrent sweep loses
+            # only that alert to the partial unique index, rather than rolling back
+            # every other alert raised in this pass.
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            continue
+        db.refresh(alert)
+        raised.append(alert)
+
+    resolved = []
+    for key, alert in open_alerts.items():
+        if key in current:
+            continue
+        alert.resolved_at = models.utcnow()
+        db.commit()
+        resolved.append(alert)
+    return raised, resolved
+
+
+def screen_health_pass(db, now) -> list[tuple[int, str, object]]:
+    """One pass of the in-process screen monitor: mark silent screens offline, then bring the
+    alerts of every organisation that changed -- or that still has one open -- up to date.
+
+    Returns (organisation id, event, alert) for everything raised or resolved, for the caller
+    to publish. Organisations with an open alert are included even when no screen changed,
+    which is what lets a screen that has come back clear its "offline" alert.
+    """
+    from .routers.screens import screen_offline_after_seconds
+
+    threshold = now - timedelta(seconds=screen_offline_after_seconds())
+    stale = (
+        db.query(models.Screen)
+        .filter(models.Screen.status == "online", models.Screen.last_seen < threshold)
+        .all()
+    )
+    org_ids = set()
+    for screen in stale:
+        screen.status = "offline"
+        org_ids.add(screen.organization_id)
+        logger.info(
+            "Health monitor: screen %d (%s) marked offline (last_seen %s)",
+            screen.id, screen.name or "unnamed", screen.last_seen,
+        )
+    if stale:
+        db.commit()
+
+    org_ids.update(
+        org_id for (org_id,) in db.query(models.Alert.organization_id)
+        .filter(models.Alert.resolved_at.is_(None)).distinct()
+    )
+    org_ids.discard(None)  # an unpaired screen has no organisation to alert
+
+    changes = []
+    for org_id in org_ids:
+        try:
+            raised, resolved = reconcile_org_alerts(db, org_id, now)
+        except Exception as exc:
+            db.rollback()
+            logger.warning("Health monitor alert eval failed for org %s: %s", org_id, exc)
+            continue
+        changes += [(org_id, "alert_raised", alert) for alert in raised]
+        changes += [(org_id, "alert_resolved", alert) for alert in resolved]
+    return changes
+
+
 async def reconcile_alerts(ctx):
     """Notice what is wrong with the fleet, and what has stopped being wrong.
 
@@ -456,7 +623,6 @@ async def reconcile_alerts(ctx):
     happen here, so a failing SMTP server cannot stop the fleet being monitored.
     """
     from datetime import datetime, timezone
-    from . import alerting
 
     db = SessionLocal()
     redis = ctx.get("redis")
@@ -465,94 +631,11 @@ async def reconcile_alerts(ctx):
     try:
         org_ids = [row[0] for row in db.query(models.Organization.id).all()]
         for org_id in org_ids:
-            now = datetime.now(timezone.utc)
-            screens = db.query(models.Screen).filter(
-                models.Screen.organization_id == org_id
-            ).all()
-            contents = db.query(Content).filter(
-                Content.organization_id == org_id
-            ).all()
-
-            # Only bookings that have not already finished: a campaign that ended last
-            # month can never satisfy the "ending soon" window, so loading it is pure cost
-            # on an estate with years of history.
-            # On the EFFECTIVE end, not the sold one. Filtering on `ends_at` dropped any
-            # campaign kept alive by an extension or by a longer per-location window, so
-            # the booking most likely to be renewed again was the one that stopped being
-            # watched -- and its "ending soon" alert never fired a second time.
-            placements = db.query(models.AdPlacement).filter(
-                models.AdPlacement.organization_id == org_id,
-                models.AdPlacement.effective_ends_at >= now - alerting.CAMPAIGN_ENDING_WITHIN,
-            ).all()
-
-            # How many screens each booking actually reaches, groups expanded, in two
-            # queries for the whole organisation rather than one per booking. The plan
-            # cap counts expanded members, so the alert has to as well or a five-screen
-            # plan sold as one group target would read as four screens short.
-            reach: dict[int, set[int]] = {p.id: set() for p in placements}
-            if reach:
-                rows = db.query(
-                    models.AdPlacementTarget.placement_id,
-                    models.AdPlacementTarget.screen_id,
-                    models.AdPlacementTarget.group_id,
-                ).filter(models.AdPlacementTarget.placement_id.in_(list(reach))).all()
-                members: dict[int, list[int]] = {}
-                group_ids = {group_id for _, _, group_id in rows if group_id}
-                if group_ids:
-                    for screen_id, group_id in db.query(
-                        models.Screen.id, models.Screen.group_id
-                    ).filter(models.Screen.group_id.in_(group_ids)).all():
-                        members.setdefault(group_id, []).append(screen_id)
-                for placement_id, screen_id, group_id in rows:
-                    if screen_id:
-                        reach[placement_id].add(screen_id)
-                    elif group_id:
-                        reach[placement_id].update(members.get(group_id, ()))
-
-            current = alerting.evaluate_all(
-                screens, contents, now, placements,
-                screens_used={pid: len(seen) for pid, seen in reach.items()},
-            )
-            open_alerts = {
-                a.dedupe_key: a
-                for a in db.query(models.Alert).filter(
-                    models.Alert.organization_id == org_id,
-                    models.Alert.resolved_at.is_(None),
-                ).all()
-            }
-
-            for key, condition in current.items():
-                if key in open_alerts:
-                    continue
-                alert = models.Alert(
-                    organization_id=org_id,
-                    kind=condition.kind,
-                    severity=condition.severity,
-                    screen_id=condition.screen_id,
-                    content_id=condition.content_id,
-                    title=condition.title,
-                    detail=condition.detail,
-                    dedupe_key=key,
-                    notified=[],
-                )
-                db.add(alert)
-                try:
-                    # Committed one at a time so a collision with a concurrent sweep loses
-                    # only that alert to the partial unique index, rather than rolling back
-                    # every other alert raised in this pass.
-                    db.commit()
-                except IntegrityError:
-                    db.rollback()
-                    continue
-                db.refresh(alert)
+            raised, resolved = reconcile_org_alerts(db, org_id, datetime.now(timezone.utc))
+            for alert in raised:
                 raised_total += 1
                 await _publish_alert(redis, org_id, "alert_raised", alert)
-
-            for key, alert in open_alerts.items():
-                if key in current:
-                    continue
-                alert.resolved_at = models.utcnow()
-                db.commit()
+            for alert in resolved:
                 resolved_total += 1
                 await _publish_alert(redis, org_id, "alert_resolved", alert)
 
@@ -574,19 +657,7 @@ async def _publish_alert(redis, organization_id: int, event: str, alert) -> None
     if not redis:
         return
     try:
-        await redis.publish(f"dashboard:{organization_id}", json.dumps({
-            "type": event,
-            "alert": {
-                "id": alert.id,
-                "kind": alert.kind,
-                "severity": alert.severity,
-                "title": alert.title,
-                "detail": alert.detail,
-                "screen_id": alert.screen_id,
-                "content_id": alert.content_id,
-                "raised_at": alert.raised_at.isoformat() if alert.raised_at else None,
-            },
-        }))
+        await redis.publish(f"dashboard:{organization_id}", alert_event_payload(event, alert))
     except Exception as e:
         print(f"Failed to publish alert to redis: {e}")
 

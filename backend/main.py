@@ -213,18 +213,18 @@ async def lifespan(_app: FastAPI):
             time.sleep(30)
 
     def _screen_health_monitor_loop():
-        """Detect offline screens every 30 seconds and trigger immediate alerts.
+        """Detect offline screens every 30 seconds, and keep their alerts true.
 
         The arq reconciler runs every minute, but that means a screen can be offline
         for up to 2 minutes (1 min threshold + 1 min cron gap) before an alert fires.
-        This tighter loop cuts that to ~30 seconds by checking `last_seen` directly
-        and publishing alerts via Redis pub/sub for immediate dashboard delivery.
+        This tighter loop cuts that to ~30 seconds. It also RESOLVES: with no Redis there is
+        no arq worker, and this loop was the only thing running, so an alert it raised stayed
+        open after the screen came back.
         """
         import asyncio as _asyncio
         import time
-        from datetime import datetime, timezone, timedelta
-        from . import alerting
-        from .routers.screens import screen_offline_after_seconds
+        from datetime import datetime, timezone
+        from .worker import alert_event_payload, screen_health_pass
 
         _loop = _asyncio.new_event_loop()
 
@@ -239,93 +239,8 @@ async def lifespan(_app: FastAPI):
         while True:
             rec_db = database.SessionLocal()
             try:
-                now = datetime.now(timezone.utc)
-                offline_threshold = now - timedelta(seconds=screen_offline_after_seconds())
-
-                # Find screens that are marked online but haven't been seen recently
-                stale_screens = (
-                    rec_db.query(models.Screen)
-                    .filter(
-                        models.Screen.status == "online",
-                        models.Screen.last_seen < offline_threshold,
-                    )
-                    .all()
-                )
-
-                if stale_screens:
-                    # Flip status to offline
-                    changed_org_ids = set()
-                    for screen in stale_screens:
-                        screen.status = "offline"
-                        changed_org_ids.add(screen.organization_id)
-                        logger.info(
-                            "Health monitor: screen %d (%s) marked offline (last_seen %s)",
-                            screen.id,
-                            screen.name or "unnamed",
-                            screen.last_seen,
-                        )
-                    rec_db.commit()
-
-                    # Run immediate alert evaluation for affected orgs
-                    for org_id in changed_org_ids:
-                        try:
-                            org_screens = (
-                                rec_db.query(models.Screen)
-                                .filter(models.Screen.organization_id == org_id)
-                                .all()
-                            )
-                            org_contents = (
-                                rec_db.query(models.Content)
-                                .filter(models.Content.organization_id == org_id)
-                                .all()
-                            )
-                            current = alerting.evaluate_all(org_screens, org_contents, now)
-                            open_alerts = {
-                                a.dedupe_key: a
-                                for a in rec_db.query(models.Alert).filter(
-                                    models.Alert.organization_id == org_id,
-                                    models.Alert.resolved_at.is_(None),
-                                ).all()
-                            }
-
-                            for key, condition in current.items():
-                                if key in open_alerts:
-                                    continue
-                                alert = models.Alert(
-                                    organization_id=org_id,
-                                    kind=condition.kind,
-                                    severity=condition.severity,
-                                    screen_id=condition.screen_id,
-                                    content_id=condition.content_id,
-                                    title=condition.title,
-                                    detail=condition.detail,
-                                    dedupe_key=key,
-                                    notified=[],
-                                )
-                                rec_db.add(alert)
-                                try:
-                                    rec_db.commit()
-                                except Exception:
-                                    rec_db.rollback()
-                                    continue
-                                rec_db.refresh(alert)
-
-                                # Push via Redis pub/sub for instant dashboard delivery
-                                import json as _json
-                                payload = _json.dumps({
-                                    "type": "alert_raised",
-                                    "alert": {
-                                        "id": alert.id,
-                                        "severity": alert.severity,
-                                        "title": alert.title,
-                                        "detail": alert.detail,
-                                    },
-                                })
-                                _redis_publish(org_id, payload)
-
-                        except Exception as org_exc:
-                            logger.warning("Health monitor alert eval failed for org %d: %s", org_id, org_exc)
-
+                for org_id, event, alert in screen_health_pass(rec_db, datetime.now(timezone.utc)):
+                    _redis_publish(org_id, alert_event_payload(event, alert))
             except Exception as exc:
                 logger.warning("Failed in screen health monitor loop: %s", exc)
             finally:
