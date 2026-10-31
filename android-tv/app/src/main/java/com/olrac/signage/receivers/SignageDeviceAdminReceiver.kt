@@ -53,6 +53,10 @@ class SignageDeviceAdminReceiver : DeviceAdminReceiver() {
                         if (response.isSuccessful) {
                             val body = response.body()
                             if (body != null) {
+                                // The server keeps only a hash, so this is the one time the secret
+                                // exists. Dropping it left the screen unable to authenticate, and
+                                // once legacy device auth is closed a heartbeat 401 signs it out.
+                                deviceState.setDeviceSecret(body.device_secret)
                                 deviceState.markPaired(body.screen_id.toString()) // fallback screen name as ID, or we could fetch the name. Actually, we just need to set isPaired = true
                                 // Actually, let's just mark paired with generic name since enroll doesn't return screen name directly but it returns screen_id.
                                 deviceState.markPaired("Screen ${body.screen_id}")

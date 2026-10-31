@@ -10,6 +10,18 @@ import com.olrac.signage.network.HeartbeatRequest
 import java.util.Locale
 
 object HeartbeatReporter {
+    /**
+     * Whether a heartbeat answer means this screen no longer exists on the server.
+     *
+     * Only a 404 does. A 401 or 403 means the token minted from the device secret lapsed or
+     * was rejected -- ApiClient has already dropped it and the next beat mints another.
+     * Treating those as "deleted" wiped the pairing, the secret, the playlist and every
+     * downloaded file over a momentary auth failure, and rotating the server's SECRET_KEY
+     * invalidates every token at once, so it would have factory-reset the whole fleet.
+     * PlaylistSynchronizer reached the same conclusion; this path had been missed.
+     */
+    fun signsOutOn(code: Int): Boolean = code == 404
+
     suspend fun send(context: Context, suppliedSnapshot: PlaybackSnapshot? = null): Boolean {
         val appContext = context.applicationContext
         val preferences = appContext.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
@@ -66,9 +78,13 @@ object HeartbeatReporter {
         )
         
         val rtt = System.currentTimeMillis() - tSent
-        if (response.code() == 404 || response.code() == 401 || response.code() == 403) {
-            android.util.Log.w("HeartbeatReporter", "Screen deleted or credentials revoked on server (HTTP ${response.code()}); signing out")
+        if (signsOutOn(response.code())) {
+            android.util.Log.w("HeartbeatReporter", "Screen removed on the server (HTTP ${response.code()}); signing out")
             com.olrac.signage.boot.PlayerLauncher.handleUnpairedOrDeleted(appContext)
+            return false
+        }
+        if (response.code() == 401 || response.code() == 403) {
+            android.util.Log.w("HeartbeatReporter", "Auth rejected (HTTP ${response.code()}); re-authenticating on the next beat")
             return false
         }
         if (response.isSuccessful) {

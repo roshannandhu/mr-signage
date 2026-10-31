@@ -109,7 +109,10 @@ class MainActivity : ComponentActivity() {
         deviceState = DeviceState(this)
         val deviceId = deviceState.deviceId
 
-        val forceSignIn = intent?.getBooleanExtra("show_signin", false) ?: false
+        val forceSignIn = LaunchStateResolver.honourForcedSignIn(
+            requested = intent?.getBooleanExtra("show_signin", false) ?: false,
+            isPaired = deviceState.isPaired,
+        )
         if (forceSignIn) {
             deviceState.clearPairing()
             launchState = LaunchState.SignIn()
@@ -136,7 +139,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             LaunchedEffect(deviceId, serverRevision) {
-                if (intent?.getBooleanExtra("show_signin", false) != true) {
+                if (!forceSignIn) {
                     resolveAndRefreshPairing(deviceId)
                 }
             }
@@ -513,7 +516,11 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
 
-        if (intent?.getBooleanExtra("show_signin", false) == true) {
+        if (LaunchStateResolver.honourForcedSignIn(
+                requested = intent?.getBooleanExtra("show_signin", false) == true,
+                isPaired = deviceState.isPaired,
+            )
+        ) {
             deviceState.clearPairing()
             launchState = LaunchState.SignIn()
             return

@@ -111,6 +111,12 @@ object ApiClient {
             }
             .build()
 
+    /**
+     * The current device token, minted from the device secret if need be, or null for a
+     * screen that has none. May make a network call, so not for the main thread.
+     */
+    fun currentDeviceToken(appContext: Context): String? = deviceToken(appContext)
+
     private fun deviceToken(appContext: Context): String? {
         val secret = DeviceState(appContext).deviceSecret ?: return null
         cachedToken?.takeIf { System.currentTimeMillis() < tokenExpiresAt }?.let { return it }

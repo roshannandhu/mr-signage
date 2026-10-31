@@ -2,6 +2,7 @@ package com.olrac.signage.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -56,5 +57,15 @@ class LaunchStateResolverTest {
             "No connection. Pairing will resume automatically.",
             (state as LaunchState.Pairing).connectionMessage
         )
+    }
+
+    @Test
+    fun forcedSignInIsHonouredOnlyForAnUnpairedScreen() {
+        // The player asks for it itself, after wiping its own pairing.
+        assertTrue(LaunchStateResolver.honourForcedSignIn(requested = true, isPaired = false))
+        // Another app asking a paired screen to forget everything must be ignored.
+        assertFalse(LaunchStateResolver.honourForcedSignIn(requested = true, isPaired = true))
+        assertFalse(LaunchStateResolver.honourForcedSignIn(requested = false, isPaired = false))
+        assertFalse(LaunchStateResolver.honourForcedSignIn(requested = false, isPaired = true))
     }
 }

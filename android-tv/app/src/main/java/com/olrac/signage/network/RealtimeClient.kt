@@ -16,6 +16,19 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+/**
+ * The socket URL for a screen. Route is /api/ws/{device_id}/ws -- the trailing /ws is part of
+ * the path; omitting it 404s, which surfaces as a close and an endless reconnect loop on every
+ * screen in the fleet rather than an obvious error.
+ */
+internal fun webSocketUrl(baseUrl: String, deviceId: String, token: String?): String = buildString {
+    append(baseUrl.trimEnd('/').replace("http://", "ws://").replace("https://", "wss://"))
+    append("/api/ws/")
+    append(deviceId)
+    append("/ws")
+    if (!token.isNullOrBlank()) append("?token=").append(java.net.URLEncoder.encode(token, "UTF-8"))
+}
+
 class RealtimeClient(
     private val context: Context,
     private val onMessage: (JSONObject) -> Unit
@@ -29,16 +42,24 @@ class RealtimeClient(
     private var isConnected = false
     private var attempt = 0
 
+    // Set by stop(). Closing the socket fires onClosed, which used to schedule a reconnect, so
+    // a client that had been told to stop opened itself again five seconds later -- and a
+    // restarted service then ran two, each delivering every command.
+    @Volatile private var stopped = false
+
     private companion object {
-        const val KEY_DEVICE_TOKEN = "device_token"
         val RECONNECT_BACKOFF_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
     }
 
     fun start() {
-        connect()
+        stopped = false
+        // On the IO scope: presenting a token may mean exchanging the device secret for one,
+        // which is a blocking network call.
+        scope.launch { connect() }
     }
 
     private fun connect() {
+        if (stopped) return
         val deviceState = DeviceState(context)
         val deviceId = deviceState.deviceId
         if (deviceId == null) {
@@ -53,16 +74,12 @@ class RealtimeClient(
         // Route is /api/ws/{device_id}/ws — the trailing /ws is part of the path. Omitting
         // it 404s, which surfaces as a close and an endless 5-second reconnect loop on
         // every screen in the fleet rather than an obvious error.
-        val wsUrl = buildString {
-            append(baseUrl.replace("http://", "ws://").replace("https://", "wss://"))
-            append("/api/ws/")
-            append(deviceId)
-            append("/ws")
-            // Enrolled devices (P3) carry a secret server-side and must present a device
-            // JWT; legacy paired devices have no secret and the server accepts them
-            // without one. Send the token whenever we have it.
-            deviceToken()?.let { append("?token=").append(it) }
-        }
+        // Enrolled devices carry a secret server-side and must present a device JWT; legacy
+        // paired devices have no secret and the server accepts them without one. The token is
+        // the HTTP client's own. This used to read a "device_token" preference that nothing in
+        // the app ever wrote, so no screen ever sent one, and closing legacy auth would have
+        // dropped every socket.
+        val wsUrl = webSocketUrl(baseUrl, deviceId, ApiClient.currentDeviceToken(context))
 
         val request = Request.Builder()
             .url(wsUrl)
@@ -98,12 +115,8 @@ class RealtimeClient(
         })
     }
 
-    private fun deviceToken(): String? =
-        context.getSharedPreferences(DeviceState.PREFERENCES_NAME, Context.MODE_PRIVATE)
-            .getString(KEY_DEVICE_TOKEN, null)
-            ?.takeIf { it.isNotBlank() }
-
     private fun reconnect() {
+        if (stopped) return
         // Backoff, capped. A flat 5s retry means a fleet of 500 screens hammers the
         // server twice a minute each while it is down, which is exactly when it can
         // least afford it. Push is optional anyway — polling still delivers.
@@ -118,13 +131,14 @@ class RealtimeClient(
         attempt++
         scope.launch {
             delay(delayMs)
-            if (!isConnected) {
+            if (!isConnected && !stopped) {
                 connect()
             }
         }
     }
 
     fun stop() {
+        stopped = true
         webSocket?.close(1000, "Stopping")
         webSocket = null
         isConnected = false

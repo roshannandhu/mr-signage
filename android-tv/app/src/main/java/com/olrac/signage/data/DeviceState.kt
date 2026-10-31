@@ -332,6 +332,16 @@ data class RegistrationSnapshot(
 )
 
 object LaunchStateResolver {
+    /**
+     * Whether a "show_signin" request may reset this screen to the sign-in page.
+     *
+     * The player sends it to itself AFTER wiping its own pairing (PlayerLauncher), so the
+     * screen is already unpaired by then. MainActivity has to be exported -- it is the launcher
+     * -- so any other app can send the same extra, and honouring it for a paired screen let one
+     * app unpair every TV it could reach.
+     */
+    fun honourForcedSignIn(requested: Boolean, isPaired: Boolean): Boolean = requested && !isPaired
+
     fun resolveLocal(
         isPaired: Boolean,
         hasLocalPlaylist: Boolean

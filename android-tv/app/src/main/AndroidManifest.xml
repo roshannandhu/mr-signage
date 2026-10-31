@@ -112,9 +112,12 @@
             </intent-filter>
         </receiver>
 
+        <!-- Not exported: it is reached only through the PendingIntent UpdateManager hands to the
+             package installer, and an exported one would start any Intent another app put in
+             EXTRA_INTENT under this app's (device owner) identity. -->
         <receiver
             android:name=".sync.InstallReceiver"
-            android:exported="true" />
+            android:exported="false" />
 
         <!-- Restored in 1.0.30. Removed in 1.0.20, which is what broke auto-start-after-restart
              on the KONKA: its accessibility entry was still enabled in the TV's settings DB, so
