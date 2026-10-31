@@ -17,6 +17,11 @@ const gb = (bytes: number) => `${Math.round(bytes / GIB)} GB`
 const FEATURES: { key: string; label: string }[] = [
   { key: 'scheduling', label: 'Scheduling' },
   { key: 'transitions', label: 'Transitions' },
+  { key: 'payslips', label: 'Payslips & payments' },
+  { key: 'ads_counting', label: 'Ads counting reports' },
+  { key: 'pdf_reports', label: 'PDF playback reports' },
+  { key: 'remote_control', label: 'Remote control & alerts' },
+  { key: 'kiosk_lock', label: 'TV lock' },
   { key: 'emergency_alert', label: 'Emergency alert' },
   { key: 'priority_support', label: 'Priority support' },
 ]

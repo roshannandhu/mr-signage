@@ -9,6 +9,11 @@ import type { TenantSummary } from '@/lib/types'
 const FEATURES: { key: string; label: string; enforced: boolean }[] = [
   { key: 'scheduling', label: 'Scheduling', enforced: true },
   { key: 'transitions', label: 'Transitions', enforced: true },
+  { key: 'payslips', label: 'Payslips & payments', enforced: true },
+  { key: 'ads_counting', label: 'Ads counting reports', enforced: true },
+  { key: 'pdf_reports', label: 'PDF playback reports', enforced: true },
+  { key: 'remote_control', label: 'Remote control & alerts', enforced: true },
+  { key: 'kiosk_lock', label: 'TV lock', enforced: true },
   { key: 'emergency_alert', label: 'Emergency alert', enforced: true },
   { key: 'priority_support', label: 'Priority support', enforced: false },
 ]

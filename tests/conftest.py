@@ -75,6 +75,8 @@ ISOLATED_SCRIPTS = {
     "test_billing_catalog_seed.py",
     # Every route Phase 3.1 sold behind a plan flag actually refuses a plan without it.
     "test_plan_feature_gates.py",
+    # A purchase records one platform_payments row; admin Billing settings work.
+    "test_admin_billing.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -294,6 +296,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_playlist_item_transition_gate.py",
     "test_billing_catalog_seed.py",
     "test_plan_feature_gates.py",
+    "test_admin_billing.py",
 }
 
 

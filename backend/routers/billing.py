@@ -36,6 +36,17 @@ def serialize_subscription(subscription: models.Subscription) -> schemas.Subscri
     return schemas.SubscriptionResponse.model_validate(subscription, from_attributes=True)
 
 
+@router.get("/contact")
+def platform_contact_email(scope: TenantScope = Depends(get_billing_scope)):
+    """The address a custom-plan request's mailto draft is addressed to, set by the operator
+    on the admin Billing page (routers/admin.py's CONTACT_EMAIL_KEY -- same SystemSetting
+    row, read here for any signed-in tenant rather than only a super admin)."""
+    setting = scope.db.query(models.SystemSetting).filter(
+        models.SystemSetting.key == "platform_contact_email"
+    ).first()
+    return {"email": setting.value if setting else None}
+
+
 @router.get("/plans", response_model=list[schemas.PlanResponse])
 def list_plans(scope: TenantScope = Depends(get_billing_scope)):
     # get_billing_scope, not get_tenant_scope: a pending_approval workspace has to see the
@@ -195,13 +206,41 @@ def _activate_plan(
         org.approved_at = now
 
 
-def activate_purchase(db, order_id: str) -> bool:
+def _record_platform_payment(
+    db, organization_id: int, kind: str, *,
+    plan_id: int | None = None, custom_request_id: int | None = None,
+    amount_paise: int, provider: str, provider_order_id: str | None = None,
+    provider_payment_id: str | None = None,
+) -> None:
+    """One receipt for what a tenant paid the platform. See models.PlatformPayment.
+
+    Called exactly once per successful charge, from inside the same idempotency-guarded
+    branch that activates the purchase -- a re-delivered webhook or a repeated mock confirm
+    finds the subscription or request already active/paid and never reaches here twice.
+    """
+    db.add(models.PlatformPayment(
+        organization_id=organization_id, kind=kind, plan_id=plan_id,
+        custom_request_id=custom_request_id, amount_paise=amount_paise,
+        provider=provider, provider_order_id=provider_order_id,
+        provider_payment_id=provider_payment_id, status="captured",
+    ))
+
+
+def activate_purchase(
+    db, order_id: str, *, amount_paise: int | None = None,
+    provider: str = "razorpay", provider_payment_id: str | None = None,
+) -> bool:
     """Apply a captured one-time order to whatever it paid for.
 
     Idempotent: a re-delivered webhook or a repeated confirm finds the subscription already
     active and leaves it. Returns True when the order matched a known purchase. Standard
     packages are matched by the subscription that raised the order; custom requests are
     matched separately (added with the custom-request routes).
+
+    `amount_paise` is what the PROVIDER reports as captured for this order -- the webhook
+    carries it on the order entity. When it is not available (the mock provider raises no
+    such entity), the plan's own price is the best available truth, since that is exactly
+    what the order was raised for.
     """
     subscription = db.query(models.Subscription).filter(
         models.Subscription.provider_subscription_id == order_id
@@ -209,11 +248,21 @@ def activate_purchase(db, order_id: str) -> bool:
     if subscription and subscription.plan and subscription.organization:
         if subscription.status != "active":
             _activate_plan(subscription.organization, subscription, subscription.plan)
+            _record_platform_payment(
+                db, subscription.organization_id, "plan", plan_id=subscription.plan_id,
+                amount_paise=amount_paise if amount_paise is not None else subscription.plan.price_paise,
+                provider=provider, provider_order_id=order_id, provider_payment_id=provider_payment_id,
+            )
         return True
-    return activate_custom_request(db, order_id)
+    return activate_custom_request(
+        db, order_id, amount_paise=amount_paise, provider=provider, provider_payment_id=provider_payment_id,
+    )
 
 
-def activate_custom_request(db, order_id: str) -> bool:
+def activate_custom_request(
+    db, order_id: str, *, amount_paise: int | None = None,
+    provider: str = "razorpay", provider_payment_id: str | None = None,
+) -> bool:
     """Apply a captured order that paid for a bespoke request.
 
     A custom request has no Plan of its own, but the subscription's plan_id is NOT NULL and
@@ -266,6 +315,11 @@ def activate_custom_request(db, order_id: str) -> bool:
         db.flush()
 
     _activate_plan(org, subscription, plan)
+    _record_platform_payment(
+        db, org.id, "custom", custom_request_id=request.id,
+        amount_paise=amount_paise if amount_paise is not None else request.price_paise,
+        provider=provider, provider_order_id=order_id, provider_payment_id=provider_payment_id,
+    )
     request.status = "paid"
     request.updated_at = models.utcnow()
     return True
@@ -364,7 +418,7 @@ def mock_confirm(
     if not owned and not owned_custom:
         raise HTTPException(status_code=404, detail="Unknown order for this workspace")
 
-    if not activate_purchase(scope.db, payload.order_id):
+    if not activate_purchase(scope.db, payload.order_id, provider="mock"):
         raise HTTPException(status_code=409, detail="Order could not be applied")
     scope.db.commit()
     return schemas.PurchaseResponse(provider="internal", checkout_url="/dashboard/screens")
@@ -509,6 +563,7 @@ async def razorpay_webhook(
         # subscription-entity handling below is only for the older recurring plans.
         if event_type == "order.paid":
             order_entity = payload.get("payload", {}).get("order", {}).get("entity", {})
+            payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
             order_id = order_entity.get("id")
             db.add(
                 models.WebhookEvent(
@@ -518,7 +573,11 @@ async def razorpay_webhook(
                 )
             )
             if order_id:
-                activate_purchase(db, order_id)
+                activate_purchase(
+                    db, order_id,
+                    amount_paise=order_entity.get("amount"),
+                    provider_payment_id=payment_entity.get("id"),
+                )
             db.commit()
             return {"status": "ok"}
 
@@ -553,6 +612,27 @@ async def razorpay_webhook(
                 subscription.current_period_start = timestamp_to_datetime(entity.get("current_start"))
                 subscription.current_period_end = timestamp_to_datetime(entity.get("current_end"))
                 apply_plan(subscription.organization, subscription.plan)
+                # Only this one event is an actual charge. authenticated/activated/resumed
+                # move the subscription into "active" too, but no money moves on any of them
+                # -- the first real charge on a fresh mandate arrives as its own
+                # subscription.charged, and recording a payment on the others would invent
+                # one that was never taken.
+                if event_type == "subscription.charged" and subscription.plan:
+                    payment_entity = payload.get("payload", {}).get("payment", {}).get("entity", {})
+                    # The recurring price for however this subscription bills, not
+                    # price_paise -- that field is the one-time storefront price and would
+                    # misreport a monthly renewal's amount if the payment entity is ever absent.
+                    listed = (
+                        subscription.plan.yearly_price_paise if subscription.billing_period == "yearly"
+                        else subscription.plan.monthly_price_paise
+                    )
+                    _record_platform_payment(
+                        db, subscription.organization_id, "subscription", plan_id=subscription.plan_id,
+                        amount_paise=payment_entity.get("amount") or listed,
+                        provider="razorpay",
+                        provider_order_id=payment_entity.get("order_id"),
+                        provider_payment_id=payment_entity.get("id"),
+                    )
             elif event_type in failure_events:
                 grace_days = max(1, min(int(os.getenv("BILLING_GRACE_DAYS", "7")), 30))
                 subscription.status = "grace"

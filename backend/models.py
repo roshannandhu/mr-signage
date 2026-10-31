@@ -247,6 +247,37 @@ class WebhookEvent(Base):
     received_at = Column(UtcDateTime, nullable=False, default=utcnow)
 
 
+class PlatformPayment(Base):
+    """One receipt for what a tenant paid THE PLATFORM -- not to be confused with AdPayment,
+    which is what a tenant's own client paid them.
+
+    Written once, by the same shared activation path every purchase already goes through
+    (_activate_plan's callers: activate_purchase for a standard or custom one-time buy,
+    the subscription.charged webhook branch for a recurring renewal), from the amount the
+    PROVIDER reports -- never computed from the plan's list price, which can be stale or
+    wrong the moment a price changes. No foreign keys to plan/custom_request: a payment is a
+    historical fact and must survive the package or request it was for being edited or
+    deleted later.
+    """
+
+    __tablename__ = "platform_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    # "plan" (a standard package) | "custom" (a priced custom request) | "subscription" (a
+    # recurring renewal charge).
+    kind = Column(String(20), nullable=False)
+    plan_id = Column(Integer, nullable=True)
+    custom_request_id = Column(Integer, nullable=True)
+    amount_paise = Column(BigInteger, nullable=False)
+    currency = Column(String(8), nullable=False, default="INR")
+    provider = Column(String(20), nullable=False)
+    provider_order_id = Column(String, nullable=True, index=True)
+    provider_payment_id = Column(String, nullable=True)
+    status = Column(String(20), nullable=False, default="captured")
+    paid_at = Column(UtcDateTime, nullable=False, default=utcnow)
+
+
 class CustomPlanRequest(Base):
     """A tenant asking for a bespoke package: the counts they want, and what the operator
     priced it at.

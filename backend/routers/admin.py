@@ -15,17 +15,19 @@ import json
 import logging
 import os
 import pathlib
+import re
 import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .. import database, models, schemas
 from ..billing import TERMINAL_SUBSCRIPTION_STATUSES, apply_plan, plan_features, subscription_state
+from ..limiter import limiter
 from ..media_urls import resolve_media_url
 from ..services import legacy_device_auth_allowed, screens_without_secret
 from ..services.storage_service import forget_cached_usage
@@ -1545,3 +1547,162 @@ def update_user_role(
         "message": f"User '{user.username}' is now assigned role '{user.role}'.",
     }
 
+
+
+# ------------------------------------------------------------------------------------------
+# Admin Billing: what tenants have paid, the contact address shown on a custom-plan email
+# draft, and whether SMTP is actually working. Phase 3.2.
+
+CONTACT_EMAIL_KEY = "platform_contact_email"
+
+
+class PlatformPaymentOut(BaseModel):
+    id: int
+    organization_id: int
+    organization_name: Optional[str] = None
+    kind: str
+    plan_id: Optional[int] = None
+    custom_request_id: Optional[int] = None
+    amount_paise: int
+    currency: str
+    provider: str
+    provider_order_id: Optional[str] = None
+    provider_payment_id: Optional[str] = None
+    status: str
+    paid_at: datetime
+
+
+@router.get("/payments", response_model=List[PlatformPaymentOut])
+def list_platform_payments(
+    organization_id: Optional[int] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    limit: int = 200,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """What tenants have paid the platform -- view only. Amounts come from the provider,
+    recorded once by the shared activation path at the moment each purchase was captured."""
+    query = db.query(models.PlatformPayment, models.Organization.name).join(
+        models.Organization, models.Organization.id == models.PlatformPayment.organization_id
+    )
+    if organization_id is not None:
+        query = query.filter(models.PlatformPayment.organization_id == organization_id)
+    if since is not None:
+        query = query.filter(models.PlatformPayment.paid_at >= since)
+    if until is not None:
+        query = query.filter(models.PlatformPayment.paid_at <= until)
+    rows = query.order_by(models.PlatformPayment.paid_at.desc()).limit(min(max(limit, 1), 1000)).all()
+    return [
+        PlatformPaymentOut(
+            id=payment.id, organization_id=payment.organization_id, organization_name=org_name,
+            kind=payment.kind, plan_id=payment.plan_id, custom_request_id=payment.custom_request_id,
+            amount_paise=payment.amount_paise, currency=payment.currency, provider=payment.provider,
+            provider_order_id=payment.provider_order_id, provider_payment_id=payment.provider_payment_id,
+            status=payment.status, paid_at=payment.paid_at,
+        )
+        for payment, org_name in rows
+    ]
+
+
+class ContactEmailOut(BaseModel):
+    email: Optional[str] = None
+
+
+class ContactEmailWrite(BaseModel):
+    email: str = Field(default="", max_length=254)
+
+
+@router.get("/settings/contact-email", response_model=ContactEmailOut)
+def get_contact_email(
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Where a custom-plan request's mailto draft is addressed. Unset until an operator sets
+    one here; the tenant-facing redirect is simply skipped until then (see billing.py's
+    /billing/contact)."""
+    setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == CONTACT_EMAIL_KEY).first()
+    return ContactEmailOut(email=setting.value if setting else None)
+
+
+@router.put("/settings/contact-email", response_model=ContactEmailOut)
+def set_contact_email(
+    payload: ContactEmailWrite,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    email = payload.email.strip()
+    if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        raise HTTPException(status_code=422, detail="That does not look like an email address")
+    setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == CONTACT_EMAIL_KEY).first()
+    if not email:
+        if setting:
+            db.delete(setting)
+        db.commit()
+        return ContactEmailOut(email=None)
+    if setting:
+        setting.value = email
+        setting.updated_at = models.utcnow()
+    else:
+        db.add(models.SystemSetting(
+            key=CONTACT_EMAIL_KEY, value=email,
+            description="Address a tenant's custom-plan request email draft is addressed to",
+        ))
+    db.commit()
+    logger.info("Platform contact email set by %s", scope.user.username)
+    return ContactEmailOut(email=email)
+
+
+class EmailStatusOut(BaseModel):
+    is_configured: bool
+    sender: Optional[str] = None
+    missing_variables: List[str] = Field(default_factory=list)
+
+
+@router.get("/settings/email-status", response_model=EmailStatusOut)
+def platform_email_status(scope: TenantScope = Depends(require_super_admin)):
+    """Whether SMTP is set up on this deployment, for the Billing page's status card.
+    Mirrors placements.py's tenant-facing /email-status."""
+    from .. import mailer
+
+    configured = mailer.is_configured()
+    return EmailStatusOut(
+        is_configured=configured,
+        sender=mailer.sender() if configured else None,
+        missing_variables=[] if configured else mailer.missing_variables(),
+    )
+
+
+class TestEmailRequest(BaseModel):
+    to: str = Field(max_length=254)
+
+
+@router.post("/settings/test-email")
+@limiter.limit("5/minute")
+def send_test_email(
+    request: Request,
+    payload: TestEmailRequest,
+    scope: TenantScope = Depends(require_super_admin),
+):
+    """Prove SMTP actually works, with the real error shown rather than hidden behind a
+    generic failure -- the one question "I set the variables in Render" cannot answer by
+    itself is whether the server can actually reach and authenticate to that SMTP host."""
+    from .. import mailer
+
+    to = payload.to.strip()
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to):
+        raise HTTPException(status_code=422, detail="That does not look like an email address")
+    try:
+        mailer.send(
+            to=to,
+            subject="MR Signage - test email",
+            body=(
+                f"This confirms SMTP is working on this deployment.\n\n"
+                f"Sent by {scope.user.username} from the admin Billing page."
+            ),
+        )
+    except mailer.MailNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001 - surfacing the real SMTP error is the whole point
+        raise HTTPException(status_code=502, detail=f"Could not send the email: {exc}")
+    return {"status": "sent", "to": to}
