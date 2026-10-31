@@ -182,6 +182,8 @@ PURE_MODULES = {
     "test_purge_prefix.py",
     # Operator scripts that delete or overwrite data must stop at a hosted database.
     "test_script_guard.py",
+    # Which X-Forwarded-For entry the rate limiter counts a request against.
+    "test_limiter_key.py",
 }
 
 

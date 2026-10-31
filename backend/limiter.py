@@ -1,3 +1,5 @@
+import os
+
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -12,6 +14,23 @@ from slowapi.util import get_remote_address
 # 50-screen site as a single client and would take the site offline exactly when every TV
 # reconnects at once -- a power cut, which is when it can least afford it. Add the
 # middleware only alongside a key_func that identifies the device rather than the exit IP.
+def _trusted_proxy_hops() -> int:
+    """How many reverse proxies in front of this app append to X-Forwarded-For.
+
+    0 (the default) keeps the historical behaviour: the leftmost entry is taken as the
+    client. That entry is whatever the caller wrote, so it can be spoofed to dodge a
+    per-IP cap. With N proxies in front of us, each appends the address it received the
+    connection from, so the real client is the Nth entry FROM THE RIGHT -- everything to
+    its left is client-supplied. Set TRUSTED_PROXY_HOPS only after checking, on the live
+    host, what a request's X-Forwarded-For actually looks like: counting from the wrong end
+    would put every caller in one bucket, which is the failure client_key exists to avoid.
+    """
+    try:
+        return max(0, int(os.getenv("TRUSTED_PROXY_HOPS", "0")))
+    except ValueError:
+        return 0
+
+
 def client_key(request: Request) -> str:
     """Who to count this request against.
 
@@ -22,16 +41,18 @@ def client_key(request: Request) -> str:
     one: a 5/minute login limit becomes five logins per minute for the whole product, and
     the device-auth cap becomes five TVs per minute for the entire fleet.
 
-    The leftmost X-Forwarded-For entry is the original client. It is client-controlled and
-    therefore spoofable, which is acceptable here: the worst a forger achieves is spreading
-    their own attempts across buckets, exactly what an attacker with a botnet gets anyway.
-    Counting everyone as one caller is the far worse failure.
+    Which entry to believe is set by TRUSTED_PROXY_HOPS (see _trusted_proxy_hops). Left at 0
+    the leftmost entry is used: it is client-controlled, so a forger can spread their own
+    attempts across buckets -- but counting everyone as one caller is the far worse failure.
     """
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
-        first = forwarded.split(",")[0].strip()
-        if first:
-            return first
+        entries = [entry.strip() for entry in forwarded.split(",") if entry.strip()]
+        if entries:
+            hops = _trusted_proxy_hops()
+            if hops > 0:
+                return entries[max(0, len(entries) - hops)]
+            return entries[0]
     return get_remote_address(request)
 
 
