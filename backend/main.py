@@ -548,10 +548,15 @@ async def health_check(db: Session = Depends(database.get_db)):
         # The database mirror serves the same objects, so a deployment using it must not be
         # told its thumbnails are blank -- they are not, and a false alarm on a tenant's
         # dashboard costs more trust than the real warning underneath it is worth.
+        # On its own connection, never the request's session. The table has no model or migration
+        # and may not exist, and on Postgres a failed statement aborts the whole transaction: the
+        # swallowed error then made the next query in this handler fail, so a database without the
+        # mirror answered 500 -- to Render's health check, which would read that as down.
         try:
-            public_reads = bool(
-                db.execute(text("SELECT 1 FROM media_blob LIMIT 1")).first()
-            )
+            with database.engine.connect() as connection:
+                public_reads = bool(
+                    connection.execute(text("SELECT 1 FROM media_blob LIMIT 1")).first()
+                )
         except Exception:
             public_reads = False
     # Reported, not fatal. Nothing in the fleet depends on mail -- but a tenant who clicks
