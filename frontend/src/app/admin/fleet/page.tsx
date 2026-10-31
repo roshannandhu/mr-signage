@@ -45,6 +45,30 @@ export default function AdminFleetPage() {
 
       <MaintenancePinCard />
 
+      {/* Legacy login lets a TV call the API knowing only its device id, which is not a secret.
+          It exists to keep older players alive, so it should be switched off once no TV needs it. */}
+      {data?.legacy_device_auth && (
+        <div
+          role="status"
+          className={`rounded-2xl border p-4 text-sm ${
+            data.screens_without_secret === 0
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+          }`}
+        >
+          <p className="font-semibold">
+            {data.screens_without_secret === 0
+              ? 'Legacy TV login is still on, but every TV now has its own secret.'
+              : `Legacy TV login is on, and ${data.screens_without_secret} TV${data.screens_without_secret === 1 ? '' : 's'} still hold no device secret.`}
+          </p>
+          <p className="mt-1 opacity-80">
+            {data.screens_without_secret === 0
+              ? 'It is safe to switch it off: set ALLOW_LEGACY_DEVICE_AUTH=false on the server.'
+              : 'Switching it off now would sign those TVs out. Update or re-pair them first; this count falls to 0 as they do.'}
+          </p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="Total TVs" value={data?.total ?? 0} icon={MonitorPlay} accent="violet" />
         <StatCard label="Online now" value={`${data?.online ?? 0} / ${data?.total ?? 0}`} icon={Activity} accent="emerald" />

@@ -9,6 +9,7 @@ from .device_auth_service import (
     collect_device_secret,
     legacy_device_auth_allowed,
     issue_device_secret,
+    screens_without_secret,
     token_is_for_device,
 )
 from .screen_content_service import (
@@ -57,6 +58,7 @@ __all__ = [
     "collect_device_secret",
     "legacy_device_auth_allowed",
     "issue_device_secret",
+    "screens_without_secret",
     "token_is_for_device",
     "ScreenContentService",
     "resolve_screen_playlist",

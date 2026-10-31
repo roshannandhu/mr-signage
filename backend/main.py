@@ -661,10 +661,15 @@ async def health_check(db: Session = Depends(database.get_db)):
     # rollout, so it is a state to leave, not a state to sit in.
     from .routers.screens import legacy_device_auth_allowed
 
+    legacy_remaining = None
     if legacy_device_auth_allowed():
+        from .services import screens_without_secret
+
+        legacy_remaining = screens_without_secret(db)
         warnings.append(
             "ALLOW_LEGACY_DEVICE_AUTH is on; screens may call device endpoints with no "
-            "credential. Turn it off once no screen logs the legacy-path warning"
+            f"credential. {legacy_remaining} screen(s) still hold no device secret; turn it "
+            "off once that reaches 0"
         )
     if not redis_ok:
         warnings.append(
@@ -732,6 +737,9 @@ async def health_check(db: Session = Depends(database.get_db)):
         "storage_env": storage_env,
         # Absent when the boot migration succeeded, which is the normal case.
         "schema_migration_error": SCHEMA_MIGRATION_ERROR,
+        # None once legacy device auth is off. Otherwise how many screens would be stranded by
+        # switching it off; the switch is safe when this is 0.
+        "legacy_screens_without_secret": legacy_remaining,
         # Loud on purpose: these are the states where everything looks fine and either
         # every write is discarded on the next deploy, or nothing is being processed.
         "warning": "; ".join(warnings) or None,

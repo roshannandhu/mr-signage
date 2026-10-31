@@ -670,6 +670,10 @@ export interface FleetOverview {
   failed: number
   versions: Record<string, number>
   screens: FleetScreen[]
+  /** Whether TVs may still call the API with no device credential. */
+  legacy_device_auth?: boolean
+  /** TVs holding no device secret: the ones switching legacy auth off would strand. */
+  screens_without_secret?: number
 }
 
 export interface Package {

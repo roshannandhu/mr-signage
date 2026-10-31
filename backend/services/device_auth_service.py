@@ -103,6 +103,25 @@ def token_is_for_device(payload: dict, device_id: str) -> bool:
     return token_type == DEVICE_TOKEN_TYPE
 
 
+def screens_without_secret(db: Session) -> int:
+    """How many live, claimed screens hold no device secret.
+
+    These are the screens that can only authenticate on the legacy path, so this is the number
+    to watch go to zero before ALLOW_LEGACY_DEVICE_AUTH is switched off: until it does, closing
+    the legacy path would strand exactly these.
+    """
+    return (
+        db.query(models.Screen)
+        .filter(
+            models.Screen.deleted_at.is_(None),
+            models.Screen.organization_id.isnot(None),
+            models.Screen.status != "waiting_pairing",
+            models.Screen.device_secret_hash.is_(None),
+        )
+        .count()
+    )
+
+
 def issue_device_secret(screen: models.Screen) -> str:
     """Give this screen a credential of its own and return the plaintext once."""
     from ..routers.auth import get_password_hash

@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from .. import database, models, schemas
 from ..billing import plan_features, subscription_state
 from ..media_urls import resolve_media_url
+from ..services import legacy_device_auth_allowed, screens_without_secret
 from ..services.storage_service import forget_cached_usage
 from ..services.tenant_purge import TENANT_PURGE_AFTER_DAYS, purge_due_at, purge_organization
 from ..tenancy import TenantScope, require_super_admin
@@ -1340,6 +1341,10 @@ class FleetOverviewOut(BaseModel):
     # app_version -> count, so the console can show the version spread at a glance.
     versions: Dict[str, int]
     screens: List[FleetScreenOut]
+    # Whether screens may still call device endpoints with no credential, and how many hold no
+    # device secret and would be stranded if that were switched off.
+    legacy_device_auth: bool = False
+    screens_without_secret: int = 0
 
 
 @router.get("/fleet", response_model=FleetOverviewOut)
@@ -1418,6 +1423,8 @@ def fleet_overview(
         failed=failed,
         versions=versions,
         screens=rows,
+        legacy_device_auth=legacy_device_auth_allowed(),
+        screens_without_secret=screens_without_secret(db),
     )
 
 
