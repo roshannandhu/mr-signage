@@ -9,7 +9,7 @@ import os
 import re
 import sys
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -232,7 +232,7 @@ try:
 
     rl = client.get(f"/api/placements/{a_id}/report", headers=auth).json()
     late_row = next(s for s in rl["per_screen"] if s["screen_name"] == "Late Kiosk")
-    assert late_row["assigned_at"][:10] == now.date().isoformat(), late_row["assigned_at"]
+    assert datetime.fromisoformat(late_row["assigned_at"]).astimezone(timezone.utc).date() == now.astimezone(timezone.utc).date(), late_row["assigned_at"]
 
     new_plaza = {p["location"]: p for p in rl["per_location"]}["New Plaza"]
     # One day on air, so 40 plays is 40/day -- not 4/day, which is what dividing by the
@@ -256,7 +256,7 @@ try:
     assert body["total_price_paise"] == 2500000 + 1250000, body
     # The sold dates are untouched; the effective end moves. An invoice still has to be
     # able to show what was originally agreed.
-    assert body["effective_ends_at"][:10] == (now + timedelta(days=46)).date().isoformat(), body
+    assert datetime.fromisoformat(body["effective_ends_at"]).astimezone(timezone.utc).date() == (now + timedelta(days=46)).date(), body
 
     # The extension must reach the SCREEN, not just the database: the player stops the
     # advert on PlaylistItem.end_at.
@@ -267,7 +267,8 @@ try:
     item = db.query(models.PlaylistItem).filter(
         models.PlaylistItem.id == target_item.playlist_item_id
     ).one()
-    assert item.end_at.date() == (now + timedelta(days=46)).date(), item.end_at
+    item_end_at = item.end_at if item.end_at.tzinfo is not None else item.end_at.replace(tzinfo=timezone.utc)
+    assert item_end_at.astimezone(timezone.utc).date() == (now + timedelta(days=46)).date(), item.end_at
     print("  ok  an extension moves the effective end, the price, and the placed item")
 
     rx = client.get(f"/api/placements/{t_id}/report", headers=auth).json()

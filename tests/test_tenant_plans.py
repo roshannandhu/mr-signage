@@ -14,7 +14,7 @@ Throwaway Postgres database. Run directly:  python tests/test_tenant_plans.py
 import os
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -53,9 +53,30 @@ try:
 
     ad = models.Content(organization_id=acme.id, type="video", file_url="/uploads/1/a.mp4",
                         name="Summer Sale", status="ready", duration_ms=30_000)
-    db.add(ad); db.commit()
+    ad2 = models.Content(organization_id=acme.id, type="video", file_url="/uploads/1/a2.mp4",
+                         name="Winter Sale", status="ready", duration_ms=30_000)
+    ad3 = models.Content(organization_id=acme.id, type="video", file_url="/uploads/1/a3.mp4",
+                         name="Spring Sale", status="ready", duration_ms=30_000)
+    ad4 = models.Content(organization_id=acme.id, type="video", file_url="/uploads/1/a4.mp4",
+                         name="Autumn Sale", status="ready", duration_ms=30_000)
+    ad5 = models.Content(organization_id=acme.id, type="video", file_url="/uploads/1/a5.mp4",
+                         name="Holiday Sale", status="ready", duration_ms=30_000)
+    db.add_all([ad, ad2, ad3, ad4, ad5]); db.commit()
     screen = models.Screen(organization_id=acme.id, name="Lobby", status="online")
     db.add(screen); db.commit()
+
+    def make_ad(name="Advert"):
+        cnt = models.Content(
+            organization_id=acme.id,
+            type="video",
+            file_url=f"/uploads/1/{uuid.uuid4().hex[:8]}.mp4",
+            name=name,
+            status="ready",
+            duration_ms=30_000,
+        )
+        db.add(cnt)
+        db.commit()
+        return cnt
 
     http = TestClient(app)
     auth = {"Authorization": f"Bearer {create_access_token(data={'sub': owner.username})}"}
@@ -122,7 +143,7 @@ try:
     assert body["advertiser"] == "BrightMart", body
     assert body["client"]["client_code"] == "CLT00001", body
     # duration_days drove the end date, which is the point of selling by package.
-    assert body["effective_ends_at"][:10] == (now + timedelta(days=31)).date().isoformat(), body
+    assert datetime.fromisoformat(body["effective_ends_at"]).astimezone(timezone.utc).date() == (now + timedelta(days=31)).date(), body
     print("  ok  booking on a plan takes its price and its duration")
 
     # Repricing the plan must not restate the sold booking.
@@ -179,9 +200,9 @@ try:
     # shared bucket root where two tenants' marks could collide.
     db.expire_all()
     acme_row = db.query(models.Organization).filter(models.Organization.slug == "acme").one()
-    from backend.media_urls import storage_prefix
+    from backend.media_urls import branding_storage_prefix
 
-    assert f"{storage_prefix(acme_row)}/branding/" in acme_row.logo_url, acme_row.logo_url
+    assert branding_storage_prefix(acme_row) in acme_row.logo_url, acme_row.logo_url
     print("  ok  the logo is stored under that tenant's own prefix")
 
     named = http.put("/api/branding/", headers=auth,
@@ -226,7 +247,7 @@ try:
     db.add_all(fleet); db.commit()
 
     within = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "client_id": second.json()["id"], "plan_id": small_plan["id"],
+        "content_id": ad2.id, "client_id": second.json()["id"], "plan_id": small_plan["id"],
         "starts_at": now.isoformat(),
         "targets": [{"screen_id": fleet[0].id}, {"screen_id": fleet[1].id}],
     })
@@ -241,7 +262,7 @@ try:
 
     # Booking straight past the limit in one request is refused whole, not half-created.
     over = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": small_plan["id"], "advertiser": "Too Big",
+        "content_id": ad3.id, "plan_id": small_plan["id"], "advertiser": "Too Big",
         "starts_at": now.isoformat(),
         "targets": [{"screen_id": s.id} for s in fleet],
     })
@@ -258,7 +279,7 @@ try:
     db.commit()
 
     by_group = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": small_plan["id"], "advertiser": "Group Sneak",
+        "content_id": ad4.id, "plan_id": small_plan["id"], "advertiser": "Group Sneak",
         "starts_at": now.isoformat(), "targets": [{"group_id": big_group.id}],
     })
     assert by_group.status_code == 409, (
@@ -283,7 +304,7 @@ try:
         "ad_slots": 1, "price_paise": 900000, "support_tier": "Basic Support",
     }).json()
     spread = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": roomy["id"], "advertiser": "Three Screens",
+        "content_id": ad5.id, "plan_id": roomy["id"], "advertiser": "Three Screens",
         "starts_at": now.isoformat(),
         "targets": [{"screen_id": fleet[0].id}, {"screen_id": fleet[1].id}, {"screen_id": fleet[2].id}],
     })
@@ -318,7 +339,7 @@ try:
     # The other half of the same number: a client paying for three screens and running on
     # one is owed two, and nothing was saying so. It must never block the sale.
     short = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": roomy["id"], "advertiser": "Only One",
+        "content_id": make_ad("Only One").id, "plan_id": roomy["id"], "advertiser": "Only One",
         "starts_at": now.isoformat(), "targets": [{"screen_id": fleet[3].id}],
     })
     assert short.status_code == 201, "selling a plan and filling it later must stay possible"
@@ -330,7 +351,7 @@ try:
 
     # A booking with no plan has nothing to be short of.
     planless = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "advertiser": "No Plan", "starts_at": now.isoformat(),
+        "content_id": make_ad("No Plan").id, "advertiser": "No Plan", "starts_at": now.isoformat(),
         "ends_at": (now + timedelta(days=5)).isoformat(),
         "targets": [{"screen_id": fleet[0].id}],
     }).json()
@@ -340,14 +361,15 @@ try:
     # --- a sold booking is never silently repriced --------------------------------------
     # placements.py copies the price once and says so; the client-ad editor copied it again
     # on EVERY edit, so correcting a phone number rebilled the campaign at today's price.
+    agreed_ad = make_ad("Agreed Price")
     sold = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": roomy["id"], "advertiser": "Agreed Price",
+        "content_id": agreed_ad.id, "plan_id": roomy["id"], "advertiser": "Agreed Price",
         "starts_at": now.isoformat(), "price_paise": 111111,
         "targets": [{"screen_id": fleet[0].id}],
     })
     assert sold.status_code == 201, sold.text
     http.put(f"/api/tenant-plans/{roomy['id']}", headers=auth, json={"price_paise": 5000000})
-    http.put(f"/api/content/{ad.id}/client-ad", headers=auth, json={
+    http.put(f"/api/content/{agreed_ad.id}/client-ad", headers=auth, json={
         "client_name": "Agreed Price", "plan_id": roomy["id"], "client_phone": "9999999999",
     })
     after = [p for p in http.get("/api/placements/", headers=auth).json() if p["id"] == sold.json()["id"]][0]
@@ -361,7 +383,7 @@ try:
     # The client outgrew Basic. Moving them used to mean hand-editing the booking, and
     # nothing suggested what to move them to.
     outgrown = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": small_plan["id"], "advertiser": "Growing Co",
+        "content_id": make_ad("Growing Co").id, "plan_id": small_plan["id"], "advertiser": "Growing Co",
         "starts_at": now.isoformat(), "price_paise": small_plan["price_paise"],
         "targets": [{"screen_id": fleet[0].id}, {"screen_id": fleet[1].id}],
     })
@@ -451,7 +473,7 @@ try:
     # and charged the whole package again on top of the figure already agreed.
     basic_now = http.get(f"/api/tenant-plans/{small_plan['id']}", headers=auth).json()["price_paise"]
     negotiated = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "advertiser": "Handshake Ltd",
+        "content_id": make_ad("Handshake Ltd").id, "advertiser": "Handshake Ltd",
         "starts_at": now.isoformat(), "ends_at": (now + timedelta(days=30)).isoformat(),
         # Deliberately unlike the package price, so "replaced" and "added" cannot look alike.
         "price_paise": 90_00,
@@ -508,7 +530,7 @@ try:
         "ad_slots": 2, "price_paise": 400000, "support_tier": "standard",
     }).json()
     on_retired = http.post("/api/placements/", headers=auth, json={
-        "content_id": ad.id, "plan_id": retired["id"], "advertiser": "Old Deal",
+        "content_id": make_ad("Old Deal").id, "plan_id": retired["id"], "advertiser": "Old Deal",
         "starts_at": now.isoformat(), "price_paise": retired["price_paise"],
         "targets": [{"screen_id": fleet[0].id}],
     })

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useBulkSelection } from '@/hooks/use-bulk-selection'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, CheckCircle2, ImageIcon, Plus, RefreshCw, Search, Sparkles, Target, Trash2, Upload, UploadCloud, Users, Video, X } from 'lucide-react'
+import { Building2, CheckCircle2, ImageIcon, RefreshCw, Search, Target, Trash2, Upload, UploadCloud, Video, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'

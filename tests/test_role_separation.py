@@ -308,19 +308,26 @@ def tenant_features(owner: dict, editor: dict, viewer: dict) -> dict:
                   "editor assigns playlist to group", "tenant")
 
     # --- ad bookings (the revenue feature) ---------------------------------------------
-    if "content" in made and "screen" in made:
-        booking = client.post("/api/placements/", headers=editor, json={
-            "content_id": made["content"], "advertiser": "Local Cafe",
-            "price_paise": 500000, "is_paid": True,
-            "starts_at": "2026-08-01T00:00:00Z", "ends_at": "2026-12-01T00:00:00Z",
-            "targets": [{"screen_id": made["screen"]}],
-        })
-        works(booking, "editor books an advert", "tenant", ok=(200, 201))
-        if booking.status_code in (200, 201):
-            made["placement"] = booking.json()["id"]
-            works(client.get(f"/api/placements/{made['placement']}/report", headers=viewer),
-                  "viewer reads booking report", "tenant")
-        works(client.get("/api/placements/", headers=viewer), "viewer lists bookings", "tenant")
+    if "screen" in made:
+        ad_upload = client.post(
+            "/api/content/upload", headers=editor,
+            files={"file": ("billboard.png", io.BytesIO(b"\x89PNG\r\n\x1a\n" + b"1" * 64), "image/png")},
+            data={"name": "Billboard Ad", "tags": "ad"},
+        )
+        if ad_upload.status_code in (200, 201):
+            ad_content_id = ad_upload.json()["id"]
+            booking = client.post("/api/placements/", headers=editor, json={
+                "content_id": ad_content_id, "advertiser": "Local Cafe",
+                "price_paise": 500000, "is_paid": True,
+                "starts_at": "2026-08-01T00:00:00Z", "ends_at": "2026-12-01T00:00:00Z",
+                "targets": [{"screen_id": made["screen"]}],
+            })
+            works(booking, "editor books an advert", "tenant", ok=(200, 201))
+            if booking.status_code in (200, 201):
+                made["placement"] = booking.json()["id"]
+                works(client.get(f"/api/placements/{made['placement']}/report", headers=viewer),
+                      "viewer reads booking report", "tenant")
+            works(client.get("/api/placements/", headers=viewer), "viewer lists bookings", "tenant")
 
     # --- reporting, alerts, billing, provisioning ---------------------------------------
     works(client.get("/api/analytics/campaigns", headers=viewer), "viewer lists campaigns", "tenant")

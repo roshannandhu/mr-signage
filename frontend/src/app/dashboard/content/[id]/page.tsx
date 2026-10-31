@@ -13,7 +13,6 @@ import {
   CheckCircle2,
   Film,
   IndianRupee,
-  Layers3,
   MapPin,
   MonitorPlay,
   Receipt,
