@@ -54,10 +54,16 @@ ISOLATED_SCRIPTS = {
     "test_signup_lifecycle.py",
     "test_analytics.py",
     "test_p6_websockets.py",
+    # A socket with no credential is receive-only and sees only its own commands.
+    "test_ws_unauthenticated.py",
+    # How many TVs hold no device secret: the number that says when legacy login can close.
+    "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
     "test_device_token_type.py",
     # A login token belongs to one user row, so a reused username cannot inherit it.
     "test_token_binding.py",
+    # Screenshots must be images; email-status needs a sign-in and does not crash.
+    "test_upload_hardening.py",
     # A device id alone must not take over a claimed screen via /register.
     "test_register_takeover.py",
     # Signing a TV in cannot delete or take over another workspace's screen; /pair is limited.
