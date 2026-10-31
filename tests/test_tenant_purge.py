@@ -297,6 +297,63 @@ def test_admin_can_delete_a_removed_workspace_now():
         db.close()
 
 
+def _due_workspace(db, name):
+    org = _workspace(db, name=name)
+    org.deleted_at = models.utcnow() - timedelta(days=tenant_purge.TENANT_PURGE_AFTER_DAYS + 1)
+    db.commit()
+    return org.id
+
+
+def test_an_unfinished_storage_sweep_keeps_the_rows():
+    """Rows go only once the bucket is clean. Deleting them first orphans the bytes forever,
+    because nothing would remain that points at them."""
+    from backend import media_storage
+
+    original_delete, original_sweep = media_storage.delete, tenant_purge.delete_prefix
+    original_enabled = tenant_purge.is_s3_enabled
+    media_storage.delete = _deleted_nothing
+    tenant_purge.delete_prefix = lambda prefix: {"deleted": 0, "failed": 2, "error": "AccessDenied"}
+    tenant_purge.is_s3_enabled = lambda: True
+
+    db = database.SessionLocal()
+    try:
+        org_id = _due_workspace(db, "Refused Co")
+        tenant_purge.purge_removed_tenants(db)  # logs the failure and rolls back
+        assert _survivors(db, org_id), "rows were deleted while the bucket still held their files"
+
+        # The same workspace is purged on the next pass once the bucket cooperates.
+        tenant_purge.delete_prefix = lambda prefix: {"deleted": 2, "failed": 0, "error": None}
+        tenant_purge.purge_removed_tenants(db)
+        assert _survivors(db, org_id) == {}, "the retry did not finish the purge"
+    finally:
+        media_storage.delete, tenant_purge.delete_prefix = original_delete, original_sweep
+        tenant_purge.is_s3_enabled = original_enabled
+        db.close()
+
+
+def test_a_sweep_with_no_storage_configured_does_not_block_the_purge():
+    """No bucket means nothing to sweep -- local-disk and database-mirror deployments."""
+    from backend import media_storage
+
+    original_delete, original_sweep = media_storage.delete, tenant_purge.delete_prefix
+    original_enabled = tenant_purge.is_s3_enabled
+    media_storage.delete = _deleted_nothing
+    tenant_purge.delete_prefix = lambda prefix: {
+        "deleted": 0, "failed": 0, "error": "Object storage has no credentials."
+    }
+    tenant_purge.is_s3_enabled = lambda: False
+
+    db = database.SessionLocal()
+    try:
+        org_id = _due_workspace(db, "Local Disk Co")
+        tenant_purge.purge_removed_tenants(db)
+        assert _survivors(db, org_id) == {}, "an unconfigured bucket blocked the purge"
+    finally:
+        media_storage.delete, tenant_purge.delete_prefix = original_delete, original_sweep
+        tenant_purge.is_s3_enabled = original_enabled
+        db.close()
+
+
 if __name__ == "__main__":
     try:
         for name, fn in sorted(globals().items()):

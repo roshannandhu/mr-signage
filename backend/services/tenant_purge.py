@@ -32,7 +32,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from .. import media_storage, models
-from ..media_urls import storage_prefix, tenant_storage_root
+from ..media_urls import is_s3_enabled, storage_prefix, tenant_storage_root
 from .storage_service import delete_prefix, forget_cached_usage
 
 logger = logging.getLogger(__name__)
@@ -200,6 +200,17 @@ def purge_organization(
         swept = delete_prefix(prefix)
         report["objects_deleted"] += swept["deleted"]
         report["objects_missed"] += swept["failed"]
+        # Objects before rows, honoured to the end: the rows above are only flushed, not
+        # committed, so raising here rolls them back and the workspace is retried on the
+        # next pass. Committing them with bytes still in the bucket would orphan those bytes
+        # for good -- nothing would remain that points at them. With no storage configured
+        # there is no bucket to sweep, which is not a failure.
+        if (swept.get("error") or swept["failed"]) and is_s3_enabled():
+            raise RuntimeError(
+                f"Storage sweep of {prefix} did not finish for workspace {org_id} "
+                f"({swept['failed']} objects refused, error: {swept.get('error')}); "
+                "keeping its rows so the purge can be retried."
+            )
 
     return report
 

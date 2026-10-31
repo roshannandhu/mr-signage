@@ -227,6 +227,11 @@ def delete_prefix(prefix: str) -> dict:
     if not prefix or not prefix.strip().strip("/"):
         raise ValueError("delete_prefix needs a prefix; refusing to match the whole bucket")
 
+    # A folder, never a string prefix. "org-3" also matches "org-30/..." and "org-31/...",
+    # so purging workspace 3 deleted other workspaces' media; "tenants/Acme-3" likewise
+    # matches "tenants/Acme-30/...". Every key the app writes is "<prefix>/<file>".
+    prefix = prefix.strip().rstrip("/") + "/"
+
     from ..media_urls import get_s3_config, is_s3_enabled, s3_client
 
     if not is_s3_enabled():

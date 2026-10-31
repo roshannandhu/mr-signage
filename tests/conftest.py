@@ -168,6 +168,8 @@ PURE_MODULES = {
     "test_pairing_code_window.py",
     # Hosted databases are refused while tests run (backend/database.py).
     "test_database_guard.py",
+    # Purge sweeps match whole folders, so workspace 3 cannot delete workspace 30.
+    "test_purge_prefix.py",
 }
 
 
