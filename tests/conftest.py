@@ -170,6 +170,8 @@ PURE_MODULES = {
     "test_database_guard.py",
     # Purge sweeps match whole folders, so workspace 3 cannot delete workspace 30.
     "test_purge_prefix.py",
+    # Operator scripts that delete or overwrite data must stop at a hosted database.
+    "test_script_guard.py",
 }
 
 

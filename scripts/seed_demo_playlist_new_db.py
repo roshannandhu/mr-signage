@@ -72,4 +72,8 @@ def main():
     print("Demo playlist and screen assignment completed on new Supabase DB!")
 
 if __name__ == "__main__":
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("DELETE all tenants' content and playlists, then reseed a demo playlist", SQLALCHEMY_DATABASE_URL)
     main()

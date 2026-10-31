@@ -112,5 +112,9 @@ def run():
     print("Test data cleaned up successfully.")
 
 if __name__ == "__main__":
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("CREATE a test organisation and upload files to the storage bucket", SQLALCHEMY_DATABASE_URL)
     import backend.tenancy
     run()

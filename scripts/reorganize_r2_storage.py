@@ -251,4 +251,8 @@ def execute_migration():
         db.close()
 
 if __name__ == "__main__":
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("MOVE objects in the storage bucket and rewrite file URLs in the database", SQLALCHEMY_DATABASE_URL)
     execute_migration()

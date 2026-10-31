@@ -91,4 +91,8 @@ def main():
     db.close()
 
 if __name__ == "__main__":
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("CREATE test tenants, users and a super admin", SQLALCHEMY_DATABASE_URL)
     main()

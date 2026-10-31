@@ -27,17 +27,19 @@ CREDENTIAL_NAMES = (
     "R2_ACCESS_KEY_ID",
 )
 
-# `NAME = "literal"` and `"NAME": "literal"` cover Python dicts, Python constants and the
-# TS/JS `const NAME = '...'`. An unquoted right-hand side is a lookup, not a secret.
+# `NAME = "literal"`, `"NAME": "literal"` and `os.environ["NAME"] = "literal"` cover Python
+# dicts, Python constants, environment assignment and the TS/JS `const NAME = '...'`. The
+# optional `]` is what catches the environ subscript form, which this used to miss. An
+# unquoted right-hand side is a lookup, not a secret.
 ASSIGNMENT = re.compile(
     r"(?P<name>" + "|".join(CREDENTIAL_NAMES) + r")"
-    r"\"?\s*[:=]\s*"
+    r"\"?\]?\s*[:=]\s*"
     r"(?P<quote>['\"])(?P<value>.*?)(?P=quote)"
 )
 
 # Values that are obviously not a real key. A real R2 key id is 32 hex characters and a
 # secret is 64, so these never collide with one.
-PLACEHOLDERS = {"", "mock", "test", "changeme", "your-key", "your-secret", "none", "null"}
+PLACEHOLDERS = {"", "mock", "test", "testing", "changeme", "your-key", "your-secret", "none", "null"}
 
 # A credential NAME mapped to the name of somewhere a credential is kept is not a credential.
 # `{"AWS_ACCESS_KEY_ID": "storage.aws_access_key_id"}` is a lookup table, and flagging it
@@ -83,7 +85,7 @@ def find_embedded_credentials() -> list[str]:
             continue
         for match in ASSIGNMENT.finditer(text):
             value = match.group("value").strip()
-            if value.lower() in PLACEHOLDERS:
+            if value.lower() in PLACEHOLDERS or value.lower().startswith("mock"):
                 continue
             # A lookup that happens to be quoted, e.g. os.getenv("AWS_ACCESS_KEY_ID").
             if value.upper() in CREDENTIAL_NAMES:
@@ -134,7 +136,18 @@ def test_the_browser_bundle_signs_nothing():
     )
 
 
+def test_the_scan_catches_a_credential_assigned_through_os_environ():
+    """The subscript form `os.environ["NAME"] = "literal"` slipped past the first pattern."""
+    sample = (
+        'os.environ["AWS_SECRET_ACCESS_KEY"] = "AbCd1234realsecret"\n'
+        'os.environ["AWS_ACCESS_KEY_ID"] = "mock_key"\n'
+    )
+    values = [m.group("value") for m in ASSIGNMENT.finditer(sample)]
+    assert values == ["AbCd1234realsecret", "mock_key"]
+
+
 if __name__ == "__main__":
     test_no_storage_credentials_in_source()
     test_the_browser_bundle_signs_nothing()
+    test_the_scan_catches_a_credential_assigned_through_os_environ()
     print("no embedded credentials: all checks passed")

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.database import SessionLocal  # noqa: E402
 from backend import models  # noqa: E402
 from backend.routers.content import UPLOAD_DIR  # noqa: E402
+from _referenced_files import extra_stored_urls  # noqa: E402
 
 
 def referenced_paths(db) -> set[str]:
@@ -39,6 +40,8 @@ def referenced_paths(db) -> set[str]:
         note(rendition.file_url)
     for shot in db.query(models.ScreenshotLog).all():
         note(shot.file_url)
+    for stored_url in extra_stored_urls(db):
+        note(stored_url)
     return referenced
 
 
@@ -77,6 +80,11 @@ def main() -> int:
             print("\nReport only — nothing was deleted.")
             print("Re-run with --apply to remove them.")
             return 0
+
+        from backend.database import SQLALCHEMY_DATABASE_URL
+        from backend.script_guard import confirm_destructive
+
+        confirm_destructive("DELETE local upload files that the database does not reference", SQLALCHEMY_DATABASE_URL)
 
         removed = 0
         freed = 0

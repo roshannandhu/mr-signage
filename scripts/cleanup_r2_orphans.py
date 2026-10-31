@@ -8,6 +8,7 @@ Usage:
     python scripts/cleanup_r2_orphans.py --apply
 """
 import argparse
+import datetime
 import json
 import os
 import pathlib
@@ -19,6 +20,11 @@ root_dir = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root_dir))
 
 from backend import database, models
+from _referenced_files import extra_stored_urls
+
+# Anything newer than this is skipped: an upload writes the object first and the database
+# row a moment later, so a fresh object with no row yet is not an orphan.
+MIN_AGE = datetime.timedelta(hours=1)
 
 
 def get_cloudflare_oauth_token() -> str:
@@ -60,12 +66,24 @@ def get_active_db_keys() -> set[str]:
             add(r.file_url)
         for s in db.query(models.ScreenshotLog).all():
             add(s.file_url)
-        for o in db.query(models.Organization).all():
-            add(o.logo_url)
+        # Workspace logos, the demo video and every release APK, which the loops above miss.
+        for stored_url in extra_stored_urls(db):
+            add(stored_url)
     finally:
         db.close()
 
     return keys
+
+
+def _too_new_to_judge(obj: dict) -> bool:
+    """True for an object modified within MIN_AGE, or whose age cannot be read."""
+    try:
+        modified = datetime.datetime.fromisoformat(str(obj.get("last_modified")).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if modified.tzinfo is None:
+        modified = modified.replace(tzinfo=datetime.timezone.utc)
+    return datetime.datetime.now(datetime.timezone.utc) - modified < MIN_AGE
 
 
 def list_r2_objects(account_id: str, bucket_name: str, token: str) -> list[dict]:
@@ -115,15 +133,17 @@ def main():
     print("=== Cloudflare R2 Orphan & Unwanted File Cleanup ===")
     token = get_cloudflare_oauth_token()
 
-    # 1. Fetch DB keys
-    print("[1/3] Querying active database references from Supabase...")
-    active_keys = get_active_db_keys()
-    print(f"      Found {len(active_keys)} legitimate active media keys in database.\n")
-
-    # 2. List R2 objects
-    print(f"[2/3] Listing objects in Cloudflare R2 bucket '{args.bucket}'...")
+    # 1. List R2 objects FIRST. The database is read after this, so a file uploaded while
+    #    the script runs is either absent from the listing or already referenced -- never
+    #    listed as an orphan merely because its row did not exist yet when the database was read.
+    print(f"[1/3] Listing objects in Cloudflare R2 bucket '{args.bucket}'...")
     all_objects = list_r2_objects(args.account_id, args.bucket, token)
     print(f"      Found {len(all_objects)} total objects in bucket '{args.bucket}'.\n")
+
+    # 2. Fetch DB keys
+    print("[2/3] Querying active database references from Supabase...")
+    active_keys = get_active_db_keys()
+    print(f"      Found {len(active_keys)} legitimate active media keys in database.\n")
 
     # 3. Categorize
     protected = []
@@ -132,7 +152,7 @@ def main():
     for obj in all_objects:
         key = obj["key"]
         normalized = key.lstrip("/")
-        if key in active_keys or normalized in active_keys:
+        if key in active_keys or normalized in active_keys or _too_new_to_judge(obj):
             protected.append(obj)
         else:
             unwanted.append(obj)
@@ -157,6 +177,11 @@ def main():
         print("\n[INFO] Dry-run completed. No files were deleted.")
         print("To permanently delete these unwanted files, re-run with: python scripts/cleanup_r2_orphans.py --apply")
         return
+
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("DELETE bucket objects that no database row references", SQLALCHEMY_DATABASE_URL)
 
     print("\n[ACTION] Proceeding with deletion of unwanted files...")
     deleted_count = 0

@@ -67,4 +67,8 @@ def fresh_start():
         db.close()
 
 if __name__ == "__main__":
+    from backend.database import SQLALCHEMY_DATABASE_URL
+    from backend.script_guard import confirm_destructive
+
+    confirm_destructive("DELETE every tenant's screens, content, playlists, bookings, play logs, users and uploads", SQLALCHEMY_DATABASE_URL)
     fresh_start()
