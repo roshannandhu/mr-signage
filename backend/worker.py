@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
 from arq import cron
@@ -88,6 +89,40 @@ def compute_sha256(filepath):
         while chunk := f.read(8192):
             sha256.update(chunk)
     return sha256.hexdigest()
+
+
+# How long a video may sit in "processing" before it is treated as stuck. Used by the arq
+# reconciler and by the in-process supervisor, so the two cannot disagree about it.
+STUCK_AFTER = timedelta(minutes=10)
+
+
+def claim_stuck_media(db) -> list[int]:
+    """Take ownership of the videos that look stuck, and return their ids.
+
+    The supervisor used to re-run process_media_sync for EVERY row in "processing" every 30
+    seconds, with no age check and no claim. A video that was simply still transcoding got a
+    second concurrent run (and a third, 30 seconds on), each inserting its own renditions, so
+    every resolution was stored twice and the quota counted the duplicates.
+
+    "Stuck" is the same test the arq reconciler uses: started more than STUCK_AFTER ago, or
+    never stamped. Claiming is a single conditional UPDATE that re-stamps the start time, so
+    two API processes (or the supervisor and the reconciler) cannot both take the same video:
+    the loser's UPDATE matches no row.
+    """
+    threshold = models.utcnow() - STUCK_AFTER
+    stuck = or_(Content.processing_started_at < threshold, Content.processing_started_at.is_(None))
+    candidates = [row[0] for row in db.query(Content.id).filter(Content.status == "processing", stuck).all()]
+    claimed = []
+    for content_id in candidates:
+        taken = (
+            db.query(Content)
+            .filter(Content.id == content_id, Content.status == "processing", stuck)
+            .update({Content.processing_started_at: models.utcnow()}, synchronize_session=False)
+        )
+        db.commit()
+        if taken == 1:
+            claimed.append(content_id)
+    return claimed
 
 
 def process_media_sync(content_id: int):
@@ -332,7 +367,7 @@ async def recover_stuck_processing(ctx):
         if not redis:
             return
         
-        threshold = models.utcnow() - timedelta(minutes=10)
+        threshold = models.utcnow() - STUCK_AFTER
         # Times the current attempt, not the upload. The previous version reset the timer
         # by overwriting uploaded_at, which silently rewrote the "added 3 months ago" date
         # shown in the library and broke sorting by date added.

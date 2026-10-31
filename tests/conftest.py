@@ -62,6 +62,8 @@ ISOLATED_SCRIPTS = {
     "test_plan_limits.py",
     # Buying a plan: renewal keeps days, a switch starts today, payment never lifts a suspension.
     "test_plan_renewal_rules.py",
+    # The media supervisor takes only stuck videos, and takes each one once.
+    "test_media_supervisor_claim.py",
     # The first signup and first new package take the ids after the seeded rows.
     "test_sequence_migration.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.

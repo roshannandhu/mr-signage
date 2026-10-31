@@ -168,15 +168,16 @@ async def lifespan(_app: FastAPI):
         while True:
             rec_db = database.SessionLocal()
             try:
-                stuck_items = rec_db.query(models.Content).filter(models.Content.status == "processing").all()
-                if stuck_items:
-                    logger.info("Media supervisor found %d items in processing state; ensuring completion", len(stuck_items))
-                    from .worker import process_media_sync
-                    for item in stuck_items:
+                from .worker import claim_stuck_media, process_media_sync
+
+                stuck_ids = claim_stuck_media(rec_db)
+                if stuck_ids:
+                    logger.info("Media supervisor took over %d stuck item(s); ensuring completion", len(stuck_ids))
+                    for content_id in stuck_ids:
                         try:
-                            process_media_sync(item.id)
+                            process_media_sync(content_id)
                         except Exception as exc_item:
-                            logger.warning("Supervisor error processing media %d: %s", item.id, exc_item)
+                            logger.warning("Supervisor error processing media %d: %s", content_id, exc_item)
                 # A booking that is sold, paid and running can lose the playlist items it
                 # created without anyone touching it: PlaylistItem cascades from both its
                 # playlist and its content, while the target's link is ON DELETE SET NULL.
