@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func
 
 from .. import models, schemas
-from ..billing import plan_features
+from ..billing import apply_plan, paid_window, plan_features
 from ..payments import get_payment_provider
 from ..tenancy import TenantScope, get_billing_scope, get_tenant_scope
 
@@ -111,9 +111,15 @@ def create_checkout(payload: schemas.CheckoutRequest, scope: TenantScope = Depen
         models.Subscription.organization_id == scope.organization_id
     ).one()
     amount = plan.monthly_price_paise if payload.billing_period == "monthly" else plan.yearly_price_paise
+    if amount == 0 and plan.price_paise > 0:
+        # Priced for a one-time purchase only: it has no monthly or yearly figure, and the
+        # free path below would hand it over for nothing.
+        raise HTTPException(
+            status_code=409,
+            detail="This package is sold as a one-time purchase, not as a subscription",
+        )
     if amount == 0:
-        organization.plan_id = plan.id
-        organization.storage_quota_bytes = plan.max_storage_bytes
+        apply_plan(organization, plan)
         subscription.plan_id = plan.id
         subscription.status = "active"
         subscription.billing_period = payload.billing_period
@@ -169,17 +175,23 @@ def _activate_plan(
     the pay-to-access step: get_tenant_scope blocks every route until this happens.
     """
     now = models.utcnow()
+    # Worked out first: it reads the package the workspace is on today, which apply_plan is
+    # about to replace.
+    start, end = paid_window(org, subscription, plan, now)
     subscription.plan_id = plan.id
     subscription.status = "active"
     subscription.billing_period = "one_time"
-    subscription.current_period_start = now
-    subscription.current_period_end = now + timedelta(days=plan.duration_days)
+    subscription.current_period_start = start
+    subscription.current_period_end = end
     subscription.grace_period_end = None
     subscription.updated_at = now
-    org.plan_id = plan.id
-    org.storage_quota_bytes = plan.max_storage_bytes
-    org.status = "active"
-    if org.approved_at is None:
+    apply_plan(org, plan)
+    # Paying is the way in from the approval queue. It is NOT a way back from a suspension or a
+    # rejection an operator applied: this used to set the status unconditionally, so any
+    # payment (or a replayed webhook) un-suspended a workspace.
+    if org.status == "pending_approval":
+        org.status = "active"
+    if org.status == "active" and org.approved_at is None:
         org.approved_at = now
 
 
@@ -540,8 +552,7 @@ async def razorpay_webhook(
                 subscription.grace_period_end = None
                 subscription.current_period_start = timestamp_to_datetime(entity.get("current_start"))
                 subscription.current_period_end = timestamp_to_datetime(entity.get("current_end"))
-                subscription.organization.plan_id = subscription.plan_id
-                subscription.organization.storage_quota_bytes = subscription.plan.max_storage_bytes
+                apply_plan(subscription.organization, subscription.plan)
             elif event_type in failure_events:
                 grace_days = max(1, min(int(os.getenv("BILLING_GRACE_DAYS", "7")), 30))
                 subscription.status = "grace"

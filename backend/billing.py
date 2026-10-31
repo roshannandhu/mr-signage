@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -158,6 +158,48 @@ def _aware(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def apply_plan(org, plan) -> None:
+    """Put a workspace on a package: the plan, and ONLY the plan's limits.
+
+    Clears the per-workspace screen and ad-slot overrides rather than copying the package's
+    numbers into them. `Organization.max_screens` / `max_ad_slots` mean "this workspace differs
+    from its package", and `effective_max_*` resolves override -> package -> unlimited, so a
+    copy made every tenant permanently different from a package whose numbers merely happened
+    to match that day. It also means buying a package replaces limits an operator set by hand,
+    which is what buying a package is: the hand-set numbers described the OLD arrangement.
+
+    storage_quota_bytes is a real column with no derived equivalent, so it is copied.
+    """
+    org.plan_id = plan.id
+    org.max_screens = 0
+    org.max_ad_slots = 0
+    org.storage_quota_bytes = plan.max_storage_bytes
+
+
+def paid_window(org, subscription, plan, now: datetime) -> tuple[datetime, datetime]:
+    """The (start, end) of access a purchase of `plan` grants.
+
+    Renewing the package a workspace is already on, while it still has days left, adds the new
+    period AFTER the old one, so paying early loses no paid day. Switching to a different
+    package, or buying after the window closed, starts today: there is no credit for the days
+    left on a different package, because that would mean inventing a price for them.
+
+    Called before the workspace is moved onto the new plan, because "the package it is already
+    on" is read from `org.plan_id` -- purchase stamps the subscription with the new plan first.
+    """
+    duration = timedelta(days=plan.duration_days)
+    current_end = _aware(subscription.current_period_end) if subscription else None
+    still_running = (
+        org.plan_id == plan.id
+        and current_end is not None
+        and current_end > now
+        and (subscription is None or subscription.status not in TERMINAL_SUBSCRIPTION_STATUSES)
+    )
+    if still_running:
+        return (_aware(subscription.current_period_start) or now), current_end + duration
+    return now, now + duration
 
 
 def subscription_state(subscription) -> str:

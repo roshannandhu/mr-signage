@@ -929,7 +929,7 @@ class CustomPlanRequestCreate(BaseModel):
     max_clients: int = Field(default=0, ge=0)
     max_ad_slots: int = Field(default=0, ge=0)
     max_storage_bytes: int = Field(default=10 * 1024 * 1024 * 1024, ge=0)
-    duration_days: int = Field(default=30, ge=1)
+    duration_days: int = Field(default=30, ge=1, le=3650)
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     notes: Optional[str] = Field(default=None, max_length=1000)
 
@@ -953,7 +953,7 @@ class CustomPlanRequestUpdate(BaseModel):
     max_clients: Optional[int] = Field(default=None, ge=0)
     max_ad_slots: Optional[int] = Field(default=None, ge=0)
     max_storage_bytes: Optional[int] = Field(default=None, ge=0)
-    duration_days: Optional[int] = Field(default=None, ge=1)
+    duration_days: Optional[int] = Field(default=None, ge=1, le=3650)
     feature_flags: Optional[dict[str, bool]] = None
     price_paise: Optional[int] = Field(default=None, ge=0)
     notes: Optional[str] = Field(default=None, max_length=1000)

@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from .. import database, models, schemas
-from ..billing import plan_features, subscription_state
+from ..billing import TERMINAL_SUBSCRIPTION_STATUSES, apply_plan, plan_features, subscription_state
 from ..media_urls import resolve_media_url
 from ..services import legacy_device_auth_allowed, screens_without_secret
 from ..services.storage_service import forget_cached_usage
@@ -71,7 +71,7 @@ class PlanWrite(BaseModel):
     monthly_price_paise: int = Field(default=0, ge=0)
     yearly_price_paise: int = Field(default=0, ge=0)
     price_paise: int = Field(default=0, ge=0)
-    duration_days: int = Field(default=30, ge=1)
+    duration_days: int = Field(default=30, ge=1, le=3650)
     # -1 = unlimited, on every one of these four. Screens store it as NULL and the other
     # three as 0, because 0 already means unlimited there and means zero for screens -- the
     # mapping lives in `_limit` so no caller has to remember which is which.
@@ -88,7 +88,7 @@ class PlanPatch(BaseModel):
     monthly_price_paise: Optional[int] = Field(default=None, ge=0)
     yearly_price_paise: Optional[int] = Field(default=None, ge=0)
     price_paise: Optional[int] = Field(default=None, ge=0)
-    duration_days: Optional[int] = Field(default=None, ge=1)
+    duration_days: Optional[int] = Field(default=None, ge=1, le=3650)
     max_screens: Optional[int] = Field(default=None, ge=-1)
     max_clients: Optional[int] = Field(default=None, ge=-1)
     max_storage_bytes: Optional[int] = Field(default=None, ge=-1)
@@ -380,10 +380,7 @@ def _apply_plan(org: models.Organization, plan: models.Plan) -> None:
     storage_quota_bytes is still copied: it is a real column with no derived equivalent, and
     `test_plan_purchase` pins that it follows the package.
     """
-    org.plan_id = plan.id
-    org.max_screens = 0
-    org.max_ad_slots = 0
-    org.storage_quota_bytes = plan.max_storage_bytes
+    apply_plan(org, plan)
 
 
 # --------------------------------------------------------------------------- tenants
@@ -780,11 +777,13 @@ def update_tenant_subscription(
         subscription.grace_period_end = None
     elif req.status == "expired":
         subscription.status = "expired"
-    elif subscription.status in {"expired", "grace"} and (
+    elif subscription.status in (TERMINAL_SUBSCRIPTION_STATUSES | {"grace"}) and (
         req.extend_days is not None or req.period_end is not None
     ):
-        # Giving an expired workspace a future window without saying "active" plainly means
-        # reinstating it; leaving the status expired would ignore the window just granted.
+        # Giving a lapsed workspace a future window without saying "active" plainly means
+        # reinstating it; leaving the status as it was would ignore the window just granted.
+        # Every terminal status counts, not just expired/grace: read_only, cancelled and
+        # completed also make subscription_state() answer "expired" whatever the window says.
         subscription.status = "active"
         subscription.grace_period_end = None
 
