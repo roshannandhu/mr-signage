@@ -60,6 +60,8 @@ ISOLATED_SCRIPTS = {
     "test_emergency_sync.py",
     # -1 means unlimited on every plan limit, and no unlimited tenant is refused.
     "test_plan_limits.py",
+    # The first signup and first new package take the ids after the seeded rows.
+    "test_sequence_migration.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -111,6 +113,7 @@ ISOLATED_SCRIPTS = {
     "test_all_five_areas_e2e.py",
     # Removing a TV: play history survives, the panel is signed out, quota is freed.
     "test_screen_removal.py",
+    "test_sequence_migration.py",
     # The screen cap: package limits, admin overrides, and the /enroll bypass.
     "test_screen_quota.py",
     # One booking, different run lengths per location.
