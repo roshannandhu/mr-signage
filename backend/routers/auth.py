@@ -53,6 +53,26 @@ def _is_login_token(payload: dict) -> bool:
     return "typ" not in payload and not str(payload.get("sub", "")).startswith("device:")
 
 
+def _token_is_for(payload: dict, user: models.User) -> bool:
+    """Whether a token that names this user was issued for this very row.
+
+    A token with no `uid` predates the claim and is accepted until it expires; every token
+    minted from now on carries one.
+    """
+    uid = payload.get("uid")
+    return uid is None or uid == user.id
+
+
+def login_token(user: models.User) -> str:
+    """A web login token for this user, bound to the user row as well as the username.
+
+    The subject alone is a username, and usernames are reused: delete a user and the next
+    person to register that name inherited the old token for the rest of its seven days,
+    across tenants. The id ties the token to the one row it was issued for.
+    """
+    return create_access_token(data={"sub": user.username, "uid": user.id})
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     if expires_delta:
@@ -87,7 +107,7 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = login_token(user)
     return {"access_token": access_token, "token_type": "bearer", "user": user}
 
 
@@ -109,7 +129,7 @@ def get_current_user(
         raise credentials_exception
 
     user = db.query(models.User).filter(models.User.username == username).first()
-    if not user or not user.is_active:
+    if not user or not user.is_active or not _token_is_for(payload, user):
         raise credentials_exception
     return user
 
@@ -131,7 +151,7 @@ async def get_current_user_ws(
         raise credentials_exception
 
     user = db.query(models.User).filter(models.User.username == username).first()
-    if not user or not user.is_active:
+    if not user or not user.is_active or not _token_is_for(payload, user):
         raise credentials_exception
     return user
 
@@ -277,7 +297,7 @@ def sign_in_with_google(
 
     logging.getLogger(__name__).info("Google web sign-in for %s", user.username)
     return {
-        "access_token": create_access_token(data={"sub": user.username}),
+        "access_token": login_token(user),
         "token_type": "bearer",
         "user": user,
     }

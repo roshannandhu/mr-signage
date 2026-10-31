@@ -56,6 +56,8 @@ ISOLATED_SCRIPTS = {
     "test_p6_websockets.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
     "test_device_token_type.py",
+    # A login token belongs to one user row, so a reused username cannot inherit it.
+    "test_token_binding.py",
     # A device id alone must not take over a claimed screen via /register.
     "test_register_takeover.py",
     # Signing a TV in cannot delete or take over another workspace's screen; /pair is limited.
