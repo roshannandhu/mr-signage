@@ -47,6 +47,7 @@ def verify_device_token(device_id: str, token: str, db: Session) -> models.Scree
             "Screen %s (device %s) opened a socket with no credential (legacy path)",
             screen.id, device_id,
         )
+        screen.authenticated = False
         return screen
 
     try:
@@ -63,6 +64,7 @@ def verify_device_token(device_id: str, token: str, db: Session) -> models.Scree
     if screen.device_secret_hash is None:
         raise HTTPException(status_code=401, detail="Device credential has been revoked")
 
+    screen.authenticated = True
     return screen
 
 
@@ -215,6 +217,7 @@ async def screen_websocket(
         screen_id = screen.id
         organization_id = screen.organization_id
         group_id = screen.group_id
+        authenticated = bool(getattr(screen, "authenticated", False))
     except HTTPException as e:
         await websocket.close(code=1008, reason=e.detail)
         return
@@ -226,10 +229,15 @@ async def screen_websocket(
     channels = [
         f"screen:{device_id}",
     ]
-    if organization_id:
-        channels.append(f"org:{organization_id}")
-    if group_id:
-        channels.append(f"group:{group_id}")
+    # Only a socket that presented a device token joins the workspace-wide and group channels.
+    # A screen on the legacy (no credential) path is identified by a device id alone, which is
+    # not a secret, so letting it subscribe to org:{id} streamed a tenant's whole fleet
+    # activity to anyone who knew one of its device ids. It still receives its own commands.
+    if authenticated:
+        if organization_id:
+            channels.append(f"org:{organization_id}")
+        if group_id:
+            channels.append(f"group:{group_id}")
         
     for ch in channels:
         await register_ws(ch, websocket)
@@ -242,7 +250,9 @@ async def screen_websocket(
                 try:
                     msg = json.loads(data)
                     # Forward playback progress to dashboard channel if applicable
-                    if msg.get("type") == "playback_progress" and organization_id:
+                    # Receive-only unless authenticated: this publishes into the tenant's
+                    # dashboard, so it must not be open to a caller holding only a device id.
+                    if msg.get("type") == "playback_progress" and organization_id and authenticated:
                         msg["device_id"] = device_id
                         msg["screen_id"] = screen_id
                         payload_str = json.dumps(msg)
