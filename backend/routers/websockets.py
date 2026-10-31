@@ -24,6 +24,7 @@ def verify_device_token(device_id: str, token: str, db: Session) -> models.Scree
     would just move the leak.
     """
     from .screens import legacy_device_auth_allowed
+    from ..services import token_is_for_device
 
     # Same archive check as screens.verify_device_auth. A socket subscribed to org:{id}
     # receives every fleet event for that tenant, so leaving it open to a removed screen
@@ -50,8 +51,7 @@ def verify_device_token(device_id: str, token: str, db: Session) -> models.Scree
 
     try:
         payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
-        sub = payload.get("sub")
-        if sub != f"device:{device_id}":
+        if not token_is_for_device(payload, device_id):
             raise HTTPException(status_code=401, detail="Token device mismatch")
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")

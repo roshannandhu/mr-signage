@@ -37,6 +37,15 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     role: TenantRole = "viewer"
 
+    @field_validator("username")
+    @classmethod
+    def no_device_namespace(cls, value: str) -> str:
+        # "device:<id>" is how a screen's token names its subject. A user called that would
+        # share a token subject with a screen, so the colon is reserved.
+        if ":" in value:
+            raise ValueError("username cannot contain ':'")
+        return value
+
     @field_validator("password")
     @classmethod
     def valid_bcrypt_length(cls, value: str) -> str:

@@ -54,6 +54,8 @@ ISOLATED_SCRIPTS = {
     "test_signup_lifecycle.py",
     "test_analytics.py",
     "test_p6_websockets.py",
+    # Only a screen's own token acts as that screen; Google-flow tokens do not.
+    "test_device_token_type.py",
     "test_media_selection.py",
     # These six were written, committed, and then never run: they were absent from this
     # set and from python_files in pytest.ini, so pytest collected neither. The suite

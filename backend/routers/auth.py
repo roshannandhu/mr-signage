@@ -43,6 +43,16 @@ def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
+def _is_login_token(payload: dict) -> bool:
+    """A web login token has a username subject and no `typ` claim.
+
+    One key signs several kinds of token. A screen's own token, and the Google sign-in poll
+    and OAuth-state tokens, all carry a `sub` and a `typ`; looking that `sub` up as a username
+    would let whoever holds one of them authenticate as a user who happens to share the name.
+    """
+    return "typ" not in payload and not str(payload.get("sub", "")).startswith("device:")
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     if expires_delta:
@@ -93,7 +103,7 @@ def get_current_user(
     try:
         payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
         username = payload.get("sub")
-        if not isinstance(username, str):
+        if not isinstance(username, str) or not _is_login_token(payload):
             raise credentials_exception
     except (JWTError, RuntimeError):
         raise credentials_exception
@@ -115,7 +125,7 @@ async def get_current_user_ws(
     try:
         payload = jwt.decode(token, get_secret_key(), algorithms=[ALGORITHM])
         username = payload.get("sub")
-        if not isinstance(username, str):
+        if not isinstance(username, str) or not _is_login_token(payload):
             raise credentials_exception
     except (JWTError, RuntimeError):
         raise credentials_exception

@@ -71,9 +71,11 @@ from ..services import (
     park_device_secret,
     collect_device_secret,
     legacy_device_auth_allowed,
+    token_is_for_device,
     verify_device_auth,
     issue_device_secret,
 )
+from ..services.device_auth_service import DEVICE_TOKEN_TYPE
 from ..billing import serving_block_reason
 
 
@@ -115,7 +117,7 @@ def presents_valid_device_token(device_id: str, credentials: HTTPAuthorizationCr
         from .auth import ALGORITHM, get_secret_key
 
         payload = jwt.decode(credentials.credentials, get_secret_key(), algorithms=[ALGORITHM])
-        return payload.get("sub") == f"device:{device_id}"
+        return token_is_for_device(payload, device_id)
     except Exception:  # noqa: BLE001 - expired or malformed is simply "no"
         return False
 
@@ -1218,7 +1220,7 @@ def auth_device(
         raise HTTPException(status_code=401, detail="Invalid credentials")
         
     token = create_access_token(
-        data={"sub": f"device:{req.device_id}"},
+        data={"sub": f"device:{req.device_id}", "typ": DEVICE_TOKEN_TYPE},
         expires_delta=timedelta(hours=1)
     )
     return {"access_token": token}

@@ -62,6 +62,39 @@ def legacy_device_auth_allowed() -> bool:
     return os.getenv("ALLOW_LEGACY_DEVICE_AUTH", "true").strip().lower() in {"1", "true", "yes"}
 
 
+# The `typ` claim a screen's token carries. The server signs several kinds of token with one
+# key, and a device check that looked only at `sub` accepted all of them: the public Google
+# sign-in routes mint tokens whose subject is `device:<id>` for anyone who asks, and one of
+# those, used as a Bearer on /sync, returned that screen's maintenance PIN and the operator's
+# master PIN.
+DEVICE_TOKEN_TYPE = "device"
+
+
+def require_device_token_type() -> bool:
+    """Whether a token with no `typ` is refused too.
+
+    Off until the fleet runs a build that re-mints on 401: today's player treats a rejected
+    heartbeat as "this screen was removed" and wipes itself, so refusing untyped tokens
+    early would sign out every TV holding a token minted before the deploy. Flip it with
+    REQUIRE_DEVICE_TOKEN_TYPE=true once they have all rotated (tokens last an hour).
+    """
+    return os.getenv("REQUIRE_DEVICE_TOKEN_TYPE", "").strip().lower() in {"1", "true", "yes"}
+
+
+def token_is_for_device(payload: dict, device_id: str) -> bool:
+    """Whether decoded token claims are a screen's own token for this device.
+
+    Tokens minted for something else -- the Google sign-in poll and OAuth-state tokens, and
+    ordinary web logins -- carry a different `typ` (or, for logins, none) and are refused.
+    """
+    if payload.get("sub") != f"device:{device_id}":
+        return False
+    token_type = payload.get("typ")
+    if token_type is None:
+        return not require_device_token_type()
+    return token_type == DEVICE_TOKEN_TYPE
+
+
 def issue_device_secret(screen: models.Screen) -> str:
     """Give this screen a credential of its own and return the plaintext once."""
     from ..routers.auth import get_password_hash
@@ -99,8 +132,7 @@ def verify_device_auth(
         from jose import jwt, JWTError
 
         payload = jwt.decode(credentials.credentials, get_secret_key(), algorithms=[ALGORITHM])
-        sub = payload.get("sub")
-        if sub != f"device:{device_id}":
+        if not token_is_for_device(payload, device_id):
             raise HTTPException(status_code=401, detail="Token device mismatch")
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
