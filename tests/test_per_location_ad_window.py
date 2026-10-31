@@ -57,6 +57,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from backend import database, models  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
+from tests._test_plans import grant_plan  # noqa: E402
 
 failures: list[str] = []
 
@@ -76,6 +77,8 @@ def build_workspace(db, unique):
     )
     db.add(org)
     db.flush()
+    # The invoice and report PDFs checked below are both sold behind a flag.
+    grant_plan(db, org, payslips=True, pdf_reports=True)
     owner = models.User(
         organization_id=org.id, username=f"owner-{unique}", email=f"owner-{unique}@x.com",
         role="owner", is_active=True, hashed_password=get_password_hash("ownerpass1"),

@@ -9,7 +9,7 @@ from sqlalchemy import and_, func, text
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..tenancy import TenantScope, require_tenant_roles
+from ..tenancy import TenantScope, ensure_feature, require_feature, require_tenant_roles
 from ..models import Campaign, Content, PlayLogHourlyRollup, Screen, ScreenGroup
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
@@ -86,6 +86,7 @@ def get_campaign_stats(
     campaign_id: int,
     tenant: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
     db: Session = Depends(get_db),
+    _feature: TenantScope = Depends(require_feature("ads_counting")),
 ):
     from ..worker import aggregate_play_logs_sync
     aggregate_play_logs_sync(db)
@@ -152,6 +153,7 @@ def get_campaign_timeseries(
     campaign_id: int,
     tenant: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
     db: Session = Depends(get_db),
+    _feature: TenantScope = Depends(require_feature("ads_counting")),
 ):
     from ..worker import aggregate_play_logs_sync
     aggregate_play_logs_sync(db)
@@ -188,6 +190,12 @@ def export_campaign_report(
     tenant: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
     db: Session = Depends(get_db),
 ):
+    # Every format exports the same play counts this route's siblings sell behind
+    # ads_counting; PDF specifically is also sold on its own flag, same as report.pdf.
+    ensure_feature(tenant, "ads_counting")
+    if format == "pdf":
+        ensure_feature(tenant, "pdf_reports")
+
     from ..worker import aggregate_play_logs_sync
     aggregate_play_logs_sync(db)
 
@@ -275,6 +283,7 @@ def get_media_report(
     content_id: int,
     tenant: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
     db: Session = Depends(get_db),
+    _feature: TenantScope = Depends(require_feature("ads_counting")),
 ):
     """Proof-of-play for one advert: where it runs, how often, and how reliably.
 

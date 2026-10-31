@@ -56,7 +56,20 @@ def run():
             db.delete(org_to_clean)
         db.commit()
 
-        org = models.Organization(name="BTF Test Org", slug="btf-test-org", status="active")
+        # Remote control (bring-to-front) is sold behind a plan flag; this org needs it,
+        # or every call below gets 403 instead of exercising the command delivery paths
+        # this test is actually about.
+        import json as _json
+        plan = db.query(models.Plan).filter(models.Plan.slug == "btf-remote-control").first()
+        if not plan:
+            plan = models.Plan(
+                name="BTF Plan", slug="btf-remote-control",
+                feature_flags_json=_json.dumps({"remote_control": True}),
+                is_active=True, max_storage_bytes=10 * 1024 ** 3,
+            )
+            db.add(plan)
+            db.flush()
+        org = models.Organization(name="BTF Test Org", slug="btf-test-org", status="active", plan_id=plan.id)
         db.add(org)
         db.commit()
         db.refresh(org)

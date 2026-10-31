@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from backend import database, models  # noqa: E402
 from backend.main import app  # noqa: E402
 from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
+from tests._test_plans import grant_plan  # noqa: E402
 
 models.Base.metadata.create_all(bind=database.engine)
 
@@ -49,6 +50,7 @@ def setup():
     org = models.Organization(name="Venue", slug=f"v-{uuid.uuid4().hex[:8]}", status="active", max_ad_slots=1)
     db.add(org)
     db.flush()
+    grant_plan(db, org, payslips=True)  # the payment it records below is sold behind this flag
     db.add(models.User(organization_id=org.id, username="owner", email="ow@x.t",
                        hashed_password=get_password_hash("x"), role="owner", is_active=True))
     contents = [

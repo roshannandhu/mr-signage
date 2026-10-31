@@ -34,13 +34,19 @@ try:
     from backend.database import SessionLocal, engine  # noqa: E402
     from backend.main import app  # noqa: E402
     from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
+    from tests._test_plans import grant_plan  # noqa: E402
 
     models.Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
     org = models.Organization(name="Acme Media", slug="acme")
     other = models.Organization(name="Rival Media", slug="rival")
-    db.add_all([org, other]); db.commit()
+    db.add_all([org, other]); db.flush()
+    # The media report is sold behind a flag. Rival needs it too, so its cross-tenant read
+    # below is refused for being the wrong tenant (404), not merely for lacking the flag (403).
+    grant_plan(db, org, ads_counting=True)
+    grant_plan(db, other, ads_counting=True)
+    db.commit()
 
     user = models.User(organization_id=org.id, username="owner@acme.test",
                        hashed_password=get_password_hash("x"), role="owner", is_active=True)

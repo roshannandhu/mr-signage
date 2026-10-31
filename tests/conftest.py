@@ -71,6 +71,10 @@ ISOLATED_SCRIPTS = {
     "test_health_without_media_mirror.py",
     # An item's own transition override needs the transitions flag, same as the playlist default.
     "test_playlist_item_transition_gate.py",
+    # New plan flags seed a fresh plan; they never backfill onto one that already exists.
+    "test_billing_catalog_seed.py",
+    # Every route Phase 3.1 sold behind a plan flag actually refuses a plan without it.
+    "test_plan_feature_gates.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -288,6 +292,8 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_media_supervisor_claim.py",
     "test_alert_resolution.py",
     "test_playlist_item_transition_gate.py",
+    "test_billing_catalog_seed.py",
+    "test_plan_feature_gates.py",
 }
 
 

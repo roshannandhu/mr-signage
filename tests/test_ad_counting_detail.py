@@ -36,6 +36,7 @@ from backend import database as _bootstrap_db, models as _bootstrap_models
 _bootstrap_models.Base.metadata.create_all(bind=_bootstrap_db.engine)
 from backend import database, models
 from backend.routers.auth import get_password_hash
+from tests._test_plans import grant_plan
 
 client = TestClient(app)
 
@@ -62,6 +63,8 @@ def run():
 
         org = models.Organization(name="Ad Test Org", slug="ad-test-org", status="active")
         db.add(org)
+        db.flush()
+        grant_plan(db, org, ads_counting=True)  # the media report below is sold behind this flag
         db.commit()
         db.refresh(org)
 

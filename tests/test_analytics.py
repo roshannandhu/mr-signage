@@ -60,6 +60,7 @@ from backend.models import (  # noqa: E402
     User, Organization, Screen, Campaign, PlayLog, PlayLogHourlyRollup,
 )
 from backend.worker import aggregate_play_logs  # noqa: E402
+from tests._test_plans import grant_plan  # noqa: E402
 
 client = TestClient(app)
 
@@ -72,6 +73,11 @@ def run():
     if not org:
         org = Organization(name="Perf Org", slug="perf-org")
         db.add(org)
+        db.flush()
+        grant_plan(db, org, ads_counting=True)  # the stats call below is sold behind this flag
+        db.commit()
+    elif org.plan_id is None:
+        grant_plan(db, org, ads_counting=True)
         db.commit()
     
     from backend.routers.auth import get_password_hash

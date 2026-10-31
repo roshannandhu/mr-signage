@@ -24,7 +24,7 @@ from .. import rollout
 from ..rotation import normalise as normalise_rotation, resolve_rotation
 from ..maps_link import MapsLinkError, parse as parse_maps_link
 from ..media_urls import is_s3_enabled, media_base_url, resolve_media_url
-from ..tenancy import TenantScope, get_tenant_scope, is_super_admin, require_tenant_roles
+from ..tenancy import TenantScope, get_tenant_scope, is_super_admin, require_feature, require_tenant_roles
 
 logger = logging.getLogger(__name__)
 
@@ -2074,6 +2074,7 @@ def resolve_location_link(
 async def bring_to_front(
     screen_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("remote_control")),
 ):
     screen = scope.get(models.Screen, screen_id)
     if not screen:

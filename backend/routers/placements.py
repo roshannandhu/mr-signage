@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
 
 from .. import models, schemas
-from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
+from ..tenancy import TenantScope, ensure_feature, get_tenant_scope, require_feature, require_tenant_roles
 from ..media_urls import resolve_media_url, client_ads_prefix, get_s3_config, is_s3_enabled, s3_client
 from .playlists import bump_playlist
 
@@ -1075,6 +1075,7 @@ def record_payment(
     placement_id: int,
     payload: schemas.PaymentWrite,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("payslips")),
 ):
     """Record one receipt against the booking. The only way a booking becomes paid.
 
@@ -1120,6 +1121,7 @@ def record_payment(
 def clear_payment(
     placement_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("payslips")),
 ):
     """Wipe the whole settlement: every receipt goes and the booking is unpaid again.
 
@@ -1147,6 +1149,7 @@ def delete_payment(
     placement_id: int,
     payment_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("payslips")),
 ):
     """Remove ONE receipt -- a duplicate entry, or a cheque that bounced.
 
@@ -1181,6 +1184,7 @@ def edit_payment(
     payment_id: int,
     payload: schemas.PaymentEdit,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("payslips")),
 ):
     """Correct ONE receipt in place: a mistyped amount, the wrong method, a missing UTR.
 
@@ -1712,6 +1716,7 @@ def get_booking_report(
 def download_booking_report(
     placement_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
+    _feature: TenantScope = Depends(require_feature("pdf_reports")),
 ):
     """The client-facing PDF for one booking."""
     placement = scope.get(models.AdPlacement, placement_id)
@@ -1730,6 +1735,7 @@ def download_booking_report(
 def download_invoice(
     placement_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor", "viewer")),
+    _feature: TenantScope = Depends(require_feature("payslips")),
 ):
     """The commercial document: what was sold, what it cost, what was paid.
 
@@ -1809,6 +1815,10 @@ def email_booking_report(
         raise HTTPException(status_code=422, detail="document must be 'report' or 'invoice'")
 
     is_invoice = document == "invoice"
+    # One route, two documents sold on two different flags -- the route-level dependency
+    # used by the other PDF routes can only check one feature, so this checks the one the
+    # actual request is for.
+    ensure_feature(scope, "payslips" if is_invoice else "pdf_reports")
     pdf, filename = (_render_invoice if is_invoice else _render_report)(scope, placement)
     organization = scope.db.query(models.Organization).filter(
         models.Organization.id == placement.organization_id

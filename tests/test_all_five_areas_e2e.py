@@ -55,6 +55,7 @@ from backend.database import SessionLocal  # noqa: E402
 from backend import models  # noqa: E402
 from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
 from backend.worker import aggregate_play_logs_sync  # noqa: E402
+from tests._test_plans import grant_plan  # noqa: E402
 
 client = TestClient(app)
 
@@ -105,6 +106,7 @@ def test_area_1_counting_online_and_offline():
     org = models.Organization(name=f"Counting Org {u}", slug=f"counting-org-{u}", status="active")
     db.add(org)
     db.flush()
+    grant_plan(db, org, ads_counting=True)  # the media report below is sold behind this flag
 
     screen = models.Screen(organization_id=org.id, device_id=f"count-dev-{u}", name="Counting Screen 1", status="online")
     content = models.Content(organization_id=org.id, name="Test Ad Video", type="video/mp4", file_url="/test.mp4", duration_ms=15000, status="ready")
@@ -173,6 +175,7 @@ def test_area_2_bring_to_front_command():
     org = models.Organization(name=f"BTF Org {u}", slug=f"btf-org-{u}", status="active")
     db.add(org)
     db.flush()
+    grant_plan(db, org, remote_control=True)  # bring-to-front is sold behind this flag
 
     screen = models.Screen(organization_id=org.id, device_id=f"btf-dev-{u}", name="BTF Screen 1", status="online")
     owner_user = models.User(organization_id=org.id, username=f"btf_owner_{u}", email=f"btf_owner_{u}@test.com", role="owner", is_active=True, hashed_password="dummy")

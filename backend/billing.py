@@ -7,6 +7,15 @@ from sqlalchemy.orm import Session
 from . import models
 
 
+# The five flags Phase 3.1 added: payslips & payments, ads counting, remote control & alerts,
+# PDF playback reports, and TV kiosk lock. Listed once so a typo in a plan's dict is a
+# NameError at import time rather than a silently-never-gated feature.
+PAYSLIPS = "payslips"
+ADS_COUNTING = "ads_counting"
+REMOTE_CONTROL = "remote_control"
+PDF_REPORTS = "pdf_reports"
+KIOSK_LOCK = "kiosk_lock"
+
 DEFAULT_PLANS = (
     {
         "name": "Free",
@@ -16,8 +25,9 @@ DEFAULT_PLANS = (
         "duration_days": 30,
         "max_screens": 5,
         "max_clients": 3,
+        "max_ad_slots": 5,
         "max_storage_bytes": 10 * 1024 * 1024 * 1024,
-        "features": {"scheduling": True},
+        "features": {"scheduling": True, ADS_COUNTING: True},
     },
     {
         "name": "Starter",
@@ -27,8 +37,12 @@ DEFAULT_PLANS = (
         "duration_days": 30,
         "max_screens": 10,
         "max_clients": 10,
+        "max_ad_slots": 20,
         "max_storage_bytes": 25 * 1024 * 1024 * 1024,
-        "features": {"scheduling": True, "transitions": True},
+        "features": {
+            "scheduling": True, "transitions": True, ADS_COUNTING: True,
+            PDF_REPORTS: True, PAYSLIPS: True, REMOTE_CONTROL: True, KIOSK_LOCK: True,
+        },
     },
     {
         "name": "Business",
@@ -38,10 +52,23 @@ DEFAULT_PLANS = (
         "duration_days": 30,
         "max_screens": 50,
         "max_clients": 50,
+        "max_ad_slots": 0,  # 0 = unlimited, Plan.max_ad_slots's own convention (see the column)
         "max_storage_bytes": 100 * 1024 * 1024 * 1024,
-        "features": {"scheduling": True, "transitions": True, "priority_support": True, "emergency_alert": True},
+        "features": {
+            "scheduling": True, "transitions": True, "priority_support": True, "emergency_alert": True,
+            ADS_COUNTING: True, PDF_REPORTS: True, PAYSLIPS: True, REMOTE_CONTROL: True, KIOSK_LOCK: True,
+        },
     },
 )
+
+# Flags DEFAULT_PLANS has carried since before per-feature gating grew past these four. Only
+# these ever backfill onto an EXISTING plan row (see ensure_billing_catalog below) -- that
+# repairs real drift between this table and the alembic seed (the comment there explains the
+# Business/emergency_alert case this was built for). A flag added to DEFAULT_PLANS after this
+# line is deliberately NOT backfillable: it only seeds a freshly created plan. Existing plans
+# keep it off until an operator turns it on in the packages editor, per the approved rule that
+# a new feature never turns itself on under a tenant that is already paying for a plan without it.
+_BACKFILLABLE_FEATURE_KEYS = {"scheduling", "transitions", "priority_support", "emergency_alert"}
 
 
 def ensure_billing_catalog(db: Session) -> None:
@@ -61,7 +88,10 @@ def ensure_billing_catalog(db: Session) -> None:
             # feature off in the packages editor is a decision, and re-asserting the seed
             # over it every boot would quietly undo them.
             current = plan_features(existing)
-            missing = {k: v for k, v in payload["features"].items() if k not in current}
+            missing = {
+                k: v for k, v in payload["features"].items()
+                if k not in current and k in _BACKFILLABLE_FEATURE_KEYS
+            }
             if missing:
                 existing.feature_flags_json = json.dumps({**current, **missing}, sort_keys=True)
             continue
@@ -77,6 +107,7 @@ def ensure_billing_catalog(db: Session) -> None:
                 duration_days=payload["duration_days"],
                 max_screens=payload["max_screens"],
                 max_clients=payload["max_clients"],
+                max_ad_slots=payload["max_ad_slots"],
                 max_storage_bytes=payload["max_storage_bytes"],
                 feature_flags_json=json.dumps(payload["features"], sort_keys=True),
                 is_active=True,

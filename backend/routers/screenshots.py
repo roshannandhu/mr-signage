@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from .. import media_storage, models, schemas, database
-from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
+from ..tenancy import TenantScope, get_tenant_scope, require_feature, require_tenant_roles
 from .content import UPLOAD_DIR, public_upload_url
 from ..media_urls import is_s3_enabled, get_s3_config, resolve_media_url, storage_prefix, screen_screenshot_prefix
 from .screens import verify_device_auth
@@ -25,6 +25,7 @@ router = APIRouter()
 async def request_screenshot(
     screen_id: int,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("remote_control")),
 ):
     screen = scope.get(models.Screen, screen_id)
     if not screen:

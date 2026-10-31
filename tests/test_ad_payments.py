@@ -50,13 +50,19 @@ try:
     from backend.database import SessionLocal, engine  # noqa: E402
     from backend.main import app  # noqa: E402
     from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
+    from tests._test_plans import grant_plan  # noqa: E402
 
     models.Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
     acme = models.Organization(name="Acme", slug="acme")
     rival = models.Organization(name="Rival", slug="rival")
-    db.add_all([acme, rival]); db.commit()
+    db.add_all([acme, rival]); db.flush()
+    # Payments are sold behind a flag. Rival needs it too, further down, for the
+    # cross-tenant isolation check to fail for the right reason (404, not a feature 403).
+    grant_plan(db, acme, payslips=True)
+    grant_plan(db, rival, payslips=True)
+    db.commit()
     owner = models.User(organization_id=acme.id, username="owner@acme.test",
                         hashed_password=get_password_hash("x"), role="owner", is_active=True)
     intruder = models.User(organization_id=rival.id, username="owner@rival.test",

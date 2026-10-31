@@ -34,6 +34,7 @@ try:
     from backend.database import SessionLocal, engine  # noqa: E402
     from backend.main import app  # noqa: E402
     from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
+    from tests._test_plans import grant_plan  # noqa: E402
 
     # No key, so maps.py would draw the map itself from OpenStreetMap tiles. Stubbed: a
     # test suite must not depend on a third-party tile server being reachable, and hammering
@@ -47,7 +48,10 @@ try:
     db = SessionLocal()
 
     org = models.Organization(name="Acme", slug="acme")
-    db.add(org); db.commit()
+    db.add(org); db.flush()
+    # report.pdf, invoice.pdf and emailing either are sold behind these two flags.
+    grant_plan(db, org, pdf_reports=True, payslips=True)
+    db.commit()
     owner = models.User(organization_id=org.id, username="owner@acme.test",
                         hashed_password=get_password_hash("x"), role="owner", is_active=True)
     db.add(owner); db.commit()
