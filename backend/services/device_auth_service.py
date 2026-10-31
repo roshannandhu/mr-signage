@@ -6,6 +6,7 @@ import secrets as _secrets
 from typing import Optional
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from redis.exceptions import ResponseError
 from sqlalchemy.orm import Session
 
 from .base import BaseService
@@ -35,10 +36,17 @@ async def collect_device_secret(device_id: str) -> Optional[str]:
         return None
     try:
         redis = database.get_redis()
-        value = await redis.get(_pending_secret_key(device_id))
+        key = _pending_secret_key(device_id)
+        try:
+            # One step, so two simultaneous callers cannot both read it before either
+            # deletes it. GETDEL needs Redis 6.2; an older server falls back to two steps.
+            value = await redis.getdel(key)
+        except ResponseError:
+            value = await redis.get(key)
+            if value is not None:
+                await redis.delete(key)
         if value is None:
             return None
-        await redis.delete(_pending_secret_key(device_id))
         return value.decode("utf-8") if isinstance(value, bytes) else str(value)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not read pending device secret for %s: %s", device_id, exc)

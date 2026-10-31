@@ -213,20 +213,43 @@ async def register_tv(
         # Captured BEFORE the overwrite below, because it is the proof the re-issue path
         # checks against and assigning first would make every caller match itself.
         known_installation_id = db_screen.installation_id
-        if req.installation_id:
-            db_screen.installation_id = req.installation_id
-        if req.identity_source:
-            db_screen.identity_source = req.identity_source
-        if req.device_model:
-            db_screen.model = req.device_model
+
+        # Who is calling. A device id is not a secret -- it is echoed back by this route and
+        # shown in the dashboard -- so on its own it proves nothing. The hardware identity
+        # on file is the proof, or a token the screen already holds. A screen enrolled
+        # before identities were recorded has nothing to compare, so while the legacy path
+        # is open it is trusted once and backfilled, as it always was.
+        recognised = (
+            req.installation_id is not None
+            and known_installation_id is not None
+            and req.installation_id == known_installation_id
+        )
+        holds_token = presents_valid_device_token(req.device_id, credentials)
+        legacy_backfill = known_installation_id is None and legacy_device_auth_allowed()
+        trusted = recognised or holds_token or legacy_backfill
+
+        # Written only for a caller that proved it is this screen. These used to be
+        # overwritten for anyone, and committed even when the credential check below then
+        # failed -- so a stranger could stamp their own installation id onto a claimed
+        # screen, call again to pass the check against it, and be issued a fresh device
+        # secret, locking the real panel out.
+        if trusted:
+            if req.installation_id and known_installation_id is None:
+                db_screen.installation_id = req.installation_id
+            if req.identity_source:
+                db_screen.identity_source = req.identity_source
+            if req.device_model:
+                db_screen.model = req.device_model
         db_screen.last_seen = models.utcnow()
         if db_screen.status != "waiting_pairing":
             # The screen is claimed and is coming back. Two ways it may need a credential:
             # one was parked for it when an operator redeemed its pairing code, or it lost
-            # the one it had.
-            issued = await collect_device_secret(db_screen.device_id)
+            # the one it had. The parked one is handed only to a caller that proved who it
+            # is; otherwise anyone polling this route with a device id during the minutes it
+            # was parked could take it.
+            issued = await collect_device_secret(db_screen.device_id) if trusted else None
 
-            if issued is None and not presents_valid_device_token(req.device_id, credentials):
+            if issued is None and not holds_token:
                 # Reinstalling the app, or clearing its data, wipes SharedPreferences --
                 # including the device secret -- while device_id survives, because it is
                 # derived from ANDROID_ID rather than stored. So a returning screen is
@@ -249,11 +272,6 @@ async def register_tv(
                 # a genuinely reinstalled panel always presents the one already on file while
                 # a remote caller holding only a device id cannot. That is the proof now
                 # required.
-                recognised = (
-                    req.installation_id is not None
-                    and known_installation_id is not None
-                    and req.installation_id == known_installation_id
-                )
                 if recognised:
                     issued = issue_device_secret(db_screen)
                     logger.info(
