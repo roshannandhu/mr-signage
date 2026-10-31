@@ -131,6 +131,19 @@ def _safe(value) -> str:
     return text
 
 
+def _markup(value) -> str:
+    """Text safe to put inside ReportLab Paragraph markup.
+
+    `_safe` folds typography but does not escape, and a Paragraph reads its string as XML-ish
+    markup: "R&D Ltd" printed as "R&D; Ltd" and a name containing "<VIP>" lost the tag. Anything
+    a tenant typed that is going INTO a Paragraph goes through here; text drawn directly on the
+    canvas or placed in a plain table cell stays on `_safe`, where escaping would print "&amp;".
+    """
+    from xml.sax.saxutils import escape
+
+    return escape(_safe(value))
+
+
 def _normalize_image_bytes(data: bytes) -> bytes | None:
     """Ensure image bytes are valid, RGB-compatible JPEG/PNG so ReportLab never fails."""
     if not data:
@@ -467,13 +480,13 @@ def build_pdf(report: dict) -> bytes:
     content_w = PAGE_W - 2 * MARGIN
 
     # --- Title & Client identification ------------------------------------------------
-    who = [f"<b>{_safe(client.get('name')) or '-'}</b>"]
+    who = [f"<b>{_markup(client.get('name')) or '-'}</b>"]
     if client.get("client_code"):
-        who.append(f"Client ID: {_safe(client['client_code'])}")
+        who.append(f"Client ID: {_markup(client['client_code'])}")
     if client.get("email"):
-        who.append(f"Email: {_safe(client['email'])}")
+        who.append(f"Email: {_markup(client['email'])}")
     if client.get("phone"):
-        who.append(f"Phone: {_safe(client['phone'])}")
+        who.append(f"Phone: {_markup(client['phone'])}")
 
     story.append(Table(
         [[
@@ -529,7 +542,7 @@ def build_pdf(report: dict) -> bytes:
     if map_bytes:
         map_rows.append([Image(BytesIO(map_bytes), width=104 * mm, height=57 * mm)])
         legend = " &nbsp;&#183;&nbsp; ".join(
-            f'<b>{loc_index[name]}.</b> {_safe(name)}' for name in loc_order if name in loc_index
+            f'<b>{loc_index[name]}.</b> {_markup(name)}' for name in loc_order if name in loc_index
         )
         map_rows.append([Paragraph(legend, style["note"])])
         map_rows.append([Paragraph(
@@ -621,7 +634,7 @@ def build_pdf(report: dict) -> bytes:
     extensions = report.get("extensions") or []
 
     details_rows = [
-        [Paragraph("Campaign name", style["body"]), Paragraph(_safe(report["content_name"]), style["body"])],
+        [Paragraph("Campaign name", style["body"]), Paragraph(_markup(report["content_name"]), style["body"])],
         [Paragraph("Start date", style["body"]), Paragraph(f'<para align="right">{_date(report["starts_at"])}</para>', style["body"])],
         [Paragraph("End date (as sold)" if extensions else "End date", style["body"]), Paragraph(f'<para align="right">{_date(report["ends_at"])}</para>', style["body"])],
     ] + ([[Paragraph("Extended to", style["body"]), Paragraph(f'<para align="right">{_date(ends_at)}</para>', style["body"])]] if extensions else []) + [
@@ -650,7 +663,7 @@ def build_pdf(report: dict) -> bytes:
     plan = report.get("plan")
     plan_card = _card(
         [[Paragraph('<font color="#6d28d9"><b>CURRENT PLAN</b></font>', style["label"])],
-         [Table([[Paragraph(_safe(plan["name"]) if plan else "No plan", style["value_sm"]),
+         [Table([[Paragraph(_markup(plan["name"]) if plan else "No plan", style["value_sm"]),
                   # The plan's NAME and length, not its price. What the plan cost is a
                   # commercial term and lives on the invoice.
                   Paragraph(f'<para align="right"><font size="6.5" color="#64748b">'

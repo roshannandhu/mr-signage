@@ -36,6 +36,7 @@ from .booking_report import (
     _card,
     _date,
     _fetch_image,
+    _markup,
     _money,
     _page_furniture,
     _pill,
@@ -97,13 +98,13 @@ def build_pdf(report: dict) -> bytes:
     content_w = PAGE_W - 2 * MARGIN
 
     # --- Title and who it is for --------------------------------------------------------
-    who = [f"<b>{_safe(client.get('name')) or '-'}</b>"]
+    who = [f"<b>{_markup(client.get('name')) or '-'}</b>"]
     if client.get("client_code"):
-        who.append(f"Client ID: {_safe(client['client_code'])}")
+        who.append(f"Client ID: {_markup(client['client_code'])}")
     if client.get("email"):
-        who.append(_safe(client["email"]))
+        who.append(_markup(client["email"]))
     if client.get("phone"):
-        who.append(_safe(client["phone"]))
+        who.append(_markup(client["phone"]))
 
     story.append(Table(
         [[Paragraph("INVOICE", style["title"]),
@@ -132,10 +133,10 @@ def build_pdf(report: dict) -> bytes:
              Paragraph('<para align="center"><b>PERIOD</b></para>', style["label"]),
              Paragraph('<para align="right"><b>AMOUNT</b></para>', style["label"])]]
 
-    plan_line = _safe(plan["name"]) if plan else "Advertising campaign"
+    plan_line = _markup(plan["name"]) if plan else "Advertising campaign"
     rows.append([
         Paragraph(f"{plan_line}<br/><font size='7' color='#64748b'>"
-                  f"{_safe(report['content_name'])} &middot; "
+                  f"{_markup(report['content_name'])} &middot; "
                   f"{len(report.get('per_location') or [])} location(s)</font>", style["body"]),
         Paragraph(f'<para align="center">{_date(report["starts_at"])}<br/>to {_date(report["ends_at"])}</para>',
                   style["body"]),
@@ -144,7 +145,7 @@ def build_pdf(report: dict) -> bytes:
     for extension in extensions:
         rows.append([
             Paragraph(f"Extension<br/><font size='7' color='#64748b'>"
-                      f"{_safe(extension.get('notes') or 'Additional airtime')}</font>", style["body"]),
+                      f"{_markup(extension.get('notes') or 'Additional airtime')}</font>", style["body"]),
             Paragraph(f'<para align="center">{_date(extension["extended_from"])}<br/>'
                       f'to {_date(extension["extended_to"])}</para>', style["body"]),
             Paragraph(f'<para align="right">{_money(extension["additional_price_paise"])}</para>', style["body"]),
@@ -181,7 +182,7 @@ def build_pdf(report: dict) -> bytes:
         ]]
         for item in target_schedule:
             sched_rows.append([
-                Paragraph(f"<b>{_safe(item['name'])}</b><br/><font size='6.5' color='#64748b'>{_safe(item['location'])}</font>", style["body"]),
+                Paragraph(f"<b>{_markup(item['name'])}</b><br/><font size='6.5' color='#64748b'>{_markup(item['location'])}</font>", style["body"]),
                 Paragraph(f'<para align="center">{_date(item["starts_at"])} to {_date(item["ends_at"])}</para>', style["body"]),
                 Paragraph(f'<para align="right"><b>{item["days"]} day{"s" if item["days"] != 1 else ""}</b></para>', style["body"]),
             ])
@@ -235,8 +236,8 @@ def build_pdf(report: dict) -> bytes:
     # looking for a UTR and a date, and a single collapsed "amount received" gives them
     # neither -- it also cannot be told apart from a part payment of the same size.
     for entry in payments:
-        method = METHOD_LABELS.get(entry.get("method"), _safe(entry.get("method")))
-        detail = f"{method} &middot; {_safe(entry['reference'])}" if entry.get("reference") else method
+        method = METHOD_LABELS.get(entry.get("method"), _markup(entry.get("method")))
+        detail = f"{method} &middot; {_markup(entry['reference'])}" if entry.get("reference") else method
         settled_rows.append([
             Paragraph(f'{_date(entry.get("paid_at"))}<br/><font size="7">{detail}</font>', style["body"]),
             Paragraph(f'<para align="right">{_money(entry.get("amount_paise"))}</para>', style["body"]),
@@ -264,7 +265,7 @@ def build_pdf(report: dict) -> bytes:
              [Paragraph(f"Runs {_date(report['starts_at'])} to {_date(ends_at)}", style["body"])]]
     if plan:
         terms.append([Paragraph(
-            f"{_safe(plan['name'])} &middot; {plan['duration_days']} days &middot; "
+            f"{_markup(plan['name'])} &middot; {plan['duration_days']} days &middot; "
             f"up to {plan['max_locations']} location(s)", style["note"])])
     if extensions:
         terms.append([Paragraph(f"{len(extensions)} extension(s) sold against this booking.", style["note"])])

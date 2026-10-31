@@ -202,6 +202,8 @@ PURE_MODULES = {
     "test_script_guard.py",
     # Which X-Forwarded-For entry the rate limiter counts a request against.
     "test_limiter_key.py",
+    # Names typed by a tenant survive being put into a PDF paragraph.
+    "test_report_markup.py",
 }
 
 
