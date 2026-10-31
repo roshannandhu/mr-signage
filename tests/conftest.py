@@ -69,6 +69,8 @@ ISOLATED_SCRIPTS = {
     "test_sequence_migration.py",
     # /api/health stays up on a database with no media_blob table (Postgres aborts the transaction).
     "test_health_without_media_mirror.py",
+    # An item's own transition override needs the transitions flag, same as the playlist default.
+    "test_playlist_item_transition_gate.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -285,6 +287,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_plan_renewal_rules.py",
     "test_media_supervisor_claim.py",
     "test_alert_resolution.py",
+    "test_playlist_item_transition_gate.py",
 }
 
 

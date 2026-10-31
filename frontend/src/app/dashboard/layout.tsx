@@ -38,6 +38,7 @@ import { api } from '@/lib/api'
 import { isSuperAdmin as roleIsSuperAdmin } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 import { useFleetAlerts } from '@/lib/use-fleet-alerts'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 
 const primaryLinks = [
@@ -54,7 +55,7 @@ const toolLinks = [
   { href: '/dashboard/invoices', label: 'Invoices', icon: Receipt, ownerOnly: false },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, ownerOnly: false },
   { href: '/dashboard/files', label: 'File management', icon: FolderCheck, ownerOnly: false },
-  { href: '/dashboard/emergency', label: 'Emergency broadcast', icon: RadioTower, ownerOnly: false },
+  { href: '/dashboard/emergency', label: 'Emergency broadcast', icon: RadioTower, ownerOnly: false, feature: 'emergency_alert' },
 ]
 
 const accountLinks = [
@@ -83,6 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // is the point: previously they only existed on /dashboard/alerts, and only if you were
   // looking at it.
   useFleetAlerts()
+  const { has: hasFeature } = usePlanFeatures()
 
   const isPending = (meQuery.data?.organization_status || user?.organization_status) === 'pending_approval'
   // A platform operator has no tenant workspace to manage, and every ownerOnly link below
@@ -116,7 +118,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [meQuery.data, setUser])
 
   const isOwner = user?.role === 'owner'
-  const toolItems = toolLinks.filter((item) => !item.ownerOnly || isOwner)
+  const toolItems = toolLinks.filter((item) => (!item.ownerOnly || isOwner) && (!('feature' in item) || hasFeature(item.feature ?? '')))
   const accountItems = accountLinks.filter((item) => !item.ownerOnly || isOwner)
 
   const isActive = (href: string) => pathname.startsWith(href)

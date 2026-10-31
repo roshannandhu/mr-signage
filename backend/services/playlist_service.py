@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .base import BaseService
 from ..repositories.playlist_repo import PlaylistRepository
 from .. import models, schemas
-from ..tenancy import TenantScope
+from ..tenancy import TenantScope, ensure_feature
 from ..routers.websockets import trigger_screen_sync
 
 
@@ -177,6 +177,14 @@ class PlaylistService(BaseService):
         if "schedule" in fields:
             set_schedule(item, payload.schedule)
         if "transition" in fields:
+            # Gated on the value actually CHANGING, not merely being present and non-null: a
+            # row already carrying a transition from before a downgrade (or an admin turning
+            # the flag off) must still accept an unrelated resave of its duration, the same
+            # way removing a feature never touches the data a tenant kept from when they had
+            # it. Picking a genuinely different transition is the one thing this charges for,
+            # matching update_playlist_transitions above.
+            if payload.transition is not None and payload.transition != item.transition:
+                ensure_feature(scope, "transitions")
             item.transition = payload.transition
         if "transition_ms" in fields:
             item.transition_ms = payload.transition_ms

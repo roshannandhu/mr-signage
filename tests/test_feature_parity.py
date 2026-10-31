@@ -226,22 +226,30 @@ def run() -> None:
         updated = client.put(
             f"/api/playlists/{playlist_id}/items/{item_id}",
             headers=owner,
-            json={"duration": 20, "transition": "zoom", "transition_ms": 850},
+            json={"duration": 20},
         )
         assert updated.status_code == 200, updated.text
-        assert updated.json()["transition"] == "zoom"
-        assert updated.json()["transition_ms"] == 850
+        assert updated.json()["duration"] == 20
         changed_sync = client.get(
             "/api/screens/feature-tv/sync", params={"since": marker}
         )
         assert changed_sync.status_code == 200, changed_sync.text
         assert changed_sync.json()["playlist"]["items"][0]["duration"] == 20
-        assert changed_sync.json()["playlist"]["items"][0]["transition"] == "zoom"
 
         # Transitions are sold from Starter upwards, so the package decides this, not the
         # role. Prove the gate in both directions rather than only the happy path: the
         # feature was in the storefront and enforced nowhere for a long time precisely
-        # because nothing ever asserted the refusal.
+        # because nothing ever asserted the refusal -- on EITHER route. The item's own
+        # override rides on this same ordinary PUT as the duration write just above, and was
+        # the one place still ungated after the playlist-wide default was fixed.
+        refused_item_transition = client.put(
+            f"/api/playlists/{playlist_id}/items/{item_id}",
+            headers=owner,
+            json={"transition": "zoom", "transition_ms": 850},
+        )
+        assert refused_item_transition.status_code == 403, refused_item_transition.text
+        assert "transitions" in refused_item_transition.json()["detail"]
+
         refused_transitions = client.put(
             f"/api/playlists/{playlist_id}/transitions",
             headers=owner,
@@ -264,6 +272,15 @@ def run() -> None:
             json={"transition": "slide_left", "transition_ms": 700, "apply_to_all": True},
         )
         assert applied.status_code == 200, applied.text
+
+        item_transition_applied = client.put(
+            f"/api/playlists/{playlist_id}/items/{item_id}",
+            headers=owner,
+            json={"transition": "zoom", "transition_ms": 850},
+        )
+        assert item_transition_applied.status_code == 200, item_transition_applied.text
+        assert item_transition_applied.json()["transition"] == "zoom"
+        assert item_transition_applied.json()["transition_ms"] == 850
 
         # Put the package back. The P6 block below shrinks the FREE plan's screen cap and
         # expects this workspace to feel it, which it cannot do while parked on Business.

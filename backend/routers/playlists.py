@@ -97,6 +97,8 @@ def update_playlist_item(
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
 ):
     _gate_scheduling(scope, payload.schedule)
+    # Transitions are gated inside the service, which has already loaded the item and can
+    # tell a genuinely new transition from a resave of one the item already carried.
     return _service(scope).update_playlist_item(playlist_id, item_id, payload, scope)
 
 

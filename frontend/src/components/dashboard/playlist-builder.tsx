@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { assetOrientation, clipDuration, dateTimeLocal, loopDuration } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 import type { ContentItem, Playlist, PlaylistItem, TransitionName } from '@/lib/types'
 
@@ -165,10 +166,14 @@ function formFor(item: PlaylistItem, defaultDurationMs: number) {
 // the transition and schedule editors both always open, a twenty-item loop rendered
 // forty selects, forty sliders and a hundred and forty day toggles on one screen —
 // and each item needed two separate saves to commit one change.
-function ItemRow({ item, defaultTransition, defaultDurationMs, canEdit, saving, onRemove, onSave, highlighted = false }: {
+function ItemRow({ item, defaultTransition, defaultDurationMs, hasTransitions, canEdit, saving, onRemove, onSave, highlighted = false }: {
   item: PlaylistItem
   defaultTransition: TransitionName
   defaultDurationMs: number
+  /** Whether the workspace's plan includes per-item transitions. False hides the whole
+   * "Handoff to next ad" section rather than showing it locked -- a tenant should not learn
+   * about a capability their admin has not turned on for them. */
+  hasTransitions: boolean
   canEdit: boolean
   saving: boolean
   onRemove: () => void
@@ -278,30 +283,32 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, canEdit, saving, 
 
         {open && (
           <div id={`item-settings-${item.id}`} className="border-hairline mt-5 border-t pt-5">
-            <fieldset disabled={!canEdit || saving} className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <div>
-                <p className="text-muted-foreground mb-3 flex items-center gap-2 text-xs font-semibold"><Sparkles className="text-primary size-3.5" /> Handoff to next ad</p>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_96px] sm:items-end">
-                  <div>
-                    <Label className="text-muted-foreground mb-2 text-xs">Transition</Label>
-                    <Select value={form.selection} onValueChange={(value: Selection | null) => value && set('selection', value)}>
-                      <SelectTrigger className="w-full"><SelectValue>{(value: Selection | null) => value === 'inherit' ? `Use default (${transitionLabel(defaultTransition)})` : value ? transitionLabel(value) : 'Choose transition'}</SelectValue></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="inherit">Use playlist default</SelectItem>
-                        {transitionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
+            <fieldset disabled={!canEdit || saving} className={cn('grid grid-cols-1 gap-5', hasTransitions && 'lg:grid-cols-2')}>
+              {hasTransitions && (
+                <div>
+                  <p className="text-muted-foreground mb-3 flex items-center gap-2 text-xs font-semibold"><Sparkles className="text-primary size-3.5" /> Handoff to next ad</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_96px] sm:items-end">
+                    <div>
+                      <Label className="text-muted-foreground mb-2 text-xs">Transition</Label>
+                      <Select value={form.selection} onValueChange={(value: Selection | null) => value && set('selection', value)}>
+                        <SelectTrigger className="w-full"><SelectValue>{(value: Selection | null) => value === 'inherit' ? `Use default (${transitionLabel(defaultTransition)})` : value ? transitionLabel(value) : 'Choose transition'}</SelectValue></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="inherit">Use playlist default</SelectItem>
+                          {transitionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <TransitionPreview transition={effectiveTransition} durationMs={effectiveMs} compact />
                   </div>
-                  <TransitionPreview transition={effectiveTransition} durationMs={effectiveMs} compact />
-                </div>
-                <div className={cn('mt-3', form.selection === 'inherit' && 'opacity-50')}>
-                  <div className="mb-2 flex items-center justify-between">
-                    <Label htmlFor={`transition-duration-${item.id}`} className="text-muted-foreground text-xs">Handoff duration</Label>
-                    <span className="text-muted-foreground font-mono text-xs">{effectiveMs} ms</span>
+                  <div className={cn('mt-3', form.selection === 'inherit' && 'opacity-50')}>
+                    <div className="mb-2 flex items-center justify-between">
+                      <Label htmlFor={`transition-duration-${item.id}`} className="text-muted-foreground text-xs">Handoff duration</Label>
+                      <span className="text-muted-foreground font-mono text-xs">{effectiveMs} ms</span>
+                    </div>
+                    <input id={`transition-duration-${item.id}`} type="range" min={100} max={3000} step={50} value={form.transitionMs} disabled={!canEdit || saving || form.selection === 'inherit'} onChange={(event) => set('transitionMs', Number(event.target.value))} className="accent-primary h-10 w-full" />
                   </div>
-                  <input id={`transition-duration-${item.id}`} type="range" min={100} max={3000} step={50} value={form.transitionMs} disabled={!canEdit || saving || form.selection === 'inherit'} onChange={(event) => set('transitionMs', Number(event.target.value))} className="accent-primary h-10 w-full" />
                 </div>
-              </div>
+              )}
 
               <div>
                 <div className="mb-3 flex items-center justify-between">
@@ -469,6 +476,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const hasTransitions = usePlanFeatures().has('transitions')
   const playlistKey = useMemo(() => ['playlist', playlistId], [playlistId])
   const playlistQuery = useQuery({ queryKey: playlistKey, queryFn: () => api.getPlaylist(playlistId), enabled: Number.isFinite(playlistId) })
   const contentQuery = useQuery({ queryKey: ['content'], queryFn: api.getContent })
@@ -757,7 +765,9 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section aria-labelledby="timeline-title">
           <h2 id="timeline-title" className="mb-4 text-sm font-semibold text-foreground">Playback timeline</h2>
-          <DefaultTransitionPanel key={`${playlist.default_transition}-${playlist.default_transition_ms}`} playlist={playlist} disabled={!canEdit} pending={transitionMutation.isPending} onSave={(transition, durationMs, applyToAll) => transitionMutation.mutate({ transition, durationMs, applyToAll })} />
+          {hasTransitions && (
+            <DefaultTransitionPanel key={`${playlist.default_transition}-${playlist.default_transition_ms}`} playlist={playlist} disabled={!canEdit} pending={transitionMutation.isPending} onSave={(transition, durationMs, applyToAll) => transitionMutation.mutate({ transition, durationMs, applyToAll })} />
+          )}
           {/* The drop target wraps the empty state as well: an empty loop is exactly when you
               most want to drag the first advert in. Previously the DndContext lived inside
               this ternary, so that was impossible. */}
@@ -772,6 +782,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
                       item={item}
                       defaultTransition={playlist.default_transition}
                       defaultDurationMs={playlist.default_transition_ms}
+                      hasTransitions={hasTransitions}
                       canEdit={canEdit && item.id > 0}
                       saving={savingItem === item.id}
                       highlighted={highlightedItemId === item.id}

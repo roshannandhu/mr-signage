@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Radio, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
@@ -15,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { EmergencyBroadcast } from '@/lib/types'
 
 const targetLabels: Record<string, string> = {
@@ -40,11 +42,17 @@ export default function EmergencyPage() {
   const playlistsQuery = useQuery({ queryKey: ['playlists'], queryFn: api.getPlaylists })
   const screensQuery = useQuery({ queryKey: ['screens'], queryFn: api.getScreens })
   const groupsQuery = useQuery({ queryKey: ['groups'], queryFn: api.getGroups })
-  const summaryQuery = useQuery({ queryKey: ['billing-summary'], queryFn: api.getBillingSummary })
-  // The backend refuses a broadcast without this flag (require_feature). Mirror that here so
-  // the controls read as locked rather than failing on submit. Default to allowed while the
-  // plan is still loading, to avoid flashing a locked state on every visit.
-  const hasEmergency = summaryQuery.data ? Boolean(summaryQuery.data.plan.feature_flags?.emergency_alert) : true
+  // A tenant whose plan lacks this feature does not see the page at all -- not a locked
+  // form with an upgrade hint, which told them about a capability their admin had not turned
+  // on. The nav link is already hidden (dashboard/layout.tsx); this covers a direct visit to
+  // the URL. isLoading reads as "has it" so a page in the middle of loading does not flash
+  // this redirect on every visit before the real answer arrives.
+  const { has: hasFeature, isLoading: featuresLoading } = usePlanFeatures()
+  const hasEmergency = hasFeature('emergency_alert')
+  const router = useRouter()
+  useEffect(() => {
+    if (!featuresLoading && !hasEmergency) router.replace('/dashboard')
+  }, [featuresLoading, hasEmergency, router])
 
   const triggerMutation = useMutation({
     mutationFn: api.triggerEmergencyBroadcast,
@@ -67,7 +75,6 @@ export default function EmergencyPage() {
   })
 
   const handleTrigger = () => {
-    if (!hasEmergency) return toast.error('Your plan does not include emergency alerts. Upgrade to enable it.')
     if (!playlistId) return toast.error('Choose the playlist to broadcast')
     if (targetType !== 'all' && !targetId) return toast.error(`Choose which ${targetType} to override`)
     triggerMutation.mutate({
@@ -85,6 +92,14 @@ export default function EmergencyPage() {
 
   if (broadcastsQuery.isError || playlistsQuery.isError || screensQuery.isError || groupsQuery.isError) {
     return <ErrorState message="Emergency broadcasts could not be loaded." onRetry={() => { broadcastsQuery.refetch(); playlistsQuery.refetch(); screensQuery.refetch(); groupsQuery.refetch() }} />
+  }
+
+  // Mid-redirect: the plan has resolved and does not include this. Render nothing rather
+  // than the form, which is exactly the flash of locked UI this is meant to avoid. While the
+  // plan is STILL resolving, hasEmergency reads optimistically true (see usePlanFeatures),
+  // so this does not blank the page for every tenant on every first visit.
+  if (!featuresLoading && !hasEmergency) {
+    return <div className="bg-background min-h-screen" aria-label="Redirecting" />
   }
 
   const broadcasts = broadcastsQuery.data || []
@@ -114,16 +129,6 @@ export default function EmergencyPage() {
         actions={canEdit ? <Badge variant="warning">Takes effect immediately</Badge> : <Badge variant="outline">View only</Badge>}
       />
 
-      {!hasEmergency && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-950 dark:text-amber-100">
-          <AlertTriangle className="mt-0.5 size-5 shrink-0" />
-          <div>
-            <p className="font-semibold">Emergency alerts are not on your plan</p>
-            <p className="mt-1 opacity-80">Upgrade your plan from the Billing page to interrupt playback across your fleet.</p>
-          </div>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
         <Card className="ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1">
           <CardContent className="p-5 sm:p-6">
@@ -137,7 +142,7 @@ export default function EmergencyPage() {
               </div>
             </div>
 
-            <fieldset disabled={!canEdit || !hasEmergency || triggerMutation.isPending} className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <fieldset disabled={!canEdit || triggerMutation.isPending} className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Target</Label>
                 <Select value={targetType} onValueChange={(value) => { setTargetType(value || 'all'); setTargetId('') }}>
