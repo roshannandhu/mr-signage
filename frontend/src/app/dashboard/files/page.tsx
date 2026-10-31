@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
+import { bulkSummary, runBulk } from '@/lib/bulk'
 import { formatBytes, relativeTime } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
 import type { ContentItem, Playlist } from '@/lib/types'
@@ -84,17 +85,24 @@ export default function FileManagementPage() {
   const selectedBytes = content.filter((item) => selected.includes(item.id)).reduce((total, item) => total + item.file_size_bytes, 0)
 
   const deleteSelected = useMutation({
-    mutationFn: async () => {
-      // Sequential: the media worker cleans up renditions per asset, and a burst of
-      // parallel deletes has it competing with itself for the same storage handles.
-      for (const id of selected) await api.deleteContent(id)
-    },
-    onSuccess: () => {
+    // Sequential: the media worker cleans up renditions per asset, and a burst of
+    // parallel deletes has it competing with itself for the same storage handles.
+    mutationFn: () => runBulk(selected, (id) => api.deleteContent(id)),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['content'] })
       queryClient.invalidateQueries({ queryKey: ['playlists'] })
-      toast.success(`${selected.length} file${selected.length === 1 ? '' : 's'} deleted`)
-      setSelected([])
+    },
+    onSuccess: ({ done, failed }) => {
       setConfirmOpen(false)
+      if (failed.length) {
+        // This page keeps its own list of ids, so drop the ones that went: left in, the next
+        // attempt starts with a file that no longer exists and fails on it.
+        toast.error(bulkSummary('deleted', done, failed))
+        setSelected(failed.map((entry) => entry.id))
+        return
+      }
+      toast.success(`${done} file${done === 1 ? '' : 's'} deleted`)
+      setSelected([])
     },
     onError: (error: Error) => toast.error(error.message),
   })

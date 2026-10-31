@@ -165,6 +165,8 @@ export default function AdDetailPage() {
   const groupName = (id: number | null | undefined) =>
     groupsQuery.data?.find((group) => group.id === id)?.name
 
+  const placementsAsOf = placementsQuery.dataUpdatedAt
+
   // Highest id, matching what serialize_content reports as the asset's current booking.
   const booking = useMemo(() => {
     const rows = placementsQuery.data || []
@@ -190,8 +192,13 @@ export default function AdDetailPage() {
       screens.filter((screen) => screen.effective_playlist_id && playlistIds.has(screen.effective_playlist_id)).map((s) => s.id),
     )
 
-    // Screens directly or via groups targeted by active commercial bookings
-    if (booking?.targets) {
+    // Screens directly or via groups targeted by the booking -- while it is still running. A
+    // finished one puts the advert nowhere, and a clock read during render is impure, so "now"
+    // is when the bookings were fetched (the same stand-in the book-or-extend dialog uses).
+    const bookingFinished = booking
+      ? new Date(booking.effective_ends_at ?? booking.ends_at).getTime() < placementsAsOf
+      : false
+    if (booking?.targets && !bookingFinished) {
       for (const target of booking.targets) {
         if (target.screen_id) {
           matchedScreenIds.add(target.screen_id)
@@ -203,15 +210,11 @@ export default function AdDetailPage() {
       }
     }
 
-    // Screens recorded in playback history
-    if (reportQuery.data?.per_screen) {
-      for (const row of reportQuery.data.per_screen) {
-        if (row.total_plays > 0) matchedScreenIds.add(row.screen_id)
-      }
-    }
-
+    // Play history is deliberately NOT consulted. This is "where is it scheduled right now", and
+    // a screen that played the advert once, last month, would otherwise be listed here for ever
+    // after the advert had left it.
     return screens.filter((screen) => matchedScreenIds.has(screen.id))
-  }, [playlistsQuery.data, screensQuery.data, contentId, booking, reportQuery.data])
+  }, [playlistsQuery.data, screensQuery.data, contentId, booking, placementsAsOf])
 
   const activeLocations = useMemo(() => {
     const locs = new Set<string>()

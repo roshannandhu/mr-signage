@@ -288,6 +288,12 @@ export function CreateBookingModal({
     }, 0)
   }, [picked, selectedPlan, runDurationDays, targetDays, screens])
 
+  // Blank means the package's list price -- which is what the box's placeholder shows -- not
+  // free. A free booking is a typed 0, and off a package the price has to be entered; it used
+  // to be saved as 0 without a word, which then read as an unpaid-for ad on every invoice.
+  const priceRupees =
+    price.trim() !== '' ? Number(price) : selectedPlan ? selectedPlan.price_paise / 100 : null
+
   // Mutation to create booking
   const createMutation = useMutation({
     mutationFn: () => {
@@ -308,7 +314,7 @@ export function CreateBookingModal({
         // Only meaningful off a package, and 0 means the booking is uncapped -- which is
         // what leaving the box empty has always meant for a custom sale.
         max_locations: planId === null && Number(customScreens) > 0 ? Number(customScreens) : 0,
-        price_paise: Math.round(Number(price || 0) * 100),
+        price_paise: Math.round((priceRupees ?? 0) * 100),
         is_paid: false,
         starts_at: new Date(`${startsAt}T00:00:00`).toISOString(),
         ends_at: new Date(`${endsAt}T23:59:59`).toISOString(),
@@ -343,6 +349,7 @@ export function CreateBookingModal({
     (Boolean(clientId) || Boolean(advertiser.trim())) &&
     picked.length > 0 &&
     endsAt > startsAt &&
+    priceRupees !== null && Number.isFinite(priceRupees) && priceRupees >= 0 &&
     !isOverCap
 
   return (
@@ -541,7 +548,7 @@ export function CreateBookingModal({
                   step="0.01"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  placeholder={selectedPlan ? String(selectedPlan.price_paise / 100) : '25000'}
+                  placeholder={selectedPlan ? String(selectedPlan.price_paise / 100) : 'e.g. 25000'}
                   className="pl-9 text-sm bg-background"
                 />
               </div>

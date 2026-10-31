@@ -83,7 +83,10 @@ export function ScreenSettingsDialog({
       latitude: place.latitude,
       longitude: place.longitude,
       place_id: place.place_id,
-      orientation: Number(orientation),
+      // Only when it was changed: the server treats any orientation in the request as the
+      // operator pinning it, so sending it back untouched stopped a TV auto-rotating just
+      // because its name or a tag was edited.
+      ...(Number(orientation) !== (screen.orientation ?? 0) ? { orientation: Number(orientation) } : {}),
       tags: tags.join(',') || null,
       fit_mode: fitMode,
       // Omitted when unchanged or incomplete: the API rejects anything but four digits,
@@ -122,7 +125,7 @@ export function ScreenSettingsDialog({
             </Select>
             {screen.orientation_source === 'auto' && (
               <p className="text-muted-foreground text-xs">
-                Currently auto-detected from the panel. Saving here pins it, and the TV will stop changing it.
+                Currently auto-detected from the panel. Choosing a different orientation pins it, and the TV will stop changing it.
               </p>
             )}
           </div>

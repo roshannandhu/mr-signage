@@ -16,10 +16,21 @@ export const statusStyles: Record<string, { label: string; className: string; Ic
   pending_approval: { label: 'Pending', className: 'text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
   suspended: { label: 'Suspended', className: 'text-rose-400 bg-rose-500/15 border-rose-500/30', Icon: XCircle },
   rejected: { label: 'Rejected', className: 'text-red-400 bg-red-500/15 border-red-500/30', Icon: XCircle },
+  // Screens. They share this pill with tenants, and drawing every screen that was not online as
+  // "Suspended" told an operator a TV had been cut off when it was merely unplugged or unpaired.
+  online: { label: 'Online', className: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30', Icon: CheckCircle },
+  offline: { label: 'Offline', className: 'text-muted-foreground bg-muted border-border', Icon: XCircle },
+  waiting_pairing: { label: 'Waiting to pair', className: 'text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
 }
 
 export function StatusPill({ status }: { status: string }) {
-  const style = statusStyles[status] ?? statusStyles.active
+  // An unrecognised status says what it is. The fallback used to be the Active style, so a status
+  // this table had never heard of -- a read-only or cancelled workspace -- looked healthy.
+  const style = statusStyles[status] ?? {
+    label: status.replaceAll('_', ' '),
+    className: 'text-muted-foreground bg-muted border-border',
+    Icon: Clock,
+  }
   const { Icon } = style
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium ${style.className}`}>

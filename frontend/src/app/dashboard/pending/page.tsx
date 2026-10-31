@@ -206,6 +206,17 @@ export default function ActivateWorkspacePage() {
           </div>
         )}
 
+        {/* Without this a failed request left `plans` empty and the grid showed only the Custom
+            card, as if the platform simply sold nothing else. */}
+        {plansQuery.isError && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm">
+            <span>The plans could not be loaded: {plansQuery.error.message}</span>
+            <Button size="sm" variant="outline" onClick={() => plansQuery.refetch()}>
+              <RefreshCw data-icon="inline-start" /> Try again
+            </Button>
+          </div>
+        )}
+
         {plansQuery.isLoading ? (
           <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
             {[0, 1, 2].map((i) => <div key={i} className="h-80 animate-pulse rounded-3xl bg-muted" />)}

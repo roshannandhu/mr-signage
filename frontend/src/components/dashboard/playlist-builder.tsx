@@ -146,6 +146,21 @@ function DefaultTransitionPanel({ playlist, disabled, pending, onSave }: {
   )
 }
 
+// What the editor shows for an item, in the shape its inputs edit.
+function formFor(item: PlaylistItem, defaultDurationMs: number) {
+  return {
+    duration: item.duration,
+    startAt: dateTimeLocal(item.start_at),
+    endAt: dateTimeLocal(item.end_at),
+    days: item.schedule?.days_of_week || [],
+    windowStart: item.schedule?.start_time || '',
+    windowEnd: item.schedule?.end_time || '',
+    selection: (item.transition ?? 'inherit') as Selection,
+    transitionMs: item.transition_ms ?? defaultDurationMs,
+    rotation: item.rotation === null || item.rotation === undefined ? '' : String(item.rotation),
+  }
+}
+
 // One row per item. Everything below the summary line is collapsed by default: with
 // the transition and schedule editors both always open, a twenty-item loop rendered
 // forty selects, forty sliders and a hundred and forty day toggles on one screen —
@@ -171,17 +186,18 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, canEdit, saving, 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id, disabled: !canEdit })
   const [open, setOpen] = useState(false)
 
-  const [form, setForm] = useState({
-    duration: item.duration,
-    startAt: dateTimeLocal(item.start_at),
-    endAt: dateTimeLocal(item.end_at),
-    days: item.schedule?.days_of_week || [],
-    windowStart: item.schedule?.start_time || '',
-    windowEnd: item.schedule?.end_time || '',
-    selection: (item.transition ?? 'inherit') as Selection,
-    transitionMs: item.transition_ms ?? defaultDurationMs,
-    rotation: item.rotation === null || item.rotation === undefined ? '' : String(item.rotation),
-  })
+  const [form, setForm] = useState(() => formFor(item, defaultDurationMs))
+
+  // The form is a copy of the saved item, so it has to follow the item when something else
+  // changes it. "Apply to all items" rewrites every transition, and a row that kept the one it
+  // mounted with sent it straight back the next time any other field was saved. Re-seeded while
+  // rendering rather than in an effect, so the row stays open and there is no stale frame.
+  const savedForm = JSON.stringify(formFor(item, defaultDurationMs))
+  const [seenForm, setSeenForm] = useState(savedForm)
+  if (seenForm !== savedForm) {
+    setSeenForm(savedForm)
+    setForm(formFor(item, defaultDurationMs))
+  }
 
   const dirty =
     form.duration !== item.duration ||

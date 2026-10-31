@@ -19,7 +19,7 @@ import { api } from '@/lib/api'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 import type { PaymentMethod, Placement } from '@/lib/types'
-import { bookingState, money, rupees } from '@/lib/format'
+import { bookingState, dateInput, money, rupees } from '@/lib/format'
 
 const asDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
@@ -97,7 +97,8 @@ export default function InvoicesPage() {
     setPayAmount(String(money(placement).balance / 100))
     setPayMethod(last?.method ?? 'upi')
     setPayReference('')
-    setPayDate(new Date().toISOString().slice(0, 10))
+    // dateInput, not toISOString(): that is the UTC date, which before 05:30 in IST is yesterday.
+    setPayDate(dateInput(new Date()))
   }
 
   const savePayment = useMutation({

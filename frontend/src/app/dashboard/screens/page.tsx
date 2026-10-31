@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useBulkSelection } from '@/hooks/use-bulk-selection'
 import { api } from '@/lib/api'
+import { bulkSummary, runBulk } from '@/lib/bulk'
 import { relativeTime } from '@/lib/format'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
@@ -134,34 +135,39 @@ export default function ScreensPage() {
     onError: fail,
   })
 
+  // Each runs one screen at a time (see runBulk), refreshes whatever the outcome -- a part-failed
+  // run has still changed some screens -- and only clears the selection when all of it worked.
   const bulkDelete = useMutation({
-    mutationFn: async () => {
-      for (const id of bulk.selected) await api.deleteScreen(id)
-    },
-    onSuccess: () => {
-      refresh()
-      toast.success(`Removed ${bulk.selected.length} displays and sent unpairing signals`)
-      bulk.clear()
+    mutationFn: () => runBulk(bulk.selected, (id) => api.deleteScreen(id)),
+    onSettled: refresh,
+    onSuccess: ({ done, failed }) => {
       setBulkDeleteOpen(false)
+      if (failed.length) return void toast.error(bulkSummary('removed', done, failed))
+      toast.success(`Removed ${done} displays and sent unpairing signals`)
+      bulk.clear()
     },
     onError: fail,
   })
 
-  // Sequential rather than parallel: 80 simultaneous writes to the same rows is how you
-  // turn a bulk action into a pile of lock timeouts.
   const bulkAssign = useMutation({
-    mutationFn: async (playlistId: number) => {
-      for (const id of bulk.selected) await api.assignPlaylist(id, playlistId)
+    mutationFn: (playlistId: number) => runBulk(bulk.selected, (id) => api.assignPlaylist(id, playlistId)),
+    onSettled: refresh,
+    onSuccess: ({ done, failed }) => {
+      if (failed.length) return void toast.error(bulkSummary('assigned', done, failed))
+      toast.success(`Playlist assigned to ${done} screens`)
+      bulk.clear()
     },
-    onSuccess: () => { refresh(); toast.success(`Playlist assigned to ${bulk.selected.length} screens`); bulk.clear() },
     onError: fail,
   })
 
   const bulkGroup = useMutation({
-    mutationFn: async (groupId: number) => {
-      for (const id of bulk.selected) await api.patchScreen(id, { group_id: groupId })
+    mutationFn: (groupId: number) => runBulk(bulk.selected, (id) => api.patchScreen(id, { group_id: groupId })),
+    onSettled: refresh,
+    onSuccess: ({ done, failed }) => {
+      if (failed.length) return void toast.error(bulkSummary('moved', done, failed))
+      toast.success(`Moved ${done} screens`)
+      bulk.clear()
     },
-    onSuccess: () => { refresh(); toast.success(`Moved ${bulk.selected.length} screens`); bulk.clear() },
     onError: fail,
   })
 

@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
 import { AssetCard, AssetGrid, OverlayBadge } from '@/components/dashboard/asset-card'
 import { BulkActionBar, SelectAllCheckbox } from '@/components/dashboard/bulk-action-bar'
+import { bulkSummary, runBulk } from '@/lib/bulk'
 import { ListToolbar, commonSorts, sortItems, type CommonSort } from '@/components/dashboard/list-toolbar'
 import { MediaThumbnail } from '@/components/dashboard/media-thumbnail'
 import { EditClientAdModal } from '@/components/dashboard/edit-client-ad-modal'
@@ -86,6 +87,9 @@ export default function ContentPage() {
   const [uploading, setUploading] = useState(false)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  // The client this dialog has already created, so retrying a partly failed upload reuses it
+  // instead of creating the same company a second time (or being refused for the duplicate name).
+  const createdClient = useRef<{ typed: string; id: number; name: string } | null>(null)
 
   const chosenPlan = sellPlans.find((plan) => String(plan.id) === sellPlanId)
   const isCustomPlan = sellPlanId === 'custom'
@@ -120,15 +124,21 @@ export default function ContentPage() {
 
 
   const bulkDelete = useMutation({
-    mutationFn: async () => {
-      for (const id of bulk.selected) await api.deleteContent(id)
-    },
-    onSuccess: () => {
+    mutationFn: () => runBulk(bulk.selected, (id) => api.deleteContent(id)),
+    // Whatever happened: a run that part-failed has still deleted some, and a list that is not
+    // told shows them, still selected, for the next attempt to fail on.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['content'] })
       queryClient.invalidateQueries({ queryKey: ['playlists'] })
-      toast.success(`${bulk.selected.length} asset${bulk.selected.length === 1 ? '' : 's'} deleted`)
-      bulk.clear()
+    },
+    onSuccess: ({ done, failed }) => {
       setBulkDeleteOpen(false)
+      if (failed.length) {
+        toast.error(bulkSummary('deleted', done, failed))
+        return
+      }
+      toast.success(`${done} asset${done === 1 ? '' : 's'} deleted`)
+      bulk.clear()
     },
     onError: (error: Error) => toast.error(error.message),
   })
@@ -186,19 +196,26 @@ export default function ContentPage() {
 
     if (uploadMode === 'ad') {
       if (isNewClient) {
-        try {
-          const created = await api.createClient({
-            name: newClientName.trim(),
-            email: newClientEmail.trim() || undefined,
-            phone: newClientPhone.trim() || undefined,
-          })
-          resolvedClientId = created.id
-          resolvedClientName = created.name
-          queryClient.invalidateQueries({ queryKey: ['clients'] })
-        } catch (err) {
-          toast.error(`Could not create client: ${(err as Error).message}`)
-          setUploading(false)
-          return
+        const already = createdClient.current
+        if (already && already.typed === newClientName.trim()) {
+          resolvedClientId = already.id
+          resolvedClientName = already.name
+        } else {
+          try {
+            const created = await api.createClient({
+              name: newClientName.trim(),
+              email: newClientEmail.trim() || undefined,
+              phone: newClientPhone.trim() || undefined,
+            })
+            createdClient.current = { typed: newClientName.trim(), id: created.id, name: created.name }
+            resolvedClientId = created.id
+            resolvedClientName = created.name
+            queryClient.invalidateQueries({ queryKey: ['clients'] })
+          } catch (err) {
+            toast.error(`Could not create client: ${(err as Error).message}`)
+            setUploading(false)
+            return
+          }
         }
       } else {
         resolvedClientId = Number(sellClientId)
@@ -229,6 +246,7 @@ export default function ContentPage() {
       : undefined
 
     let failures = 0
+    let unbooked = 0
     for (const [index, entry] of queue.entries()) {
       if (entry.status === 'done') continue
       patchItem(index, { status: 'uploading', progress: 0, error: undefined })
@@ -263,6 +281,7 @@ export default function ContentPage() {
               ),
             })
           } catch (reason) {
+            unbooked += 1
             toast.error(`Uploaded "${entry.name}", but ad booking failed: ${reason instanceof Error ? reason.message : 'unknown error'}`)
           }
         }
@@ -283,7 +302,11 @@ export default function ContentPage() {
 
     const uploaded = queue.length - failures
     if (failures === 0) {
-      if (uploadMode === 'ad') {
+      if (uploadMode === 'ad' && unbooked > 0) {
+        // The files are in the library; only the booking failed. Saying "booked" here was
+        // untrue, and it is the one message the operator reads before closing the dialog.
+        toast.warning(`${uploaded} uploaded, but ${unbooked} could not be booked for ${resolvedClientName}. Book them from the library.`)
+      } else if (uploadMode === 'ad') {
         toast.success(`${uploaded} ad${uploaded === 1 ? '' : 's'} uploaded & booked for ${resolvedClientName}!`)
       } else {
         toast.success(`${uploaded} file${uploaded === 1 ? '' : 's'} uploaded`)
@@ -304,6 +327,7 @@ export default function ContentPage() {
     }
     if (uploading) return
     setUploadOpen(false)
+    createdClient.current = null
     setQueue([])
     setTags('')
     setIsNewClient(true)

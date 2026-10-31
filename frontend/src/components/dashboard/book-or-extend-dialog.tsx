@@ -119,9 +119,15 @@ export function BookOrExtendDialog({
       }
       return targets.length
     },
-    onSuccess: (count, { placement }) => {
+    // Whatever the outcome. The screens go on one at a time, so a refusal part-way (the plan's
+    // cap, say) leaves the earlier ones already on the booking; without a refetch the dialog kept
+    // offering them as missing, and the next attempt tried to add them again and was refused
+    // before it ever reached the screen that needed attention.
+    onSettled: () => {
       invalidateBookingViews(queryClient)
       queryClient.invalidateQueries({ queryKey: ['placements', content.id] })
+    },
+    onSuccess: (count, { placement }) => {
       toast.success(
         `${count} screen${count === 1 ? '' : 's'} added to ${placement.advertiser}'s booking.`,
       )

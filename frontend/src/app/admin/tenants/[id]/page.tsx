@@ -142,7 +142,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                 headers={['Name', 'Status', 'Playback', 'Location', 'Model', 'App', 'Last seen']}
                 rows={(screensQuery.data ?? []).map((s) => [
                   s.name ?? `Screen ${s.id}`,
-                  <StatusPill key="s" status={s.status === 'online' ? 'active' : 'suspended'} />,
+                  <StatusPill key="s" status={s.status} />,
                   s.playback_state,
                   s.location ?? '—',
                   s.model ?? '—',
