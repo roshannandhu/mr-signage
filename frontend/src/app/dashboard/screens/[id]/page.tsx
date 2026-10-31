@@ -222,7 +222,8 @@ export default function ScreenDetailPage() {
           in front of a screen they cannot get into needs it first, not last. Paired with
           the map so the two help panels cost one band of height instead of two. */}
       <div className="space-y-3">
-        <KioskExitCard screen={screen} />
+        {/* The server withholds the PIN from viewers, so the card would only say "No PIN". */}
+        {canEdit && <KioskExitCard screen={screen} />}
 
         {screen.location && (
           <details

@@ -51,12 +51,14 @@ def setup():
                        hashed_password=get_password_hash("x"), role="super_admin", is_active=True))
     db.add(models.User(organization_id=tenant.id, username="owner", email="ow@x.t",
                        hashed_password=get_password_hash("x"), role="owner", is_active=True))
+    db.add(models.User(organization_id=tenant.id, username="watcher", email="wa@x.t",
+                       hashed_password=get_password_hash("x"), role="viewer", is_active=True))
     # Two screens with DIFFERENT own PINs: the master has to open both without replacing
     # either, which is the whole point of it being a second code.
     first = models.Screen(organization_id=tenant.id, device_id="tv-a", status="online",
-                          maintenance_pin="1234")
+                          maintenance_pin="1234", installation_id="hw-serial-a")
     second = models.Screen(organization_id=tenant.id, device_id="tv-b", status="online",
-                           maintenance_pin="5678")
+                           maintenance_pin="5678", installation_id="hw-serial-b")
     db.add_all([first, second])
     db.flush()
     from backend.services import issue_device_secret
@@ -123,6 +125,32 @@ def run() -> None:
           "the tenant cannot see the code that opens their own screen")
     check("4821" not in client.get("/api/screens/", headers=owner).text,
           "SECURITY: the operator's master code was handed to a tenant")
+
+    # --- a viewer can see the fleet but not unlock it -------------------------------------
+    viewer = {"Authorization": f"Bearer {create_access_token({'sub': 'watcher'})}"}
+    seen = client.get("/api/screens/", headers=viewer)
+    check(seen.status_code == 200, f"a viewer cannot list screens: {seen.status_code}")
+    for screen in seen.json():
+        check(screen["maintenance_pin"] is None and screen["effective_maintenance_pin"] is None,
+              f"SECURITY: a viewer was shown the PIN of {screen['device_id']}")
+        check(screen["installation_id"] is None,
+              f"SECURITY: a viewer was shown the hardware identity of {screen['device_id']}")
+    check("1234" not in seen.text and "5678" not in seen.text and "4821" not in seen.text,
+          "SECURITY: a PIN appears somewhere in a viewer's screen list")
+    mine = {s["device_id"]: s for s in client.get("/api/screens/", headers=owner).json()}
+    check(mine["tv-a"]["maintenance_pin"] == "1234" and mine["tv-a"]["installation_id"] == "hw-serial-a",
+          "an owner must still see their own screen's PIN and hardware identity")
+
+    # --- a blank own PIN never exposes the master ------------------------------------------
+    blank_db = database.SessionLocal()
+    blank_db.query(models.Screen).filter(models.Screen.device_id == "tv-b").update({"maintenance_pin": ""})
+    blank_db.commit()
+    blank_db.close()
+    owner_view = client.get("/api/screens/", headers=owner)
+    check("4821" not in owner_view.text,
+          "SECURITY: a screen with a blank PIN showed the operator's master code to its owner")
+    check({s["device_id"]: s for s in owner_view.json()}["tv-b"]["effective_maintenance_pin"] is None,
+          "a blank own PIN should report no effective PIN to a tenant")
 
     # --- validation and clearing ----------------------------------------------------------
     for bad in ("12", "abcd", "123456"):

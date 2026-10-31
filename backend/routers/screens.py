@@ -24,7 +24,7 @@ from .. import rollout
 from ..rotation import normalise as normalise_rotation, resolve_rotation
 from ..maps_link import MapsLinkError, parse as parse_maps_link
 from ..media_urls import is_s3_enabled, media_base_url, resolve_media_url
-from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
+from ..tenancy import TenantScope, get_tenant_scope, is_super_admin, require_tenant_roles
 
 logger = logging.getLogger(__name__)
 
@@ -1315,30 +1315,31 @@ async def get_screens(
     # actually do -- ancestor and dynamic groups included. The bare effective_playlist_id
     # property cannot reach those without spending a query per screen.
     groups = groups_by_id(scope.db, {screen.organization_id for screen in screens})
-    # Read once for the whole fleet rather than per screen: it is one row and every screen
-    # without its own PIN resolves to the same answer.
-    universal_pin = _universal_maintenance_pin(scope.db)
+    # The code that opens a kiosked screen, and the hardware identity that proves a panel is
+    # that panel, are for the people who manage screens. A viewer can see the fleet but not
+    # unlock it. (Owners and editors can already change a screen's PIN, so seeing it costs
+    # them nothing.)
+    can_see_secrets = is_super_admin(scope.user) or scope.user.role in ("owner", "editor")
+    hidden = {} if can_see_secrets else {
+        "maintenance_pin": None,
+        "installation_id": None,
+        "effective_maintenance_pin": None,
+    }
     return [
         schemas.ScreenResponse.model_validate(screen).model_copy(
             update={
                 "latest_screenshot": shots.get(screen.id),
                 "effective_playlist_id": screen.resolve_playlist_id(groups),
-                # What actually opens the maintenance door on THIS screen. Reported beside
-                # maintenance_pin rather than replacing it: that field is the screen's own and
-                # is what the settings dialog edits, while this is the one to put in front of
-                # somebody standing at a kiosked television.
-                "effective_maintenance_pin": (screen.maintenance_pin or "").strip() or universal_pin,
+                # What opens the maintenance door on THIS screen: its own PIN, and only that.
+                # This used to fall back to the platform operator's master code for a screen
+                # with a blank PIN, which put the one code that opens EVERY screen in front of
+                # a tenant -- the opposite of what the master code is for.
+                "effective_maintenance_pin": (screen.maintenance_pin or "").strip() or None,
+                **hidden,
             }
         )
         for screen in screens
     ]
-
-
-def _universal_maintenance_pin(db: Session) -> str | None:
-    setting = db.query(models.SystemSetting).filter(
-        models.SystemSetting.key == UNIVERSAL_PIN_KEY
-    ).first()
-    return ((setting.value if setting else "") or "").strip() or None
 
 
 def _is_recent(last_seen) -> bool:
