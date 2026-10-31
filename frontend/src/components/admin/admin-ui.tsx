@@ -129,6 +129,28 @@ export function PageHeader({ title, description, children }: { title: string; de
 export const UNLIMITED = -1
 
 /**
+ * The feature toggles the app actually understands, shared by every place that edits a
+ * plan's or a custom request's flags (packages, the grant-limits dialog, custom requests):
+ * one fixed list so an operator sets flags the code reads (billing.plan_features /
+ * require_feature), not typos that silently gate nothing.
+ *
+ * `enforced: false` means the flag changes nothing in the product -- it is a commitment
+ * made outside the software. Labelled rather than removed so nobody has to guess which
+ * toggles bite.
+ */
+export const FEATURES: { key: string; label: string; enforced: boolean }[] = [
+  { key: 'scheduling', label: 'Scheduling', enforced: true },
+  { key: 'transitions', label: 'Transitions', enforced: true },
+  { key: 'payslips', label: 'Payslips & payments', enforced: true },
+  { key: 'ads_counting', label: 'Ads counting reports', enforced: true },
+  { key: 'pdf_reports', label: 'PDF playback reports', enforced: true },
+  { key: 'remote_control', label: 'Remote control & alerts', enforced: true },
+  { key: 'kiosk_lock', label: 'TV lock', enforced: true },
+  { key: 'emergency_alert', label: 'Emergency alert', enforced: true },
+  { key: 'priority_support', label: 'Priority support', enforced: false },
+]
+
+/**
  * A limit with an "Unlimited" box.
  *
  * `value` is in the stored unit (bytes for storage) or UNLIMITED; `scale` is how many stored

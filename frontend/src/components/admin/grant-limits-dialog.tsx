@@ -3,20 +3,8 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi } from '@/lib/api'
+import { FEATURES } from '@/components/admin/admin-ui'
 import type { TenantSummary } from '@/lib/types'
-
-/** The flags the API actually reads. Priority support is a promise, not a code path. */
-const FEATURES: { key: string; label: string; enforced: boolean }[] = [
-  { key: 'scheduling', label: 'Scheduling', enforced: true },
-  { key: 'transitions', label: 'Transitions', enforced: true },
-  { key: 'payslips', label: 'Payslips & payments', enforced: true },
-  { key: 'ads_counting', label: 'Ads counting reports', enforced: true },
-  { key: 'pdf_reports', label: 'PDF playback reports', enforced: true },
-  { key: 'remote_control', label: 'Remote control & alerts', enforced: true },
-  { key: 'kiosk_lock', label: 'TV lock', enforced: true },
-  { key: 'emergency_alert', label: 'Emergency alert', enforced: true },
-  { key: 'priority_support', label: 'Priority support', enforced: false },
-]
 
 const GIB = 1024 ** 3
 /** What the API takes for "no limit" on every one of the four numbers. */

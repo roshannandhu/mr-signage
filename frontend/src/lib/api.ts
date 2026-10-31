@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -776,6 +776,28 @@ export const adminApi = {
     }),
   rejectCustomRequest: (id: number) =>
     fetchWithAuth<CustomPlanRequestItem>(`/admin/custom-requests/${id}/reject`, { method: 'POST' }),
+
+  // Billing: what tenants have paid the platform (view only), the contact address a custom
+  // request's mailto draft is addressed to, and whether SMTP actually works.
+  listPayments: (filters?: { organization_id?: number; since?: string; until?: string }) => {
+    const params = new URLSearchParams()
+    if (filters?.organization_id) params.set('organization_id', String(filters.organization_id))
+    if (filters?.since) params.set('since', filters.since)
+    if (filters?.until) params.set('until', filters.until)
+    const qs = params.toString()
+    return fetchWithAuth<PlatformPayment[]>(`/admin/payments${qs ? `?${qs}` : ''}`)
+  },
+  getContactEmail: () => fetchWithAuth<{ email: string | null }>('/admin/settings/contact-email'),
+  setContactEmail: (email: string) =>
+    fetchWithAuth<{ email: string | null }>('/admin/settings/contact-email', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }),
+    }),
+  getPlatformEmailStatus: () =>
+    fetchWithAuth<{ is_configured: boolean; sender: string | null; missing_variables: string[] }>('/admin/settings/email-status'),
+  sendTestEmail: (to: string) =>
+    fetchWithAuth<{ status: string; to: string }>('/admin/settings/test-email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to }),
+    }),
 
   getDemoVideo: () => fetchWithAuth<{ url: string; description?: string }>('/admin/demo-video'),
   setDemoVideo: (url: string, description?: string) =>

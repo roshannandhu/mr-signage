@@ -288,6 +288,22 @@ export interface CustomPlanRequestItem {
   organization_name?: string | null
 }
 
+export interface PlatformPayment {
+  id: number
+  organization_id: number
+  organization_name: string | null
+  kind: 'plan' | 'custom' | 'subscription'
+  plan_id: number | null
+  custom_request_id: number | null
+  amount_paise: number
+  currency: string
+  provider: string
+  provider_order_id: string | null
+  provider_payment_id: string | null
+  status: string
+  paid_at: string
+}
+
 export interface AppRelease {
   id: number
   version_code: number

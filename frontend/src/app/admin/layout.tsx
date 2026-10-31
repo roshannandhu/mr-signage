@@ -4,25 +4,45 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
+import { adminApi, api } from '@/lib/api'
 import { isSuperAdmin } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 import {
   ShieldCheck, Users, Film, LogOut, ChevronRight, LayoutDashboard,
-  Package, Rocket, QrCode, Menu, X, Activity, HardDrive
+  Package, Receipt, Rocket, QrCode, Menu, X, Activity, HardDrive
 } from 'lucide-react'
 
-// Platform operator navigation items
-const navItems = [
-  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/admin/approvals', label: 'Approvals Queue', icon: ShieldCheck },
-  { href: '/admin/tenants', label: 'All Tenants', icon: Users },
-  { href: '/admin/packages', label: 'Packages', icon: Package },
-  { href: '/admin/storage', label: 'Storage', icon: HardDrive },
-  { href: '/admin/releases', label: 'App Releases', icon: Rocket },
-  { href: '/admin/fleet', label: 'Fleet Versions', icon: Activity },
-  { href: '/admin/provisioning', label: 'Zero-Touch Provisioning', icon: QrCode },
-  { href: '/admin/demo-video', label: 'Demo Video', icon: Film },
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; badge?: number }
+
+// Grouped like a real console: a flat "Overview" first, then sections an operator actually
+// thinks in -- who they're selling to, what's for sale, and what's running in the field.
+// One list before this read as a single undifferentiated stack of nine links.
+const navSections: { label: string; items: NavItem[] }[] = [
+  { label: '', items: [{ href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true }] },
+  {
+    label: 'Tenants',
+    items: [
+      { href: '/admin/approvals', label: 'Approvals Queue', icon: ShieldCheck },
+      { href: '/admin/tenants', label: 'All Tenants', icon: Users },
+    ],
+  },
+  {
+    label: 'Commercial',
+    items: [
+      { href: '/admin/packages', label: 'Packages', icon: Package },
+      { href: '/admin/billing', label: 'Billing', icon: Receipt },
+    ],
+  },
+  {
+    label: 'Fleet',
+    items: [
+      { href: '/admin/storage', label: 'Storage', icon: HardDrive },
+      { href: '/admin/releases', label: 'App Releases', icon: Rocket },
+      { href: '/admin/fleet', label: 'Fleet Versions', icon: Activity },
+      { href: '/admin/provisioning', label: 'Zero-Touch Provisioning', icon: QrCode },
+    ],
+  },
+  { label: 'Content', items: [{ href: '/admin/demo-video', label: 'Demo Video', icon: Film }] },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -54,6 +74,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Undefined until the first answer arrives, so the redirect below waits rather than
   // bouncing a legitimate operator out on a cache miss.
   const resolved = meQuery.isSuccess || !meQuery.isFetching
+  const isAdmin = resolved && isSuperAdmin(account)
+
+  // Shares its cache with the Billing page and the custom-requests panel (same queryKey), so
+  // the badge costs nothing extra once either has been visited, and the other way round.
+  const requestsQuery = useQuery({
+    queryKey: ['admin', 'custom-requests'], queryFn: adminApi.listCustomRequests,
+    enabled: isAdmin, refetchInterval: 15000,
+  })
+  const requestedCount = (requestsQuery.data ?? []).filter((r) => r.status === 'requested').length
+  const navSectionsWithBadges = navSections.map((section) => ({
+    ...section,
+    items: section.items.map((item) =>
+      item.href === '/admin/billing' && requestedCount > 0 ? { ...item, badge: requestedCount } : item,
+    ),
+  }))
 
   useEffect(() => {
     if (!hydrated) return
@@ -149,31 +184,47 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 p-3 space-y-0.5">
-          {navItems.map((item) => {
-            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
-            const Icon = item.icon
-            return (
-              // Link, not <a>. A raw anchor made every click a full document reload: the
-              // React Query cache was thrown away and refetched, the auth guard re-ran and
-              // flashed its empty div, and the whole admin area felt broken on a slow
-              // connection. The dashboard layout has always used Link; this one did not.
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
-                  active
-                    ? 'bg-violet-500/15 text-violet-700 dark:text-violet-300 font-semibold border border-violet-500/20'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-              >
-                <Icon className="size-4 shrink-0" />
-                {item.label}
-                {active && <ChevronRight className="size-3 ml-auto text-violet-400" />}
-              </Link>
-            )
-          })}
+        {/* Nav, grouped into sections -- an operator's eye finds "Billing" under
+            "Commercial" far faster than scanning nine links in one flat stack. */}
+        <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+          {navSectionsWithBadges.map((section) => (
+            <div key={section.label || 'top'} className="space-y-0.5">
+              {section.label && (
+                <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  {section.label}
+                </p>
+              )}
+              {section.items.map((item) => {
+                const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
+                const Icon = item.icon
+                return (
+                  // Link, not <a>. A raw anchor made every click a full document reload: the
+                  // React Query cache was thrown away and refetched, the auth guard re-ran and
+                  // flashed its empty div, and the whole admin area felt broken on a slow
+                  // connection. The dashboard layout has always used Link; this one did not.
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${
+                      active
+                        ? 'border border-violet-500/20 bg-violet-500/15 font-semibold text-violet-700 dark:text-violet-300'
+                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    }`}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                    {item.badge ? (
+                      <span className="ml-auto grid size-5 shrink-0 place-items-center rounded-full bg-amber-500/90 text-[10px] font-bold text-white">
+                        {item.badge}
+                      </span>
+                    ) : (
+                      active && <ChevronRight className="ml-auto size-3 shrink-0 text-violet-400" />
+                    )}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
         </nav>
 
         {/* Divider — tenant dashboard link */}
