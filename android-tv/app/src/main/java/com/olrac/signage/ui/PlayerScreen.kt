@@ -272,7 +272,6 @@ private fun DualSurfacePlayer(
         val isTimeValid = clock.isClockVerified()
         val calculatedOffset = clock.currentEstimatedUtcMillis() - System.currentTimeMillis()
         val effectiveOffset = if (isTimeValid) calculatedOffset else null
-        val finalError = if (!isTimeValid && error == null) "time_unverified_offline" else error
 
         val formatter = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", java.util.Locale.US).apply {
             timeZone = java.util.TimeZone.getTimeZone("UTC")
@@ -282,6 +281,8 @@ private fun DualSurfacePlayer(
             reason == PlayEndReason.PLAYED_TO_END &&
             !PlayCompletion.isPlausible(startedAtMs, finishedAtMs)
         ) PlayEndReason.INTERRUPTED else reason
+
+        val recorded = PlayCompletion.describe(effectiveReason, error, isTimeValid)
 
         val eventId = prefs.getString(CHECKPOINT_EVENT_ID, null)
             ?.takeIf { prefs.getInt(CHECKPOINT_ITEM_ID, -1) == item.id }
@@ -297,8 +298,8 @@ private fun DualSurfacePlayer(
             correctedStartedAt = formatter.format(java.util.Date(startedAtMs + (effectiveOffset ?: 0L))),
             correctedFinishedAt = formatter.format(java.util.Date(finishedAtMs + (effectiveOffset ?: 0L))),
             durationMs = durationMs,
-            status = PlayCompletion.status(effectiveReason, finalError),
-            errorMessage = finalError,
+            status = recorded.status,
+            errorMessage = recorded.errorMessage,
             clockOffsetMs = effectiveOffset
         )
 

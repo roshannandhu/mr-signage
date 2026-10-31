@@ -49,6 +49,26 @@ object PlayCompletion {
         else -> "partial"
     }
 
+    /** Stored beside a play recorded while the clock could not be trusted. Not an error. */
+    const val CLOCK_UNVERIFIED_NOTE = "time_unverified_offline"
+
+    /** What gets written for one finished play. */
+    data class Recorded(val status: String, val errorMessage: String?)
+
+    /**
+     * The status and note for a finished play.
+     *
+     * The clock note rides alongside the status; it must never decide it. It was passed to
+     * [status] as if it were an error, so every play recorded before the device first heard
+     * the time -- which includes COMPLETED plays after an offline boot -- was stored as an
+     * "error" and never counted towards what the advertiser is billed on.
+     */
+    fun describe(reason: PlayEndReason, error: String?, clockVerified: Boolean): Recorded =
+        Recorded(
+            status = status(reason, error),
+            errorMessage = if (!clockVerified && error == null) CLOCK_UNVERIFIED_NOTE else error,
+        )
+
     /**
      * Elapsed play time, clamped to something a report can use.
      *

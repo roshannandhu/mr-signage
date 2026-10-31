@@ -134,8 +134,11 @@ class ProofOfPlayWorker(
         // until the server acknowledges it) but wastes the round trips already made.
         val startedAt = SystemClock.elapsedRealtime()
         var uploaded = 0
+        // Shrinks only to isolate a batch the server permanently refuses, then resets.
+        var batchSize = BATCH_SIZE
         while (true) {
-            val pendingEvents = playEventDao.getPendingEvents(BATCH_SIZE)
+            val asked = batchSize
+            val pendingEvents = playEventDao.getPendingEvents(asked)
             if (pendingEvents.isEmpty()) break
 
             val dtos = pendingEvents.map { it.toDto(currentOffsetMs) }
@@ -146,34 +149,40 @@ class ProofOfPlayWorker(
                 events = dtos
             )
 
-            val outcome = try {
+            val verdict = try {
                 val response = ApiClient.service(applicationContext).uploadPlayLogs(request)
-                when {
-                    response.isSuccessful -> BatchOutcome.ACCEPTED
-                    // 401/403 clear once the device re-authenticates, so those keep their events.
-                    // Any other 4xx is the server refusing this payload permanently: retrying it
-                    // wedges the queue and every later play is lost behind it, so drop the batch.
-                    response.code() in 400..499 && response.code() !in listOf(401, 403, 408, 429) -> {
-                        Log.w(TAG, "Server rejected ${pendingEvents.size} play events (${response.code()}); dropping batch")
-                        BatchOutcome.DISCARD
-                    }
-                    else -> BatchOutcome.RETRY_LATER
-                }
+                PlayLogUploadPolicy.verdictFor(response.code(), pendingEvents.size)
             } catch (e: Exception) {
                 Log.w(TAG, "Play log upload failed", e)
-                BatchOutcome.RETRY_LATER
+                PlayLogUploadPolicy.Verdict.RETRY_LATER
             }
 
-            when (outcome) {
-                BatchOutcome.RETRY_LATER -> return if (uploaded > 0) Result.success() else Result.retry()
-                BatchOutcome.ACCEPTED, BatchOutcome.DISCARD -> {
+            when (verdict) {
+                PlayLogUploadPolicy.Verdict.RETRY_LATER ->
+                    return if (uploaded > 0) Result.success() else Result.retry()
+                PlayLogUploadPolicy.Verdict.ACCEPTED -> {
                     playEventDao.deleteEvents(pendingEvents.map { it.eventId })
                     uploaded += pendingEvents.size
+                    batchSize = BATCH_SIZE
+                }
+                // These events are billing evidence and the server holds no copy, so a refusal
+                // must cost the single row responsible, not the whole batch. Halve until the
+                // offender is alone, drop exactly it, and let everything behind it through.
+                PlayLogUploadPolicy.Verdict.NARROW -> {
+                    batchSize = PlayLogUploadPolicy.narrowedBatchSize(pendingEvents.size)
+                    continue
+                }
+                PlayLogUploadPolicy.Verdict.DROP_SINGLE -> {
+                    val rejected = pendingEvents.first()
+                    Log.e(TAG, "Dropping play event ${rejected.eventId}: the server refused it permanently")
+                    playEventDao.deleteEvents(listOf(rejected.eventId))
+                    batchSize = BATCH_SIZE
                 }
             }
 
-            // A short batch means the queue is empty; nothing left to drain.
-            if (pendingEvents.size < BATCH_SIZE) break
+            // A short batch means the queue is empty; nothing left to drain. Compared with the
+            // size that was ASKED for, not the reset one, or a narrowed batch would end the drain.
+            if (pendingEvents.size < asked) break
 
             if (SystemClock.elapsedRealtime() - startedAt > DRAIN_BUDGET_MS) {
                 // Still behind. Chain a fresh run immediately instead of waiting out the
@@ -187,8 +196,6 @@ class ProofOfPlayWorker(
         if (uploaded > 0) Log.i(TAG, "Uploaded $uploaded play events")
         return Result.success()
     }
-
-    private enum class BatchOutcome { ACCEPTED, DISCARD, RETRY_LATER }
 
     companion object {
         private const val TAG = "ProofOfPlay"
@@ -216,8 +223,15 @@ class ProofOfPlayWorker(
                         .build()
                 )
                 .build()
-            WorkManager.getInstance(context)
-                .enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+            // WorkManager.getInstance throws if it is not initialised, and this is called from
+            // the player's play-end path: an exception here would take the app down at the end
+            // of the first advert. A missed enqueue is harmless -- the periodic run still drains.
+            try {
+                WorkManager.getInstance(context)
+                    .enqueueUniqueWork(UNIQUE_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not schedule a play log upload", e)
+            }
         }
 
     }
