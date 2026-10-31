@@ -273,7 +273,7 @@ def upload_content(
                     f_in,
                     bucket,
                     storage_key,
-                    ExtraArgs={"ContentType": content_type_header},
+                    ExtraArgs={"ContentType": media_storage.content_type_for(storage_key)},
                 )
             file_url = f"s3://{storage_key}"
             if content_type == "image":

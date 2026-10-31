@@ -7,11 +7,14 @@ from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from .. import models, schemas, database
+from .. import media_storage, models, schemas, database
 from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
 from .content import UPLOAD_DIR, public_upload_url
 from ..media_urls import is_s3_enabled, get_s3_config, resolve_media_url, storage_prefix, screen_screenshot_prefix
 from .screens import verify_device_auth
+
+# What a screen capture can be. The TV sends JPEG; PNG and WebP are accepted for other builds.
+SCREENSHOT_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 logger = logging.getLogger(__name__)
 security = HTTPBearer()
@@ -53,6 +56,11 @@ def upload_device_screenshot(
     screen = verify_device_auth(device_id, credentials, db)
     
     extension = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
+    # A screenshot is an image. With no allow-list the extension came straight from the
+    # uploader, so a file named x.html was stored, and on local disk served from /uploads on
+    # the API's own origin.
+    if extension not in SCREENSHOT_EXTENSIONS:
+        raise HTTPException(status_code=415, detail="Screenshots must be JPEG, PNG or WebP images")
     stem = str(uuid.uuid4())
     unique_filename = f"{stem}{extension}"
     # Same tenant folder as the content library, under a screenshots/ root so retention
@@ -77,7 +85,7 @@ def upload_device_screenshot(
                 file.file,
                 cfg["bucket"],
                 storage_key,
-                ExtraArgs={"ContentType": file.content_type or "image/jpeg"},
+                ExtraArgs={"ContentType": media_storage.content_type_for(storage_key)},
             )
             file_url = f"s3://{storage_key}"
         except Exception as e:

@@ -15,6 +15,7 @@ panel, however cheap, was handed the original 4K file.
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import pathlib
 import shutil
@@ -132,6 +133,22 @@ def read(location: str | None) -> Optional[bytes]:
         return None
 
 
+# Not in every platform's mime table (Windows reads its registry), and logos may be WebP.
+mimetypes.add_type("image/webp", ".webp")
+
+
+def content_type_for(key: str) -> str:
+    """The Content-Type to store an object under, decided by what WE name the file.
+
+    Uploads used to be stored under whatever type the client claimed. A logo sent as
+    `text/html` under a .png name was then served as HTML from the bucket's own origin, which
+    is script running next to everything else on that origin. The extension is ours (every
+    upload route allow-lists it), so the type follows from it; anything unrecognised is served
+    as an opaque download rather than rendered.
+    """
+    return mimetypes.guess_type(key)[0] or "application/octet-stream"
+
+
 def store(local_path: pathlib.Path, key: str, content_type: Optional[str] = None) -> str:
     """Persist `local_path` under `key` and return the location to save on the row.
 
@@ -141,11 +158,11 @@ def store(local_path: pathlib.Path, key: str, content_type: Optional[str] = None
     """
     if is_s3_enabled():
         cfg = get_s3_config()
-        extra = {"ContentType": content_type} if content_type else None
-        if extra:
-            _client().upload_file(str(local_path), cfg["bucket"], key, ExtraArgs=extra)
-        else:
-            _client().upload_file(str(local_path), cfg["bucket"], key)
+        # The extension decides. `content_type` is accepted for existing callers but never
+        # trusted: some pass the uploader's own claim, and a claimed `text/html` on a .png key
+        # was served as HTML. An unrecognised extension is stored as an opaque download.
+        extra = {"ContentType": content_type_for(key)}
+        _client().upload_file(str(local_path), cfg["bucket"], key, ExtraArgs=extra)
         return f"s3://{key}"
 
     target = pathlib.Path(UPLOAD_DIR) / key

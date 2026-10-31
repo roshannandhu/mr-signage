@@ -152,6 +152,35 @@ def s3():
     os.environ["AWS_ACCESS_KEY_ID"] = "mock"
 
 
+def test_the_content_type_comes_from_the_file_name_not_the_uploader(s3, tmp_path):
+    """A logo sent as text/html under a .png name was served from the bucket as HTML."""
+    source = tmp_path / "logo.png"
+    source.write_bytes(b"not really a png")
+
+    media_storage.store(source, "org-1/logo.png", content_type="text/html")
+    assert s3.head_object(Bucket=BUCKET, Key="org-1/logo.png")["ContentType"] == "image/png"
+
+    media_storage.store(source, "org-1/ad.mp4", content_type="text/html")
+    assert s3.head_object(Bucket=BUCKET, Key="org-1/ad.mp4")["ContentType"] == "video/mp4"
+
+    media_storage.store(source, "org-1/logo.webp", content_type="text/html")
+    assert s3.head_object(Bucket=BUCKET, Key="org-1/logo.webp")["ContentType"] == "image/webp"
+
+    # No recognisable extension: an opaque download, never whatever the uploader claimed.
+    media_storage.store(source, "org-1/blob", content_type="text/html")
+    assert s3.head_object(Bucket=BUCKET, Key="org-1/blob")["ContentType"] == "application/octet-stream"
+
+
+def test_content_type_for_covers_what_the_app_stores():
+    assert media_storage.content_type_for("a/b.jpg") == "image/jpeg"
+    assert media_storage.content_type_for("a/b.JPEG") == "image/jpeg"
+    assert media_storage.content_type_for("a/b.png") == "image/png"
+    assert media_storage.content_type_for("a/b.webp") == "image/webp"
+    assert media_storage.content_type_for("a/b.mp4") == "video/mp4"
+    assert media_storage.content_type_for("a/b.html") == "text/html"  # never stored, but honest
+    assert media_storage.content_type_for("a/noextension") == "application/octet-stream"
+
+
 def test_s3_round_trip(s3):
     # The case that used to raise NotImplementedError before a single byte was read.
     s3.put_object(Bucket=BUCKET, Key="7/ad.mp4", Body=b"video-bytes")

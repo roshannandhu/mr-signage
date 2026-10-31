@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import func
 
 from .. import models, schemas
-from ..tenancy import TenantScope, require_tenant_roles
+from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
 from ..media_urls import resolve_media_url, client_ads_prefix, get_s3_config, is_s3_enabled, s3_client
 from .playlists import bump_playlist
 
@@ -1766,13 +1766,16 @@ def _render_report(scope: TenantScope, placement: models.AdPlacement) -> tuple[b
 
 
 @router.get("/email-status")
-def email_status():
+def email_status(scope: TenantScope = Depends(get_tenant_scope)):
+    # Signed in, like every other route here: it reports the server's sender address, which is
+    # not for the public. It also called mailer.missing_configuration(), which does not exist,
+    # so it answered 500 whenever mail was unset -- the very state it is asked about.
     from .. import mailer
     configured = mailer.is_configured()
     return {
         "is_configured": configured,
         "sender": mailer.sender() if configured else None,
-        "missing_variables": [] if configured else mailer.missing_configuration(),
+        "missing_variables": [] if configured else mailer.missing_variables(),
     }
 
 

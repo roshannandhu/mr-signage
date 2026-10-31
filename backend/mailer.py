@@ -34,11 +34,16 @@ def sender() -> str:
     return (os.getenv("SMTP_FROM", "") or os.getenv("SMTP_USER", "")).strip()
 
 
-def _describe_missing() -> str:
+def missing_variables() -> list[str]:
+    """The settings still needed before mail can be sent, as a list."""
     missing = [name for name in ("SMTP_HOST",) if not os.getenv(name, "").strip()]
     if not sender():
         missing.append("SMTP_FROM (or SMTP_USER)")
-    return ", ".join(missing)
+    return missing
+
+
+def _describe_missing() -> str:
+    return ", ".join(missing_variables())
 
 
 def send(
