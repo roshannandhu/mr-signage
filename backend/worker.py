@@ -21,7 +21,7 @@ from . import media_storage
 from .routers.content import UPLOAD_DIR  # noqa: F401  (re-exported for scripts)
 
 import shutil
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 
 project_root = Path(__file__).parent.parent
@@ -96,6 +96,28 @@ def compute_sha256(filepath):
 STUCK_AFTER = timedelta(minutes=10)
 
 
+MAX_PROCESSING_ATTEMPTS = 3
+
+
+def is_transient_storage_error(exc: BaseException) -> bool:
+    """Whether an exception is the object store or the network having a bad moment.
+
+    Those are worth another attempt; a file ffmpeg cannot read is not. Every exception used to
+    mark the video permanently "failed", and the recovery job only re-queues rows still in
+    "processing", so one dropped connection to the bucket cost the tenant an upload that would
+    have worked a minute later.
+    """
+    try:
+        from botocore.exceptions import BotoCoreError, ClientError
+    except ImportError:  # pragma: no cover - boto3 is a hard dependency
+        BotoCoreError = ClientError = ()  # type: ignore[assignment]
+    if isinstance(exc, ClientError):
+        error = exc.response.get("Error", {})
+        status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0) or 0
+        return status >= 500 or error.get("Code") in {"RequestTimeout", "SlowDown", "Throttling", "InternalError"}
+    return isinstance(exc, (BotoCoreError, TimeoutError, ConnectionError))
+
+
 def claim_stuck_media(db) -> list[int]:
     """Take ownership of the videos that look stuck, and return their ids.
 
@@ -117,11 +139,32 @@ def claim_stuck_media(db) -> list[int]:
         taken = (
             db.query(Content)
             .filter(Content.id == content_id, Content.status == "processing", stuck)
-            .update({Content.processing_started_at: models.utcnow()}, synchronize_session=False)
+            .update(
+                {
+                    Content.processing_started_at: models.utcnow(),
+                    # Each take-over is an attempt, exactly as it is when the arq reconciler
+                    # re-queues one. Without the count a video that can never finish would be
+                    # retried by the supervisor every ten minutes for ever.
+                    Content.processing_retries: func.coalesce(Content.processing_retries, 0) + 1,
+                },
+                synchronize_session=False,
+            )
         )
         db.commit()
-        if taken == 1:
-            claimed.append(content_id)
+        if taken != 1:
+            continue
+        attempts = db.query(Content.processing_retries).filter(Content.id == content_id).scalar() or 0
+        if attempts > MAX_PROCESSING_ATTEMPTS:
+            db.query(Content).filter(Content.id == content_id).update(
+                {
+                    Content.status: "failed",
+                    Content.failed_reason: f"Transcoding did not finish after {MAX_PROCESSING_ATTEMPTS} attempts.",
+                },
+                synchronize_session=False,
+            )
+            db.commit()
+            continue
+        claimed.append(content_id)
     return claimed
 
 
@@ -343,11 +386,17 @@ def process_media_sync(content_id: int):
             
     except Exception as e:
         db.rollback()
-        content = db.query(Content).filter(Content.id == content_id).first()
-        if content:
-            content.status = "failed"
-            content.failed_reason = str(e)
-            db.commit()
+        if is_transient_storage_error(e):
+            # Left in "processing" on purpose. The reconciler and the supervisor both pick up
+            # a video that has sat there for STUCK_AFTER and count the attempt, so this is
+            # retried a few times and only then given up on.
+            logger.warning("Transient error processing content %s, will be retried: %s", content_id, e)
+        else:
+            content = db.query(Content).filter(Content.id == content_id).first()
+            if content:
+                content.status = "failed"
+                content.failed_reason = str(e)
+                db.commit()
     finally:
         db.close()
         shutil.rmtree(workspace, ignore_errors=True)
@@ -381,7 +430,7 @@ async def recover_stuck_processing(ctx):
 
         for c in stuck_content:
             c.processing_retries = (c.processing_retries or 0) + 1
-            if c.processing_retries > 3:
+            if c.processing_retries > MAX_PROCESSING_ATTEMPTS:
                 c.status = "failed"
                 c.failed_reason = "Transcoding timed out and exceeded retry limit."
                 print(f"Content {c.id} failed after {c.processing_retries} attempts")
