@@ -56,6 +56,8 @@ ISOLATED_SCRIPTS = {
     "test_p6_websockets.py",
     # A socket with no credential is receive-only and sees only its own commands.
     "test_ws_unauthenticated.py",
+    # Starting or cancelling an emergency broadcast reaches screens that had already settled.
+    "test_emergency_sync.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
