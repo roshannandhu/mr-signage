@@ -251,8 +251,11 @@ export const api = {
 
       const request = new XMLHttpRequest()
       request.open('POST', `${API_BASE}/content/upload`)
-      const token = useAuthStore.getState().token
+      const { token, acting } = useAuthStore.getState()
       if (token) request.setRequestHeader('Authorization', `Bearer ${token}`)
+      // The same header authFetch sets. Without it, an upload made while a platform operator is
+      // inside a tenant's workspace was filed under the operator's own organisation.
+      if (acting) request.setRequestHeader('X-Act-As-Org', String(acting.id))
 
       request.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100))
@@ -618,8 +621,11 @@ export const api = {
   getEmergencyBroadcasts: () => fetchWithAuth<EmergencyBroadcast[]>('/emergency/active'),
   triggerEmergencyBroadcast: (data: { target_type: string, target_id: number | null, playlist_id: number }) =>
     fetchWithAuth('/emergency/broadcast', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+  // POST /emergency/cancel is the route the backend has; this used to send DELETE
+  // /emergency/broadcast, which does not exist, so every cancel answered 405 and the override
+  // stayed on the screens.
   cancelEmergencyBroadcast: (data: { target_type: string, target_id: number | null, playlist_id: number }) =>
-    fetchWithAuth('/emergency/broadcast', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
+    fetchWithAuth('/emergency/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     
   getScreenshots: (screenId: number) => fetchWithAuth<Screenshot[]>(`/screenshots/${screenId}/screenshots`),
   requestScreenshot: (screenId: number) => fetchWithAuth(`/screenshots/${screenId}/request-screenshot`, { method: 'POST' }),
@@ -763,6 +769,9 @@ export const adminApi = {
   updateCustomRequest: (id: number, body: CustomPlanRequestUpdate) =>
     fetchWithAuth<CustomPlanRequestItem>(`/admin/custom-requests/${id}`, {
       method: 'PATCH',
+      // Without this the body went as text/plain, FastAPI would not parse it as JSON, and every
+      // save answered 422 -- the only JSON call in this file that forgot the header.
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }),
   rejectCustomRequest: (id: number) =>

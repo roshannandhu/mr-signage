@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { RadioTower } from 'lucide-react'
 import { useAuthStore } from '@/lib/store'
-import { destinationFor } from './login/page'
+import { destinationFor } from '@/lib/roles'
 
 export default function Home() {
   const router = useRouter()

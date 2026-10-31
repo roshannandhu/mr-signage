@@ -20,18 +20,6 @@ import { api } from '@/lib/api'
 import { destinationFor } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 
-/**
- * Where a user belongs after signing in.
- *
- * One login page serves both audiences, so the split happens here. A platform operator
- * goes to /admin, which has none of the tenant features; everyone else goes to their own
- * workspace. This used to be a two-way `organization_status` check copy-pasted into three
- * places, none of which looked at the role -- so a super admin landed on the tenant
- * dashboard, where the nav is gated on `role === 'owner'` and therefore showed them
- * nothing, and /admin was reachable only by typing the URL.
- */
-export { destinationFor }
-
 export default function LoginPage() {
   const router = useRouter()
   const { token, user, hydrated, setSession, clearSession } = useAuthStore()
