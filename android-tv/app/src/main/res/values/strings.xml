@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OLRAC Signage</string>
+    <string name="app_name">MR Signage</string>
     <string name="watchdog_summary">Keeps the signage player on screen</string>
-    <string name="watchdog_description">Brings the OLRAC Signage player back after the TV restarts or returns to its home screen. It reads only which app is in front, never what is on screen.</string>
+    <string name="watchdog_description">Brings the MR Signage player back after the TV restarts or returns to its home screen. It reads only which app is in front, never what is on screen.</string>
 </resources>

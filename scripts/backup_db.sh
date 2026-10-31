@@ -1,5 +1,5 @@
 #!/bin/bash
-# Backup PostgreSQL Database for OLRAC Signage
+# Backup PostgreSQL Database for MR Signage
 # Usage: ./backup_db.sh
 
 BACKUP_DIR="./backups"
@@ -11,7 +11,7 @@ BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql"
 mkdir -p "$BACKUP_DIR"
 
 echo "Starting backup for database: $DB_NAME"
-docker exec olrac_db pg_dump -U "$DB_USER" "$DB_NAME" > "$BACKUP_FILE"
+docker exec mr_db pg_dump -U "$DB_USER" "$DB_NAME" > "$BACKUP_FILE"
 
 if [ $? -eq 0 ]; then
     echo "Backup completed successfully: $BACKUP_FILE"

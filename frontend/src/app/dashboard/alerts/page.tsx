@@ -13,9 +13,7 @@ import {
   HardDrive,
   MonitorX,
   PauseCircle,
-  RefreshCw,
   Volume2,
-  VolumeX,
   XCircle,
 } from 'lucide-react'
 import { EmptyState } from '@/components/dashboard/empty-state'
@@ -154,7 +152,7 @@ export default function AlertsPage() {
   // runs exactly once and none of the cascading-render the rule is aimed at applies.
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('olrac_muted_alerts')
+      const stored = localStorage.getItem('mr_muted_alerts') || localStorage.getItem('olrac_muted_alerts')
       if (stored) {
         const parsed = JSON.parse(stored)
         // Cleanup expired mutes (older than 24 hours)
@@ -190,7 +188,7 @@ export default function AlertsPage() {
   const saveMutes = (mutes: Record<string, number>) => {
     setMutedAlerts(mutes)
     try {
-      localStorage.setItem('olrac_muted_alerts', JSON.stringify(mutes))
+      localStorage.setItem('mr_muted_alerts', JSON.stringify(mutes))
     } catch {
       // Ignore
     }

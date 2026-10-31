@@ -277,7 +277,7 @@ class DeviceState(context: Context) {
         const val KEY_DEVICE_SECRET = "device_secret"
         const val KEY_OPERATING_MODE = "operating_mode"
         const val KEY_OPERATING_HOURS = "operating_hours"
-        const val DEFAULT_SCREEN_NAME = "OLRAC Screen"
+        const val DEFAULT_SCREEN_NAME = "MR Signage Screen"
         // Applies only before the first successful sync; the server's per-screen pin
         // replaces it and every paired screen gets a distinct one.
         const val DEFAULT_MAINTENANCE_PIN = "0000"
@@ -290,7 +290,7 @@ sealed interface LaunchState {
 
     /**
      * Default route for an unprovisioned device: the installer signs in with their own
-     * OLRAC account and the screen joins that workspace directly. No second person at a
+     * MR Signage account and the screen joins that workspace directly. No second person at a
      * dashboard, and no five-minute code to race.
      */
     data class SignIn(

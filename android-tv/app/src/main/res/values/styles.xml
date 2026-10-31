@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OlracSignage" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.MRSignage" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowBackground">#050A0D</item>
         <item name="android:colorAccent">#2DD4BF</item>
     </style>
-    <style name="Theme.OlracSignage.NoActionBar" parent="Theme.OlracSignage" />
+    <style name="Theme.MRSignage.NoActionBar" parent="Theme.MRSignage" />
 </resources>

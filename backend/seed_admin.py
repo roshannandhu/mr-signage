@@ -13,7 +13,7 @@ SEEDABLE_ROLES = ("owner", "super_admin")
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Create an OLRAC account that cannot be created through the API"
+        description="Create an MR Signage account that cannot be created through the API"
     )
     parser.add_argument("username")
     parser.add_argument(

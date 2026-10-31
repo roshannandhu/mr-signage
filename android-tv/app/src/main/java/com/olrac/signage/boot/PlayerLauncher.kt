@@ -46,7 +46,7 @@ object PlayerLauncher {
     @Volatile private var holdUntil = 0L
 
     /**
-     * The player opened a system dialog -- the "use OLRAC as your home app?" question -- and it
+     * The player opened a system dialog -- the "use MR Signage as your home app?" question -- and it
      * must survive until answered.
      *
      * That dialog sits in the player's task, and the player is singleTask: bringing it to the
@@ -142,7 +142,7 @@ object PlayerLauncher {
      *
      * On Android TV the two differ. The TV launcher declares its Home entry at priority 2 and
      * Android always prefers the higher priority, so an app granted the role still loses: proven
-     * on the Android TV emulator, where the role went to OLRAC and both Home and the resolver
+     * on the Android TV emulator, where the role went to MR Signage and both Home and the resolver
      * still chose com.google.android.tvlauncher.
      */
     fun isEffectiveHome(context: Context): Boolean = runCatching {
@@ -204,7 +204,7 @@ object PlayerLauncher {
 
             val pending = createLaunchPendingIntent(context, intent)
             val notification = NotificationCompat.Builder(context, CHANNEL_BRING_TO_FRONT)
-                .setSmallIcon(R.drawable.olrac_icon)
+                .setSmallIcon(R.drawable.mr_icon)
                 .setContentTitle(context.getString(R.string.app_name))
                 .setContentText("Activating player display...")
                 .setPriority(NotificationCompat.PRIORITY_MAX)

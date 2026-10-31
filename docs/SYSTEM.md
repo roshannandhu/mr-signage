@@ -1,4 +1,4 @@
-# OLRAC Signage — How the whole system works
+# MR Signage — How the whole system works
 
 A complete walkthrough of the product: what each kind of user can do, the packages that
 gate it, how a television joins and stays in sync, and how the three parts talk to each
@@ -16,7 +16,7 @@ key to reading everything else.
 
 | Actor | Who they are | Where they work | What they own |
 |---|---|---|---|
-| **Platform operator** (`super_admin`) | You. OLRAC itself. | `/admin` — a dark control console | The platform: every workspace, the packages sold, the TV app releases |
+| **Platform operator** (`super_admin`) | You. MR Signage itself. | `/admin` — a dark control console | The platform: every workspace, the packages sold, the TV app releases |
 | **Tenant** (`owner` / `editor` / `viewer`) | Your customer — a signage network operator | `/dashboard/*` | Their own screens, media, advertisers and bookings |
 | **TV screen** (the Android player) | A television in a shop, mall or station | The Android TV app | Nothing — it is a client that plays what it is told |
 
@@ -282,7 +282,7 @@ screen holding a `device_id` and a `device_secret`.
   code rather than resurrecting the old row.
 
 **Method 2 — Sign in on the TV** *(one installer, no dashboard needed)*
-- The installer enters their OLRAC username and password on the TV
+- The installer enters their MR Signage username and password on the TV
   (`POST /api/screens/sign-in`). The device binds to that user's organisation.
 
 **Method 3 — Google sign-in on the TV** *(device flow)*

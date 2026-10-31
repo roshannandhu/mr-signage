@@ -1335,7 +1335,7 @@ def ensure_plan_locations(
     screens, so counting targets would wave a ten-screen group straight past a five-TV
     plan -- the limit would read as enforced and mean nothing.
 
-    Distinct from ensure_ad_slot_quota above, which is the limit OLRAC places on the
+    Distinct from ensure_ad_slot_quota above, which is the limit MR Signage places on the
     TENANT. This is the limit the tenant placed on their own client, so the message has to
     make clear which of the two was hit.
 

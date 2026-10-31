@@ -364,7 +364,7 @@ async def lifespan(_app: FastAPI):
             worker_task.cancel()
 
 
-app = FastAPI(title="OLRAC Signage API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="MR Signage API", version="2.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -788,4 +788,4 @@ app.include_router(provisioning.router, prefix="/api/provisioning", tags=["provi
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to OLRAC Signage API"}
+    return {"message": "Welcome to MR Signage API"}

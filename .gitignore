@@ -1,5 +1,5 @@
 # Runtime artifacts
-olrac_signage.db
+mr_signage.db
 *.sqlite
 *.sqlite3
 *.log

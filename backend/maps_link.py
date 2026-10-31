@@ -48,7 +48,7 @@ def _expand(url: str) -> str:
         url,
         # Google serves a consent interstitial without a normal-looking client, and the
         # redirect we need never happens.
-        headers={"User-Agent": "Mozilla/5.0 (compatible; OlracSignage/1.0)"},
+        headers={"User-Agent": "Mozilla/5.0 (compatible; MRSignage/1.0)"},
     )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
@@ -131,7 +131,7 @@ def geocode(name: str) -> tuple[float, float] | None:
     url = ("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q="
            + urllib.parse.quote(name))
     request = urllib.request.Request(
-        url, headers={"User-Agent": "OlracSignage/1.0 (digital signage fleet management)"}
+        url, headers={"User-Agent": "MRSignage/1.0 (digital signage fleet management)"}
     )
 
     global _geocode_last_call

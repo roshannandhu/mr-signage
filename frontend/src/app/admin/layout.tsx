@@ -9,7 +9,7 @@ import { isSuperAdmin } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 import {
   ShieldCheck, Users, Film, LogOut, ChevronRight, LayoutDashboard,
-  BarChart3, Package, Bell, Rocket, QrCode, Menu, X, Activity, HardDrive
+  Package, Rocket, QrCode, Menu, X, Activity, HardDrive
 } from 'lucide-react'
 
 // Platform operator navigation items
@@ -96,7 +96,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <div className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-700">
             <ShieldCheck className="size-3.5 text-white" />
           </div>
-          <p className="text-sm font-bold text-foreground">OLRAC Admin</p>
+          <div>
+            <p className="text-sm font-bold text-foreground">MR Admin</p>
+            <p className="text-[10px] text-violet-400 font-medium leading-none">(Midhun-Roshan)</p>
+          </div>
         </div>
       </header>
 
@@ -140,8 +143,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <ShieldCheck className="size-4 text-white" />
             </div>
             <div>
-              <p className="text-sm font-bold text-foreground">OLRAC Admin</p>
-              <p className="text-[10px] text-violet-400 font-medium">Platform Control</p>
+              <p className="text-sm font-bold text-foreground">MR Admin</p>
+              <p className="text-[10px] text-violet-400 font-medium">(Midhun-Roshan) • Platform</p>
             </div>
           </div>
         </div>

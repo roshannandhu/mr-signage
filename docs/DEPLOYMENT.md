@@ -1,4 +1,4 @@
-# OLRAC Signage — 80-TV Rollout Deployment Guide
+# MR Signage — 80-TV Rollout Deployment Guide
 
 This document covers the end-to-end deployment process for a new production environment, from standing up the server stack to provisioning physical Android TVs in the field.
 
@@ -12,7 +12,7 @@ This document covers the end-to-end deployment process for a new production envi
 Before starting the stack, ensure the following mandatory environment variables are set in your `.env` file (see `.env.example` for reference):
 
 - `SECRET_KEY`: A cryptographically secure random string used for JWT signing.
-- `PUBLIC_BASE_URL`: The public-facing URL of the backend (e.g., `https://api.olracsignage.com`). This must be correct, as it is used to generate absolute URLs for media assets and APK downloads.
+- `PUBLIC_BASE_URL`: The public-facing URL of the backend (e.g., `https://api.mrsignage.com`). This must be correct, as it is used to generate absolute URLs for media assets and APK downloads.
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `S3_BUCKET_NAME`, `S3_ENDPOINT_URL`: R2/S3 credentials for media storage.
 - `PLAY_LOG_RETENTION_DAYS`: Days of raw proof-of-play logs to keep (default 7). At ~316MB/day for 100 screens this is the fastest-growing table in the database; size it against the database you have. `ROLLUP_RETENTION_DAYS` (default 400) bounds the aggregated history separately.
 
@@ -32,7 +32,7 @@ The entire application runs via Docker Compose.
 docker compose up -d
 ```
 
-Verify all 5 containers (`olrac_db`, `olrac_redis`, `olrac_backend`, `olrac_worker`, `olrac_frontend`) are healthy:
+Verify all 5 containers (`mr_db`, `mr_redis`, `mr_backend`, `mr_worker`, `mr_frontend`) are healthy:
 ```bash
 docker compose ps
 ```

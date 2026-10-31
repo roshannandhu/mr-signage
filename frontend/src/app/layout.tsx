@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OLRAC SIGNAGE Admin",
-  description: "Cloud digital signage platform",
+  title: "MR SIGNAGE Admin",
+  description: "Cloud digital signage platform - Developed by Legit Forge (Midhun & Roshan)",
 };
 
 export default function RootLayout({

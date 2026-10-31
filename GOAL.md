@@ -1,4 +1,4 @@
-# OLRAC Signage — Build Goal & Agent Work Order
+# MR Signage — Build Goal & Agent Work Order
 
 **Target:** a cloud digital-signage SaaS equivalent to AbleSign — businesses manage ad
 playback on many Android TVs from one dashboard, with offline-resilient playback,

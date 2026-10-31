@@ -209,6 +209,8 @@ def run() -> None:
             f"/api/groups/{group_id}/assign/{playlist_id}", headers=owner
         )
         assert assigned.status_code == 200, assigned.text
+        # Clear the auto-provisioned direct assignment so group assignment takes effect
+        assert client.delete(f"/api/screens/{screen_id}/assign", headers=owner).status_code == 200
 
         first_sync = client.get("/api/screens/feature-tv/sync")
         assert first_sync.status_code == 200, first_sync.text
@@ -356,6 +358,7 @@ def run() -> None:
         assert client.post(
             f"/api/groups/{group_b_id}/assign/{playlist_b_id}", headers=owner_b
         ).status_code == 200
+        assert client.delete(f"/api/screens/{screen_b_id}/assign", headers=owner_b).status_code == 200
 
         assert {entry["id"] for entry in client.get("/api/users/", headers=owner).json()} == {
             created_viewer.json()["id"],
@@ -533,7 +536,7 @@ def run() -> None:
         lapsed_sync = client.get("/api/screens/feature-tv/sync")
         assert lapsed_sync.status_code == 200
         assert lapsed_sync.json()["service_state"] == "expired"
-        assert lapsed_sync.json()["playlist"]["name"] == "OLRAC Universal Demo Loop"
+        assert lapsed_sync.json()["playlist"]["name"] == "MR Signage Universal Demo Loop"
         assert send_webhook("subscription.activated", "evt-recovered").status_code == 200
         assert client.get("/api/billing/summary", headers=owner).json()["is_read_only"] is False
 
@@ -590,7 +593,7 @@ def run() -> None:
         assert offline_payload["status"] == "offline"
 
         assert client.get("/api/playlists/", headers=viewer).status_code == 200
-        print("OLRAC feature parity backend check passed")
+        print("MR Signage feature parity backend check passed")
 
 
 def main() -> None:

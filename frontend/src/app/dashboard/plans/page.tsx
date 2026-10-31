@@ -29,7 +29,7 @@ const BLANK = {
 /**
  * The packages this workspace sells to its own clients.
  *
- * Not the plan OLRAC bills you on -- that lives under Billing. A booking made against one
+ * Not the plan MR Signage bills you on -- that lives under Billing. A booking made against one
  * of these COPIES its price and duration at the moment it is sold, so changing a price
  * here never restates an invoice a client has already been given.
  */

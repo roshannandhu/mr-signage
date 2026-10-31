@@ -17,7 +17,7 @@ type MapsWindow = Window & {
 // injecting the script again, which logs a console error and can leave the later caller
 // with a half-initialised namespace. Components subscribe to it as an external store.
 const SCRIPT_ID = 'google-maps-sdk'
-const READY_CALLBACK = '__olracMapsReady'
+const READY_CALLBACK = '__mrMapsReady'
 let sdkStatus: Status = MAPS_KEY ? 'loading' : 'disabled'
 let loader: Promise<void> | null = null
 const listeners = new Set<() => void>()

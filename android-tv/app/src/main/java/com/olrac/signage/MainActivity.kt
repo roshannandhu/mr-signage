@@ -206,7 +206,7 @@ class MainActivity : ComponentActivity() {
                     // it is reconnecting is what stops an installer typing in a pairing code
                     // for a screen that is already claimed and simply offline.
                     LaunchState.CheckingLocalState -> BrandedMessage(
-                        title = "OLRAC Signage",
+                        title = "MR Signage",
                         detail = "Reconnecting to your workspace..."
                     )
 
@@ -920,7 +920,7 @@ class MainActivity : ComponentActivity() {
                 launchState = showing.copy(
                     error = when (response.code()) {
                         403 -> "That Google account cannot add screens here. " +
-                            "Check it is on your OLRAC profile, with an owner or editor role."
+                            "Check it is on your MR Signage profile, with an owner or editor role."
                         401 -> "This sign-in expired. Go back and start again."
                         409 -> "This workspace has reached its screen limit."
                         else -> "Sign in failed (error ${response.code()})."
@@ -1100,10 +1100,10 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * The system's "use OLRAC as your home app?" dialog.
+     * The system's "use MR Signage as your home app?" dialog.
      *
      * It must be opened for a result. Opened with startActivity it has no calling package, and
-     * the permission controller closes it without showing anything -- which is why "Choose OLRAC
+     * the permission controller closes it without showing anything -- which is why "Choose MR Signage
      * as TV launcher" never did anything on the KONKA.
      */
     private val homeRoleRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->

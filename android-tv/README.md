@@ -1,4 +1,4 @@
-# OLRAC Android TV player
+# MR Signage Android TV player
 
 ## Supported devices
 
@@ -26,10 +26,10 @@ or `https`; a trailing slash is normalized automatically.
 ```powershell
 cd android-tv
 gradle :app:assembleDevDebug `
-  -POLRAC_API_BASE_URL=http://192.168.1.20:8000/
+  -PMR_API_BASE_URL=http://192.168.1.20:8000/
 
 gradle :app:assembleProductionRelease `
-  -POLRAC_API_BASE_URL=https://signage.example.com/
+  -PMR_API_BASE_URL=https://signage.example.com/
 ```
 
 Debug APK output:
@@ -66,7 +66,7 @@ Do that deliberately, not by accident.
    adb install -r app/build/outputs/apk/dev/debug/app-dev-debug.apk
    ```
 
-2. Launch OLRAC. If the preconfigured API URL is wrong, edit **Server URL**, then
+2. Launch MR Signage. If the preconfigured API URL is wrong, edit **Server URL**, then
    choose **Save and reconnect**. After pairing, reopen this screen from the remote with
    **Up, Up, Down, Down, OK** within five seconds, then enter the screen's 4-digit
    maintenance pin. The pin is shown under **Details** on the screen's dashboard page; a
@@ -85,7 +85,7 @@ configured API host for local development. Public/CDN URLs are left unchanged.
    device-owner/kiosk solution and configure `com.olrac.signage/.MainActivity` as the
    persistent HOME activity. This OEM provisioning is part of deployment, not an app
    permission that can be silently granted by a sideloaded APK.
-3. Exempt OLRAC from vendor battery/background restrictions where the TV exposes such
+3. Exempt MR Signage from vendor battery/background restrictions where the TV exposes such
    controls.
 
 The boot receiver listens for locked boot, normal boot, vendor quick boot, user unlock,
@@ -99,8 +99,8 @@ Use a playlist whose media has fully cached, then verify all of these on every t
 TV/OEM firmware:
 
 1. Disconnect both Wi-Fi/Ethernet and make the API unreachable. Force-stop and cold
-   launch OLRAC: cached content should start within five seconds.
-2. With OLRAC set as HOME and the API unreachable, power-cycle the TV: cached content
+   launch MR Signage: cached content should start within five seconds.
+2. With MR Signage set as HOME and the API unreachable, power-cycle the TV: cached content
    should be visible within 60 seconds with no remote input.
 3. Clear app data or use a fresh TV while the API is unreachable: the setup screen
    should say pairing will resume automatically. Restore the network/API and verify a

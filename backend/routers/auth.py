@@ -172,7 +172,7 @@ def sign_in_with_google(
     Google authenticates a person; it does not authorise them. That distinction is the
     whole design here:
 
-      - A verified address that already belongs to an OLRAC user signs that user in.
+      - A verified address that already belongs to an MR Signage user signs that user in.
       - One that does not gets a NEW organisation, created with status="pending_approval"
         and no approved_at, plus an owner account inside it. Both exist immediately, but
         get_tenant_scope refuses every tenant route while the organisation sits in that

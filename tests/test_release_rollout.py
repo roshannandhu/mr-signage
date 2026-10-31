@@ -85,7 +85,7 @@ client = TestClient(app)
 
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
-APK = "https://cdn.example.com/olrac.apk"
+APK = "https://cdn.example.com/mr.apk"
 
 
 def setup_db():
@@ -179,7 +179,7 @@ def run():
         "version_code": 902, "version_name": "1.0", "apk_url": APK}, headers=root)
     assert no_digest.status_code == 422, "a release with no sha256 must be refused"
 
-    cleartext = publish(root, 903, url="http://cdn.example.com/olrac.apk")
+    cleartext = publish(root, 903, url="http://cdn.example.com/mr.apk")
     assert cleartext.status_code == 422, "an http:// apk url must be refused"
 
     bad_hex = publish(root, 904, digest="nothex" * 10)

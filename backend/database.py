@@ -14,7 +14,7 @@ load_dotenv(dotenv_path=env_path)
 # the next deploy -- and /api/health cheerfully answered "connected" the whole time. That
 # happened on the first Render deploy and cost an afternoon of "why is Supabase empty?".
 # It still falls back, because local development wants that, but it now says so.
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./olrac_signage.db")
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mr_signage.db")
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     import logging

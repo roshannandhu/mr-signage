@@ -43,7 +43,7 @@ def check(condition: bool, message: str) -> None:
 
 def setup():
     db = database.SessionLocal()
-    operator_org = models.Organization(name="OLRAC", slug=f"o-{uuid.uuid4().hex[:8]}", status="active")
+    operator_org = models.Organization(name="MR Signage", slug=f"o-{uuid.uuid4().hex[:8]}", status="active")
     tenant = models.Organization(name="Venue", slug=f"v-{uuid.uuid4().hex[:8]}", status="active")
     db.add_all([operator_org, tenant])
     db.flush()

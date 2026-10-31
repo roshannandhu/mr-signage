@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:15-alpine
-    container_name: olrac_db
+    container_name: mr_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-olrac}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-olrac_password}
@@ -23,7 +23,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: olrac_backend
+    container_name: mr_backend
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-olrac}:${POSTGRES_PASSWORD:-olrac_password}@db:5432/${POSTGRES_DB:-olrac_signage}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-mock}
@@ -79,7 +79,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: olrac_worker
+    container_name: mr_worker
     command: python -m arq backend.worker.WorkerSettings
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-olrac}:${POSTGRES_PASSWORD:-olrac_password}@db:5432/${POSTGRES_DB:-olrac_signage}
@@ -116,7 +116,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY:-}
-    container_name: olrac_frontend
+    container_name: mr_frontend
     ports:
       - "3000:3000"
     depends_on:
@@ -125,7 +125,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: olrac_redis
+    container_name: mr_redis
     ports:
       - "127.0.0.1:6379:6379"
     volumes:

@@ -110,7 +110,7 @@ def run() -> None:
         assert rejected.status_code == 400 and "expired" in rejected.json()["detail"].lower()
         assert client.get("/api/playlists/999999", headers=headers).status_code == 404
 
-    print("OLRAC storage and failure-path validation passed")
+    print("MR Signage storage and failure-path validation passed")
 
 
 if __name__ == "__main__":

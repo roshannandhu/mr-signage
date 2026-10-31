@@ -1,5 +1,5 @@
 <#
-    Start every OLRAC Signage service and keep them running.
+    Start every MR Signage service and keep them running.
 
     Why this exists: the four services (Redis, media worker, API, dashboard) were being
     started as background jobs inside a terminal session. When that session ended, they
@@ -38,7 +38,7 @@ function Start-Service-Detached {
     Write-Host ("  {0,-10} started -> logs\{0}.log" -f $Name) -ForegroundColor Green
 }
 
-Write-Host "`nStarting OLRAC Signage" -ForegroundColor Cyan
+Write-Host "`nStarting MR Signage" -ForegroundColor Cyan
 
 # Postgres is installed as a Windows service; only check it.
 if (Test-Port 5432) {

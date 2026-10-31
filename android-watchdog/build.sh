@@ -2,7 +2,7 @@
 #
 # Build the watchdog APK straight from the Android SDK build tools.
 #
-#   ./build.sh              -> build/olrac-watchdog.apk
+#   ./build.sh              -> build/mr-watchdog.apk
 #   ./build.sh install      -> also adb install -r onto the connected device
 #
 # Why not Gradle: this app is five Java files, one resource and zero dependencies. Gradle
@@ -31,7 +31,7 @@ JAVAC="$JAVA_HOME/bin/javac"
 MIN_SDK=21
 TARGET_SDK=34
 OUT=build
-APK="$OUT/olrac-watchdog.apk"
+APK="$OUT/mr-watchdog.apk"
 
 echo "  sdk        $SDK"
 echo "  build-tools $(basename "${BT%/}")"

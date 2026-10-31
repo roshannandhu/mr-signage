@@ -9,7 +9,7 @@ service. `settings put secure enabled_accessibility_services` requires
 attempt to bypass this; any technique that appears to work is malware behaviour and will
 be broken by the next OEM update.
 
-**Solution:** provision OLRAC as **Device Owner** by QR code. One QR works for the whole
+**Solution:** provision MR Signage as **Device Owner** by QR code. One QR works for the whole
 fleet. Device Owner supersedes the accessibility watchdog entirely and additionally
 unlocks the silent APK install that P7 could not deliver.
 
@@ -24,7 +24,7 @@ unlocks the silent APK install that P7 could not deliver.
 - `applyKioskPolicy()` — call on first run when device owner:
   - `setLockTaskPackages(admin, arrayOf(packageName))`
   - `addPersistentPreferredActivity(...)` for the HOME intent, so the TV boots straight
-    into OLRAC with no launcher chooser, permanently
+    into MR Signage with no launcher chooser, permanently
   - `setKeyguardDisabled(admin, true)` and `setStatusBarDisabled(admin, true)`
   - `setPermissionPolicy(admin, PERMISSION_POLICY_AUTO_GRANT)` so runtime permissions
     never prompt on a screen nobody is standing in front of
@@ -50,7 +50,7 @@ frontend renders it as a QR:
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME":
       "com.olrac.signage/.receivers.SignageDeviceAdminReceiver",
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION":
-      "https://<PUBLIC_BASE_URL>/static/olrac-signage.apk",
+      "https://<PUBLIC_BASE_URL>/static/mr-signage.apk",
   "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": "<base64url SHA-256 of the signing cert>",
   "android.app.extra.PROVISIONING_WIFI_SSID": "<site wifi>",
   "android.app.extra.PROVISIONING_WIFI_PASSWORD": "<site wifi password>",

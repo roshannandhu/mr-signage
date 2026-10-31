@@ -56,7 +56,7 @@ fun SetupPermissionsScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "OLRAC SIGNAGE",
+            text = "MR SIGNAGE",
             color = AccentGreen,
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
@@ -89,7 +89,7 @@ fun SetupPermissionsScreen(
         PermissionRow(
             step = "2",
             title = "Keep player on screen",
-            detail = "Under Accessibility, switch on \"OLRAC Signage\". This is what reopens the " +
+            detail = "Under Accessibility, switch on \"MR Signage\". This is what reopens the " +
                 "player after the TV restarts.",
             granted = watchdogEnabled,
             onEnable = onEnableWatchdog,

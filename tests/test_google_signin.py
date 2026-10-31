@@ -204,7 +204,7 @@ def run() -> None:
     stub_google(approved("stranger@gmail.com"))
     response = poll(start(device_id="tv-3")["poll_token"])
     assert response.status_code == 403, response.text
-    assert "No OLRAC account" in response.json()["detail"]
+    assert "No MR Signage account" in response.json()["detail"]
 
     db = TestingSessionLocal()
     assert db.query(Screen).filter(Screen.device_id == "tv-3").first() is None

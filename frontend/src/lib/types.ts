@@ -445,7 +445,7 @@ export interface Client {
   created_at: string
 }
 
-/** A package the tenant sells on to its clients — not the plan OLRAC bills the tenant. */
+/** A package the tenant sells on to its clients — not the plan MR Signage bills the tenant. */
 export interface TenantPlan {
   id: number
   name: string

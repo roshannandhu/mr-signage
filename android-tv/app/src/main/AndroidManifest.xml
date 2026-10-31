@@ -43,19 +43,19 @@
          first run after a wipe. -->
     <application
         android:allowBackup="false"
-        android:icon="@drawable/olrac_icon"
+        android:icon="@drawable/mr_icon"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
-        android:roundIcon="@drawable/olrac_icon"
+        android:roundIcon="@drawable/mr_icon"
         android:supportsRtl="true"
         android:largeHeap="true"
-        android:theme="@style/Theme.OlracSignage">
+        android:theme="@style/Theme.MRSignage">
         
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.OlracSignage.NoActionBar">
+            android:theme="@style/Theme.MRSignage.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

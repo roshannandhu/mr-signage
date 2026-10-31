@@ -1,4 +1,4 @@
-# OLRAC Watchdog — build and TV setup
+# MR Signage Watchdog — build and TV setup
 
 Keeps the signage player on screen: launches it at boot, and puts it back whenever it
 exits, crashes, or someone presses Home.
@@ -9,7 +9,7 @@ exits, crashes, or someone presses Home.
 ./build.sh
 ```
 
-Produces `build/olrac-watchdog.apk`, signed with the debug key. No Gradle — the app is five
+Produces `build/mr-watchdog.apk`, signed with the debug key. No Gradle — the app is five
 Java files with no dependencies, so it builds straight from the SDK's `aapt2`, `javac`, `d8`
 and `apksigner`. Needs `ANDROID_HOME` (or the SDK in its default location) and a JDK; set
 `JAVA_HOME` if yours is not at `~/jdk-17/jdk-17.0.2`.

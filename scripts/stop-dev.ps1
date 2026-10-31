@@ -18,7 +18,7 @@ function Stop-OnPort([string]$Name, [int]$Port) {
     }
 }
 
-Write-Host "`nStopping OLRAC Signage" -ForegroundColor Cyan
+Write-Host "`nStopping MR Signage" -ForegroundColor Cyan
 Stop-OnPort -Name 'frontend' -Port 3000
 Stop-OnPort -Name 'backend'  -Port 8010
 Stop-OnPort -Name 'redis'    -Port 6379

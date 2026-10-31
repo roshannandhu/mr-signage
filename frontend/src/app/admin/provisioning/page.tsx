@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
-import { QrCode, Wifi, Shield, Copy, Check, Download, AlertCircle } from 'lucide-react'
+import { QrCode, Wifi, Shield, Copy, Check, AlertCircle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 
@@ -61,7 +61,7 @@ export default function AdminProvisioningPage() {
         </div>
         <h1 className="text-2xl font-bold text-foreground mt-1">Device Owner Provisioning (QR)</h1>
         <p className="text-sm text-slate-400 mt-1">
-          Generate an Android Enterprise Device-Owner QR code to configure OLRAC Signage on fresh or factory-reset Android TVs.
+          Generate an Android Enterprise Device-Owner QR code to configure MR Signage on fresh or factory-reset Android TVs.
         </p>
       </div>
 

@@ -60,7 +60,7 @@
   --font-sans: var(--font-geist-sans);
   --font-heading: var(--font-geist-sans);
 
-  /* Brand surfaces. The navy rail is the OLRAC signature and stays navy in both
+  /* Brand surfaces. The navy rail is the MR Signage signature and stays navy in both
      themes; only the content canvas flips. --brand is the azure accent used on
      navy; --brand-soft is its darker twin for accents on white, where azure
      alone would not clear AA. */
@@ -241,33 +241,33 @@
 
 /* A live screen pulses; a dark one does not. The ring carries information, so it is not
    decoration -- across a wall of pins you read "who is up" without opening a popup. */
-@keyframes olrac-pin-pulse {
+@keyframes mr-pin-pulse {
   0%   { transform: scale(1);   opacity: 0.55; }
   70%  { transform: scale(2.6); opacity: 0;    }
   100% { transform: scale(2.6); opacity: 0;    }
 }
-.olrac-pin-pulse {
-  animation: olrac-pin-pulse 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+.mr-pin-pulse {
+  animation: mr-pin-pulse 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .olrac-pin-pulse { animation: none; }
+  .mr-pin-pulse { animation: none; }
 }
 
 /* Leaflet ships a white popup and a white attribution strip, which glare in dark mode. */
-.olrac-map .leaflet-popup-content-wrapper,
-.olrac-map .leaflet-popup-tip {
+.mr-map .leaflet-popup-content-wrapper,
+.mr-map .leaflet-popup-tip {
   background: var(--color-popover, #fff);
   color: var(--color-popover-foreground, #0f172a);
   border-radius: 0.6rem;
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
 }
-.olrac-map .leaflet-control-attribution {
+.mr-map .leaflet-control-attribution {
   background: rgb(0 0 0 / 0.45);
   color: rgb(255 255 255 / 0.7);
   backdrop-filter: blur(4px);
 }
-.olrac-map .leaflet-control-attribution a { color: rgb(255 255 255 / 0.9); }
-.olrac-map .leaflet-bar a {
+.mr-map .leaflet-control-attribution a { color: rgb(255 255 255 / 0.9); }
+.mr-map .leaflet-bar a {
   background: var(--color-popover, #fff);
   color: var(--color-popover-foreground, #0f172a);
   border-color: rgb(255 255 255 / 0.12);

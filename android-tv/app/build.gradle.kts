@@ -9,7 +9,7 @@ plugins {
 fun quotedBuildConfig(value: String): String =
     "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val configuredApiBaseUrl = providers.gradleProperty("OLRAC_API_BASE_URL")
+val configuredApiBaseUrl = providers.gradleProperty("MR_API_BASE_URL")
 
 // Release signing. Drop a keystore.properties in android-tv/ to sign with the real key;
 // absent (dev machines, CI) the release build falls back to debug signing exactly as before.

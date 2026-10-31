@@ -52,7 +52,7 @@ fun PairingScreen(
 
     SetupSurface {
         Text(
-            text = "OLRAC SIGNAGE",
+            text = "MR SIGNAGE",
             color = AccentGreen,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
@@ -71,7 +71,7 @@ fun PairingScreen(
         Spacer(modifier = Modifier.height(10.dp))
 
         Text(
-            text = "Enter this 6-digit code in your OLRAC admin dashboard to link this screen.",
+            text = "Enter this 6-digit code in your MR Signage admin dashboard to link this screen.",
             color = Color(0xFF94A3B8),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center

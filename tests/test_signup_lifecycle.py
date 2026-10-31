@@ -116,7 +116,7 @@ def run() -> None:
     admin = hdr(token_for("platform-op", "platform-pass-123"))
 
     # ================================================================= 1. SIGN UP
-    # A brand-new company. Nobody has an OLRAC account, they arrive through Google.
+    # A brand-new company. Nobody has an MR Signage account, they arrive through Google.
     stub_google("owner@newshop.example", "New Shop")
     signup = client.post("/api/auth/google", json={
         "code": "google-auth-code", "redirect_uri": "http://localhost:3000/login",

@@ -89,10 +89,10 @@ fun PlayerScreen(viewModel: PlayerViewModel = viewModel()) {
         ) {
             Text(
                 text = if (unreachable > 0) {
-                    "OLRAC Signage\n$unreachable advert${if (unreachable == 1) "" else "s"} assigned " +
+                    "MR Signage\n$unreachable advert${if (unreachable == 1) "" else "s"} assigned " +
                         "but could not be downloaded.\nThe server is not serving media."
                 } else {
-                    "OLRAC Signage\nWaiting for assigned content"
+                    "MR Signage\nWaiting for assigned content"
                 },
                 color = Color.White
             )

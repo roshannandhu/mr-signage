@@ -89,11 +89,11 @@ python tests/validation.py
 ## Live E2E test
 
 `e2e_test.py` drives a running backend over `http://localhost:8000` (override with
-`OLRAC_BASE_URL`). Use an existing owner or editor account:
+`MR_BASE_URL`). Use an existing owner or editor account:
 
 ```bash
-set OLRAC_TEST_USERNAME=owner
-set OLRAC_TEST_PASSWORD=your-password
+set MR_TEST_USERNAME=owner
+set MR_TEST_PASSWORD=your-password
 python tests/e2e_test.py
 ```
 

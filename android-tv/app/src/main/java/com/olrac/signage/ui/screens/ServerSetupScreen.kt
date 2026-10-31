@@ -78,7 +78,7 @@ fun ServerSetupScreen(
         MaintenanceControls(defaultHome, onChooseHome)
         Spacer(modifier = Modifier.height(24.dp))
         // Leaves the player for the device's own home screen, with kiosk released so Home and
-        // the other apps actually work. Opening OLRAC again puts kiosk back.
+        // the other apps actually work. Opening MR Signage again puts kiosk back.
         Button(
             onClick = onExit,
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155), contentColor = Color.White),
@@ -118,7 +118,7 @@ private fun MaintenanceControls(defaultHome: Boolean, onChooseHome: () -> Unit) 
     if (!defaultHome) {
         Spacer(modifier = Modifier.height(10.dp))
         Button(onClick = onChooseHome, colors = secondaryButtonColors()) {
-            Text("Choose OLRAC as TV launcher")
+            Text("Choose MR Signage as TV launcher")
         }
     }
     Spacer(modifier = Modifier.height(18.dp))
@@ -177,7 +177,7 @@ fun ServerControls(
     if (!defaultHome) {
         Spacer(modifier = Modifier.height(10.dp))
         Button(onClick = onChooseHome, colors = secondaryButtonColors()) {
-            Text("Choose OLRAC as TV launcher")
+            Text("Choose MR Signage as TV launcher")
         }
     }
     
@@ -259,15 +259,15 @@ private fun StartAfterRestartControls() {
             )
         } else {
             Text(
-                text = "Allow \"Display over other apps\" for OLRAC Signage. If the button lands on a " +
-                    "list, choose OLRAC Signage and switch it on. On most TVs it is under Settings → " +
+                text = "Allow \"Display over other apps\" for MR Signage. If the button lands on a " +
+                    "list, choose MR Signage and switch it on. On most TVs it is under Settings → " +
                     "Apps → Special app access → Display over other apps.",
                 color = Color.LightGray,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(10.dp))
             Button(onClick = ::openOverlaySettings, colors = secondaryButtonColors(), modifier = Modifier.fillMaxWidth()) {
-                Text("Allow OLRAC to open after restart")
+                Text("Allow MR Signage to open after restart")
             }
         }
     }

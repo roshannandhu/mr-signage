@@ -213,7 +213,7 @@ def _fetch_image(url: str | None) -> bytes | None:
     if stored is None and url.startswith(("http://", "https://")):
         try:
             import urllib.request
-            req = urllib.request.Request(url, headers={"User-Agent": "OLRAC-Signage-Report/1.0"})
+            req = urllib.request.Request(url, headers={"User-Agent": "MR-Signage-Report/1.0"})
             with urllib.request.urlopen(req, timeout=10) as response:
                 if response.status == 200:
                     stored = response.read() or None

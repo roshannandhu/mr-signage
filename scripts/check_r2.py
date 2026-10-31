@@ -22,8 +22,8 @@ if missing:
     sys.exit(f"Not set: {', '.join(missing)}")
 
 bucket = os.environ["S3_BUCKET_NAME"]
-key = "olrac-preflight-check.txt"
-payload = b"olrac r2 preflight"
+key = "mr-preflight-check.txt"
+payload = b"mr r2 preflight"
 
 client = boto3.client(
     "s3",

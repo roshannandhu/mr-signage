@@ -1,6 +1,6 @@
-# OLRAC Signage — Work Order for Antigravity (Gemini Pro)
+# MR Signage — Work Order for Antigravity (Gemini Pro)
 
-**Repo:** `E:\IMP projects\OLRAC SIGNAGE`
+**Repo:** `E:\IMP projects\MR SIGNAGE`
 **Goal:** turn the working MVP into a commercial multi-tenant digital-signage SaaS
 running 80 Android TVs now, 500+ later.
 
@@ -83,7 +83,7 @@ route through it. **This has not been compiled** — no JDK/Gradle was available
 authoring environment. Your first task is to build it (§4, P0).
 
 ### Decision you must make
-Either (a) fold the accessibility-service trick into the OLRAC player itself, or
+Either (a) fold the accessibility-service trick into the MR Signage player itself, or
 (b) keep shipping the separate `com.ablesign.bootlauncher` watchdog alongside it and
 just repoint its `ABLESIGN` constant to `com.olrac.signage`. **(b) is lower risk and is
 already proven in the field** — spec §5 says "no separate watchdog app", but that rule

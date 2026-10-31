@@ -77,7 +77,7 @@ function LeafletMap({ points, height }: { points: MapPoint[]; height: number }) 
         if (point.latitude == null || point.longitude == null) continue
         const colour = point.online ? '#16a34a' : '#64748b'
         const pulse = point.online
-          ? '<span class="olrac-pin-pulse" style="position:absolute;inset:0;border-radius:9999px;background:' +
+          ? '<span class="mr-pin-pulse" style="position:absolute;inset:0;border-radius:9999px;background:' +
             colour +
             '"></span>'
           : ''
@@ -187,7 +187,7 @@ function LeafletMap({ points, height }: { points: MapPoint[]; height: number }) 
   return (
     <div
       ref={shell}
-      className={`olrac-map border-hairline bg-muted relative z-0 overflow-hidden rounded-xl border ${
+      className={`mr-map border-hairline bg-muted relative z-0 overflow-hidden rounded-xl border ${
         resolvedTheme === 'dark'
           ? '[&_.leaflet-tile-pane]:brightness-[0.7] [&_.leaflet-tile-pane]:invert-[1] [&_.leaflet-tile-pane]:hue-rotate-[180deg] [&_.leaflet-tile-pane]:contrast-[1.1]'
           : ''
@@ -341,7 +341,7 @@ function GoogleMap({ points, height }: { points: MapPoint[]; height: number }) {
   return (
     <div
       ref={shell}
-      className="olrac-map border-hairline bg-muted relative z-0 overflow-hidden rounded-xl border"
+      className="mr-map border-hairline bg-muted relative z-0 overflow-hidden rounded-xl border"
       style={{ height }}
     >
       <div ref={container} className="size-full" />

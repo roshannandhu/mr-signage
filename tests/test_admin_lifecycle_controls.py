@@ -44,7 +44,7 @@ def setup() -> tuple[TestClient, dict, int]:
     db = database.SessionLocal()
     ensure_billing_catalog(db)
 
-    operator_org = models.Organization(name="OLRAC", slug="olrac", status="active")
+    operator_org = models.Organization(name="MR Signage", slug="olrac", status="active")
     tenant_org = models.Organization(
         name="Tenant Co", slug="tenant-co", status="pending_approval"
     )

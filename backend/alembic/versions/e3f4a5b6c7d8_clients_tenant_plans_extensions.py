@@ -9,9 +9,9 @@ row and nothing else: the same customer spelled two ways became two customers, t
 nowhere to keep the address a report has to be emailed to, and "everything we ran for this
 client" could not be asked at all.
 
-`tenant_plans` is deliberately NOT the existing `plans` table. That one is what OLRAC bills
+`tenant_plans` is deliberately NOT the existing `plans` table. That one is what MR Signage bills
 the tenant; this is what the tenant sells on to an advertiser. One table for both would let
-a tenant edit the plan they are billed on, and would show OLRAC's pricing to their clients.
+a tenant edit the plan they are billed on, and would show MR Signage's pricing to their clients.
 
 `ad_placement_extensions` is a table rather than an `extended_to` column because a campaign
 that does well is extended more than once, and each sale has to survive on the invoice. A

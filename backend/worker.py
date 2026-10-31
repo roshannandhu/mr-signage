@@ -95,7 +95,7 @@ def process_media_sync(content_id: int):
     # Scratch directory for this job, removed in `finally` whatever happens. Renditions
     # used to be written straight into the uploads tree beside the source, so a transcode
     # that died halfway left partial mp4s behind that nothing ever cleaned up.
-    workspace = tempfile.mkdtemp(prefix=f"olrac_transcode_{content_id}_")
+    workspace = tempfile.mkdtemp(prefix=f"mr_transcode_{content_id}_")
     try:
         content = db.query(Content).filter(Content.id == content_id).first()
         if not content:

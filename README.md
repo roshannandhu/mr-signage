@@ -1,6 +1,6 @@
-# OLRAC Signage
+# MR Signage
 
-OLRAC is an end-to-end digital signage platform for centrally managing Android TV displays. It combines a FastAPI control plane, a polished Next.js operations portal, and an offline-ready Kotlin player.
+MR Signage is an end-to-end digital signage platform for centrally managing Android TV displays. It combines a FastAPI control plane, a polished Next.js operations portal, and an offline-ready Kotlin player.
 
 ## What it supports
 
@@ -104,20 +104,20 @@ Development builds permit HTTP for LAN testing; production builds require HTTPS.
 cd android-tv
 
 # Emulator/LAN development build
-gradle :app:assembleDevDebug -POLRAC_API_BASE_URL=http://192.168.1.20:8000/
+gradle :app:assembleDevDebug -PMR_API_BASE_URL=http://192.168.1.20:8000/
 
 # Production-flavor build; use the real public HTTPS API URL
-gradle :app:assembleProductionRelease -POLRAC_API_BASE_URL=https://signage.example.com/
+gradle :app:assembleProductionRelease -PMR_API_BASE_URL=https://signage.example.com/
 ```
 
 On first launch, the player displays a six-digit pairing code. After pairing, it
 caches assigned media and evaluates schedules locally so playback continues without
 a connection.
 
-For unattended recovery after a power cut, provision OLRAC as the TV's default HOME
+For unattended recovery after a power cut, provision MR Signage as the TV's default HOME
 launcher. The setup screen can open Android's launcher-role chooser. Some OEM TV
 launchers ignore the standard HOME role; those devices must be enrolled with the
-vendor's device-owner/kiosk tooling and have OLRAC selected as the persistent HOME
+vendor's device-owner/kiosk tooling and have MR Signage selected as the persistent HOME
 app. A foreground boot service is also installed, but modern Android does not
 guarantee that a non-HOME app may bring an activity to the foreground from a boot
 broadcast.
@@ -146,8 +146,8 @@ cd ../android-tv
 The optional live HTTP test requires a running backend and explicit account credentials:
 
 ```bash
-set OLRAC_TEST_USERNAME=owner
-set OLRAC_TEST_PASSWORD=your-password
+set MR_TEST_USERNAME=owner
+set MR_TEST_PASSWORD=your-password
 python tests/e2e_test.py
 ```
 

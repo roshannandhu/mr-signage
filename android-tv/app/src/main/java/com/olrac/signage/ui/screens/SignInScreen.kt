@@ -43,7 +43,7 @@ fun SignInScreen(
 
     SetupSurface {
         Text(
-            text = "OLRAC SIGNAGE",
+            text = "MR SIGNAGE",
             color = AccentGreen,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
@@ -58,7 +58,7 @@ fun SignInScreen(
             textAlign = TextAlign.Center
         )
         Text(
-            text = "Link this TV screen to your OLRAC cloud workspace in one tap.",
+            text = "Link this TV screen to your MR Signage cloud workspace in one tap.",
             color = Color(0xFFAAAAAA),
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,

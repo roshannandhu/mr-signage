@@ -14,8 +14,6 @@ import {
   Layers3,
   LogOut,
   MonitorPlay,
-  Package,
-  QrCode,
   RadioTower,
   Settings2,
   ShieldCheck,
@@ -52,7 +50,7 @@ const toolLinks = [
   { href: '/dashboard/campaigns', label: 'Playback report', icon: BarChart3, ownerOnly: false },
   // Directly under the report on purpose: they are the two halves of one booking, and
   // keeping them adjacent is what makes the split legible. NOT /dashboard/billing, which
-  // is this workspace's own subscription to OLRAC.
+  // is this workspace's own subscription to MR Signage.
   { href: '/dashboard/invoices', label: 'Invoices', icon: Receipt, ownerOnly: false },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, ownerOnly: false },
   { href: '/dashboard/files', label: 'File management', icon: FolderCheck, ownerOnly: false },
@@ -175,7 +173,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <span className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg">
               <RadioTower className="size-[18px]" aria-hidden="true" />
             </span>
-            <span className="text-foreground hidden text-[17px] font-bold tracking-tight sm:block">Olrac Signage</span>
+            <div className="hidden sm:flex sm:flex-col sm:leading-tight">
+              <span className="text-foreground text-[16px] font-bold tracking-tight">MR Signage</span>
+              <span className="text-muted-foreground text-[10px] font-medium tracking-wide">(Midhun-Roshan)</span>
+            </div>
           </Link>
 
           <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">

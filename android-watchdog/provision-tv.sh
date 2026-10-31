@@ -21,7 +21,7 @@ WATCHDOG_ACT="$WATCHDOG_PKG/.MainActivity"
 WATCHDOG_SVC="$WATCHDOG_PKG/$WATCHDOG_PKG.WatchdogAccessibilityService"
 PLAYER_PKG=com.olrac.signage
 PLAYER_ACT="$PLAYER_PKG.MainActivity"
-APK=build/olrac-watchdog.apk
+APK=build/mr-watchdog.apk
 
 TARGET="${1:-}"
 if [ -n "$TARGET" ]; then DEV=(-s "$TARGET"); else DEV=(); fi

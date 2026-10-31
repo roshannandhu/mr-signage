@@ -34,7 +34,7 @@ type Filter = 'all' | 'unpaid' | 'paid'
  * What every client owes this workspace, and what they have paid.
  *
  * Deliberately NOT /dashboard/billing, which is this workspace's own subscription to
- * OLRAC. These are two different sets of books that used to bleed into each other: the
+ * MR Signage. These are two different sets of books that used to bleed into each other: the
  * playback report carried the price and the paid pill, and the campaigns page totted up
  * revenue on a page called "Playback report". Delivery evidence lives there; money lives
  * here.
@@ -145,7 +145,7 @@ export default function InvoicesPage() {
       <PageHeader
         eyebrow="Client billing"
         title="Invoices"
-        description="What each client owes for their airtime, and what they have paid. Your own OLRAC subscription is under Billing."
+        description="What each client owes for their airtime, and what they have paid. Your own MR Signage subscription is under Billing."
       />
 
       <div className="grid gap-4 sm:grid-cols-3">

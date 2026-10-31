@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Package, PackagePlus, Rocket, CheckCircle, ShieldAlert, Sparkles } from 'lucide-react'
+import { Package, PackagePlus, Rocket } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import type { RolloutState } from '@/lib/types'
@@ -135,7 +135,7 @@ export default function AdminReleasesPage() {
               <input
                 type="url"
                 required
-                placeholder="https://storage.example.com/apks/olrac-player-v1.5.0.apk"
+                placeholder="https://storage.example.com/apks/mr-player-v1.5.0.apk"
                 value={apkUrl}
                 onChange={(e) => setApkUrl(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-card border border-border text-foreground placeholder-slate-500 text-sm focus:outline-none focus:border-violet-500"

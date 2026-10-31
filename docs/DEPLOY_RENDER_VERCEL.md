@@ -165,7 +165,7 @@ committed.
 
 | Field | Value |
 |---|---|
-| Repository | `olrac-signage` |
+| Repository | `mr-signage` |
 | **Root directory** | **`frontend`** |
 | Build command | `npx opennextjs-cloudflare build` |
 | Deploy command | `npx wrangler deploy` |
@@ -316,11 +316,11 @@ through to request access; the owner then approves at
 <https://github.com/settings/installations>, granting the app access to this repository
 only. Faster still, the owner can install both apps first and skip the waiting:
 <https://github.com/apps/render> and the Cloudflare Workers app, each with
-*Only select repositories -> olrac-signage*.
+*Only select repositories -> mr-signage*.
 
 **Or the collaborator forks it.** A fork is owned by the person who made it, so they can
 install apps and deploy with no approval at all, and can keep it current with
-`gh repo sync <them>/olrac-signage --source <owner>/olrac-signage`. This is also the
+`gh repo sync <them>/mr-signage --source <owner>/mr-signage`. This is also the
 cheapest way for two people to each hold full control of their own environment: two forks,
 two free deployments, nothing shared.
 

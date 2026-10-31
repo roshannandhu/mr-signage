@@ -48,7 +48,7 @@ def google_configured() -> bool:
 # area draws none, which is well inside that. Attribution is stamped onto the image, which
 # their terms require and which a client-facing document should carry anyway.
 OSM_TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-OSM_USER_AGENT = "OlracSignage/1.0 (campaign reports; +https://github.com/roshannandhu/olrac-signage)"
+OSM_USER_AGENT = "MRSignage/1.0 (campaign reports; +https://github.com/roshannandhu/mr-signage)"
 TILE_PX = 256
 
 

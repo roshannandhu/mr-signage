@@ -206,7 +206,7 @@ class PlaybackService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.olrac_icon)
+            .setSmallIcon(R.drawable.mr_icon)
             .setContentTitle(getString(R.string.app_name))
             .setContentText("Signage playback protection is active")
             .setContentIntent(contentIntent)

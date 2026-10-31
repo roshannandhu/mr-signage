@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
-  CheckCircle2,
   Eye,
   EyeOff,
   Lock,
@@ -13,7 +12,6 @@ import {
   ShieldCheck,
   Tv,
   WifiOff,
-  Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,7 +19,6 @@ import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
 import { destinationFor } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
-import type { User } from '@/lib/types'
 
 /**
  * Where a user belongs after signing in.
@@ -147,8 +144,9 @@ export default function LoginPage() {
             <RadioTower className="size-6 text-black" />
           </div>
           <div>
-            <p className="font-extrabold tracking-wider text-xl text-foreground">OLRAC <span className="text-emerald-400 font-medium">SIGNAGE</span></p>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Next-Gen TV Network Control</p>
+            <p className="font-extrabold tracking-wider text-xl text-foreground">MR <span className="text-emerald-400 font-medium">SIGNAGE</span></p>
+            <p className="text-[11px] font-semibold tracking-wider text-emerald-400">(Midhun-Roshan)</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mt-0.5">Next-Gen TV Network Control</p>
           </div>
         </div>
 
@@ -196,7 +194,7 @@ export default function LoginPage() {
 
         {/* Footer info */}
         <div className="relative flex items-center justify-between text-xs text-muted-foreground">
-          <p>© 2026 OLRAC Signage Systems Inc.</p>
+          <p>© 2026 MR Signage Systems Inc. • Developed by Legit Forge</p>
           <div className="flex items-center gap-2">
             <ShieldCheck className="size-4 text-emerald-400" />
             <span>Encrypted End-to-End</span>
@@ -212,7 +210,10 @@ export default function LoginPage() {
             <div className="grid size-10 place-items-center rounded-xl bg-emerald-500 text-black">
               <RadioTower className="size-5" />
             </div>
-            <span className="font-bold tracking-wider text-lg">OLRAC SIGNAGE</span>
+            <div>
+              <span className="font-bold tracking-wider text-lg">MR SIGNAGE</span>
+              <p className="text-[10px] font-semibold text-emerald-400 tracking-wider">(Midhun-Roshan)</p>
+            </div>
           </div>
 
           <div className="mb-8">

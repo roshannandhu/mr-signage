@@ -1,7 +1,7 @@
 """The packages a tenant sells to its own clients.
 
-Deliberately separate from `models.Plan`, which is what OLRAC bills the TENANT. One table
-for both would let a tenant edit the plan they are billed on, and would put OLRAC's pricing
+Deliberately separate from `models.Plan`, which is what MR Signage bills the TENANT. One table
+for both would let a tenant edit the plan they are billed on, and would put MR Signage's pricing
 in front of their customers.
 
 A booking COPIES a plan's price and duration at the moment it is created (see

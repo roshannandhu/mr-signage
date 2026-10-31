@@ -24,7 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-SCRATCH = f"olrac_timeline_{uuid.uuid4().hex[:8]}"
+SCRATCH = f"mr_timeline_{uuid.uuid4().hex[:8]}"
 os.environ["DATABASE_URL"] = f"postgresql://olrac:olrac_password@localhost:5432/{SCRATCH}"
 os.environ["SECRET_KEY"] = "timeline-test-secret"
 os.environ["AWS_ACCESS_KEY_ID"] = "mock"

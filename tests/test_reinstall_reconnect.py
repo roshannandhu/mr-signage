@@ -4,7 +4,7 @@
 
 The scenario this covers is the one an installer actually performs:
 
-  1. The installer signs in ON THE TV with the same OLRAC account they use in the
+  1. The installer signs in ON THE TV with the same MR Signage account they use in the
      dashboard. The screen joins that workspace with nobody else involved.
   2. The dashboard shows exactly ONE screen -- not a ghost row per attempt.
   3. Content is assigned; the TV plays it.

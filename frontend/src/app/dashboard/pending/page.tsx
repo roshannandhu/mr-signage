@@ -111,7 +111,7 @@ export default function ActivateWorkspacePage() {
           order_id: res.order_id,
           amount: res.amount_paise,
           currency: 'INR',
-          name: 'OLRAC Signage',
+          name: 'MR Signage',
           description: label,
           handler: () => { void enterIfActive() },
           modal: { ondismiss: () => setBusyKey(null) },
@@ -164,7 +164,10 @@ export default function ActivateWorkspacePage() {
             <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20">
               <RadioTower className="size-5" />
             </div>
-            <p className="text-lg font-bold tracking-wider">OLRAC <span className="font-medium text-emerald-400">SIGNAGE</span></p>
+            <div>
+              <p className="text-lg font-bold tracking-wider">MR <span className="font-medium text-emerald-400">SIGNAGE</span></p>
+              <p className="text-[10px] font-semibold text-emerald-400 tracking-wider">(Midhun-Roshan)</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">

@@ -30,8 +30,8 @@ import type { Screen, ScreenGroup } from '@/lib/types'
 
 type StatusFilter = 'all' | 'online' | 'offline'
 type ViewMode = 'cards' | 'list'
-const VIEW_KEY = 'olrac.screens.view'
-const VIEW_EVENT = 'olrac:screens-view'
+const VIEW_KEY = 'mr.screens.view'
+const VIEW_EVENT = 'mr:screens-view'
 
 /**
  * The saved layout choice, read from localStorage without a render-time side effect.
@@ -172,7 +172,7 @@ export default function ScreensPage() {
         <DialogHeader>
           <DialogTitle>Add a screen</DialogTitle>
           <DialogDescription>
-            Open Olrac on the TV and sign in with your account — it joins this workspace on its own. No keyboard on hand? Type the six-digit code it shows.
+            Open MR Signage on the TV and sign in with your account — it joins this workspace on its own. No keyboard on hand? Type the six-digit code it shows.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
@@ -353,7 +353,7 @@ export default function ScreensPage() {
         <EmptyState
           icon={Tv2}
           title="No screens yet"
-          description="Open Olrac on a TV and sign in with your account — the screen joins this workspace on its own."
+          description="Open MR Signage on a TV and sign in with your account — the screen joins this workspace on its own."
           action={canEdit ? <Button onClick={() => setPairOpen(true)}>Add Screen</Button> : undefined}
         />
       ) : !filtered.length ? (

@@ -60,7 +60,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="Overwrite existing objects in R2")
     args = parser.parse_args()
 
-    print("=== OLRAC Media Blob -> Cloudflare R2 Sync ===")
+    print("=== MR Signage Media Blob -> Cloudflare R2 Sync ===")
     if args.dry_run:
         print("[MODE] DRY-RUN (No files will be modified in R2)\n")
 

@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-TEMP_DIR = tempfile.TemporaryDirectory(prefix="olrac-quota-test-", ignore_cleanup_errors=True)
+TEMP_DIR = tempfile.TemporaryDirectory(prefix="mr-quota-test-", ignore_cleanup_errors=True)
 DB_PATH = Path(TEMP_DIR.name) / "quota.db"
 
 import psycopg2  # noqa: E402

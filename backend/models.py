@@ -805,9 +805,9 @@ class Client(Base):
 class TenantPlan(Base):
     """A package a tenant sells to its own clients.
 
-    Distinct from `Plan`, which is what OLRAC bills the TENANT. This is the other side of
+    Distinct from `Plan`, which is what MR Signage bills the TENANT. This is the other side of
     the business: what the tenant in turn sells to an advertiser. Sharing one table would
-    have let a tenant edit the plan they are billed on, and shown OLRAC's pricing to their
+    have let a tenant edit the plan they are billed on, and shown MR Signage's pricing to their
     customers.
 
     A booking COPIES price and duration from here rather than reading through to it, so

@@ -12,7 +12,7 @@ class UpdateGateTest {
 
     @Test
     fun `accepts an https url with a well-formed digest`() {
-        assertNull(UpdateGate.rejectionFor("https://cdn.example.com/olrac.apk", validDigest))
+        assertNull(UpdateGate.rejectionFor("https://cdn.example.com/mr.apk", validDigest))
     }
 
     @Test
@@ -20,11 +20,11 @@ class UpdateGateTest {
         // The regression that mattered: this case used to skip verification and install.
         assertEquals(
             "release has no sha256 digest",
-            UpdateGate.rejectionFor("https://cdn.example.com/olrac.apk", null)
+            UpdateGate.rejectionFor("https://cdn.example.com/mr.apk", null)
         )
         assertEquals(
             "release has no sha256 digest",
-            UpdateGate.rejectionFor("https://cdn.example.com/olrac.apk", "   ")
+            UpdateGate.rejectionFor("https://cdn.example.com/mr.apk", "   ")
         )
     }
 
@@ -32,11 +32,11 @@ class UpdateGateTest {
     fun `refuses a malformed digest`() {
         assertEquals(
             "sha256 is not a 64-character hex digest",
-            UpdateGate.rejectionFor("https://cdn.example.com/olrac.apk", "not-a-digest")
+            UpdateGate.rejectionFor("https://cdn.example.com/mr.apk", "not-a-digest")
         )
         assertEquals(
             "sha256 is not a 64-character hex digest",
-            UpdateGate.rejectionFor("https://cdn.example.com/olrac.apk", "a".repeat(63))
+            UpdateGate.rejectionFor("https://cdn.example.com/mr.apk", "a".repeat(63))
         )
     }
 
@@ -44,7 +44,7 @@ class UpdateGateTest {
     fun `refuses cleartext http`() {
         assertEquals(
             "apk url is not https",
-            UpdateGate.rejectionFor("http://cdn.example.com/olrac.apk", validDigest)
+            UpdateGate.rejectionFor("http://cdn.example.com/mr.apk", validDigest)
         )
     }
 

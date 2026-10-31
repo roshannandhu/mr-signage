@@ -3,13 +3,13 @@ import time
 import uuid
 import os
 
-BASE_URL = os.environ.get("OLRAC_BASE_URL", "http://localhost:8000")
+BASE_URL = os.environ.get("MR_BASE_URL", "http://localhost:8000")
 
 def auth_headers():
-    username = os.environ.get("OLRAC_TEST_USERNAME")
-    password = os.environ.get("OLRAC_TEST_PASSWORD")
+    username = os.environ.get("MR_TEST_USERNAME")
+    password = os.environ.get("MR_TEST_PASSWORD")
     if not username or not password:
-        raise RuntimeError("Set OLRAC_TEST_USERNAME and OLRAC_TEST_PASSWORD to a real editor/owner account")
+        raise RuntimeError("Set MR_TEST_USERNAME and MR_TEST_PASSWORD to a real editor/owner account")
     response = requests.post(f"{BASE_URL}/api/auth/token", data={"username": username, "password": password})
     response.raise_for_status()
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

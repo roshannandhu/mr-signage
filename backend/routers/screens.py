@@ -811,7 +811,7 @@ def google_device_poll(
         raise HTTPException(
             status_code=403,
             detail=(
-                "No OLRAC account uses that Google address. Add it to your profile in the "
+                "No MR Signage account uses that Google address. Add it to your profile in the "
                 "dashboard under Account, then try again."
             ),
         )
@@ -919,7 +919,7 @@ def _tv_result_page(title: str, heading: str, body_html: str, deep_link: str, ac
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>{html.escape(title)} &mdash; OLRAC Signage</title>
+    <title>{html.escape(title)} &mdash; MR Signage</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         body {{ background: #070A0F; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }}
@@ -1757,7 +1757,7 @@ async def sync_tv(
 
         demo_content = schemas.ContentResponse(
             id=999999,
-            name="OLRAC Universal Demo Reel",
+            name="MR Signage Universal Demo Reel",
             type="video/mp4",
             file_url=demo_url,
             thumbnail=None,
@@ -1777,7 +1777,7 @@ async def sync_tv(
         )
         demo_playlist = schemas.PlaylistResponse(
             id=999999,
-            name="OLRAC Universal Demo Loop",
+            name="MR Signage Universal Demo Loop",
             default_transition="fade",
             default_transition_ms=600,
             created_at=models.utcnow(),
