@@ -925,6 +925,11 @@ class MockConfirmRequest(BaseModel):
     order_id: str
 
 
+# The empty-string alternative matters: a cleared form field arrives as "", not absent, and
+# without it an empty phone box would 422 a request that was otherwise perfectly fine.
+PHONE_PATTERN = r"^(\+?[0-9 ]{7,15})?$"
+
+
 class CustomPlanRequestCreate(BaseModel):
     """A tenant's ask for a bespoke package: the counts and period they want."""
 
@@ -935,6 +940,20 @@ class CustomPlanRequestCreate(BaseModel):
     duration_days: int = Field(default=30, ge=1, le=3650)
     feature_flags: dict[str, bool] = Field(default_factory=dict)
     notes: Optional[str] = Field(default=None, max_length=1000)
+    # Who the operator actually reaches about this. All optional -- the organisation's own
+    # owner is always a fallback -- but checked when given, the same way the mailto draft
+    # the tenant is about to send is built from exactly these fields.
+    company_name: Optional[str] = Field(default=None, max_length=200)
+    contact_name: Optional[str] = Field(default=None, max_length=200)
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = Field(default=None, max_length=20, pattern=PHONE_PATTERN)
+
+    @field_validator("contact_email", mode="before")
+    @classmethod
+    def blank_email_is_none(cls, value):
+        # A cleared form field arrives as "", and EmailStr (unlike the phone pattern above)
+        # has no way to say "or empty" -- it rejects "" as a malformed address outright.
+        return None if value == "" else value
 
 
 class CustomPlanRequestPrice(BaseModel):
@@ -977,6 +996,10 @@ class CustomPlanRequestResponse(BaseModel):
     created_at: datetime
     # Only on the operator's list, so a request can be attributed to a workspace.
     organization_name: Optional[str] = None
+    company_name: Optional[str] = None
+    contact_name: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
 
 
 class EnrollmentTokenCreate(BaseModel):

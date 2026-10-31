@@ -107,6 +107,12 @@ export function CustomRequestsPanel() {
                         {request.status}
                       </span>
                     </p>
+                    {(request.company_name || request.contact_name || request.contact_email || request.contact_phone) && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {[request.company_name, request.contact_name, request.contact_email, request.contact_phone]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                     {request.notes && <p className="mt-1 text-xs italic text-muted-foreground">“{request.notes}”</p>}
                     <div className="mt-3 flex flex-wrap items-end gap-2">
                       <NumField label="TVs" value={draft.max_screens ?? request.max_screens}

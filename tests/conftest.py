@@ -79,6 +79,8 @@ ISOLATED_SCRIPTS = {
     "test_admin_billing.py",
     # The /signup storefront needs no login and hides inactive/hidden plans.
     "test_public_plans.py",
+    # A custom request's company/contact fields validate, round-trip, and stay optional.
+    "test_custom_request_contact.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -300,6 +302,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_plan_feature_gates.py",
     "test_admin_billing.py",
     "test_public_plans.py",
+    "test_custom_request_contact.py",
 }
 
 

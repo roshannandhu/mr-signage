@@ -27,7 +27,28 @@ const FEATURES: { key: string; label: string }[] = [
   { key: 'priority_support', label: 'Priority support' },
 ]
 
-const CUSTOM_BLANK = { screens: '20', clients: '20', storage: '50', days: '30', notes: '' }
+const CUSTOM_BLANK = {
+  screens: '20', clients: '20', ads: '20', storage: '50', days: '30', notes: '',
+  company: '', contactName: '', contactEmail: '', contactPhone: '',
+}
+
+/** "+91 98765 43210" split into something a mailto body and a plain-text copy both read
+ * cleanly, skipping any field the tenant left blank. */
+function describeRequest(custom: typeof CUSTOM_BLANK, user: { full_name?: string | null; username: string } | null) {
+  const lines = [
+    `TVs: ${custom.screens}`,
+    `Clients: ${custom.clients}`,
+    `Ad slots: ${custom.ads}`,
+    `Storage: ${custom.storage} GB`,
+    `Access period: ${custom.days} days`,
+  ]
+  if (custom.company.trim()) lines.push(`Company: ${custom.company.trim()}`)
+  lines.push(`Contact: ${custom.contactName.trim() || user?.full_name || user?.username || '(not given)'}`)
+  if (custom.contactEmail.trim()) lines.push(`Email: ${custom.contactEmail.trim()}`)
+  if (custom.contactPhone.trim()) lines.push(`Phone: ${custom.contactPhone.trim()}`)
+  if (custom.notes.trim()) lines.push('', `Notes: ${custom.notes.trim()}`)
+  return lines.join('\n')
+}
 
 /**
  * The storefront a new workspace lands on. It is blocked from the dashboard until it pays --
@@ -42,7 +63,9 @@ export default function ActivateWorkspacePage() {
   const { user, token, setSession, clearSession } = useAuthStore()
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [showCustom, setShowCustom] = useState(false)
-  const [custom, setCustom] = useState({ ...CUSTOM_BLANK })
+  // Defaults the email box to the Google address this account signed up with -- `user` is
+  // already hydrated by the time this page is reachable at all (it requires a token).
+  const [custom, setCustom] = useState({ ...CUSTOM_BLANK, contactEmail: user?.email || '' })
   const [customFeatures, setCustomFeatures] = useState<Record<string, boolean>>({})
   const [highlightPlanId, setHighlightPlanId] = useState<number | null>(null)
   const isOwner = user?.role === 'owner'
@@ -147,8 +170,22 @@ export default function ActivateWorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once the plan list settles, not on every render of runPurchase
   }, [plansQuery.isLoading, plansQuery.data])
 
+  // The plain-text version of the just-sent request, kept on screen (not just in a toast
+  // that disappears) so "my mail app didn't open" has a "copy details" to fall back to.
+  const [justSubmitted, setJustSubmitted] = useState<string | null>(null)
+
   const submitCustom = async () => {
     if (!isOwner) return
+    // Checked here too, not only server-side (schemas.py's EmailStr / PHONE_PATTERN): a
+    // round trip just to learn a typo is the slowest possible way to find out about one.
+    if (custom.contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(custom.contactEmail.trim())) {
+      toast.error('That email address does not look right.')
+      return
+    }
+    if (custom.contactPhone.trim() && !/^\+?[0-9 ]{7,15}$/.test(custom.contactPhone.trim())) {
+      toast.error('That phone number does not look right.')
+      return
+    }
     setBusyKey('custom-submit')
     try {
       await api.submitCustomRequest({
@@ -156,21 +193,52 @@ export default function ActivateWorkspacePage() {
         // package with no screens.
         max_screens: Math.max(1, Number(custom.screens) || 1),
         max_clients: Number(custom.clients) || 0,
-        max_ad_slots: 0,
+        max_ad_slots: Number(custom.ads) || 0,
         max_storage_bytes: (Number(custom.storage) || 0) * GIB,
         duration_days: Number(custom.days) || 30,
         feature_flags: customFeatures,
         notes: custom.notes.trim() || null,
+        company_name: custom.company.trim() || null,
+        contact_name: custom.contactName.trim() || null,
+        contact_email: custom.contactEmail.trim() || null,
+        contact_phone: custom.contactPhone.trim() || null,
       })
-      toast.success('Request sent. A manager will price it shortly — this page updates when they do.')
-      setShowCustom(false)
-      setCustom({ ...CUSTOM_BLANK })
-      setCustomFeatures({})
       queryClient.invalidateQueries({ queryKey: ['my-custom-requests'] })
+
+      // Saved first, THEN the mailto draft -- the request already exists and shows in Admin
+      // Billing's queue even if the browser has no mail app to hand off to, or the operator
+      // has not set a contact address yet.
+      const details = describeRequest(custom, user ?? null)
+      let opened = false
+      try {
+        const { email } = await api.getContactEmail()
+        if (email) {
+          const subject = `Custom / Business plan request — ${custom.company.trim() || user?.organization_name || 'MR Signage'}`
+          window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(details)}`
+          opened = true
+        }
+      } catch {
+        /* the request is already saved; a failed mail-draft lookup is not worth failing over */
+      }
+      toast.success(opened ? 'Request sent — opening an email draft with the details.' : 'Request sent. A manager will price it shortly — this page updates when they do.')
+      setJustSubmitted(details)
+      setShowCustom(false)
+      setCustom({ ...CUSTOM_BLANK, contactEmail: user?.email || '' })
+      setCustomFeatures({})
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not send request')
     } finally {
       setBusyKey(null)
+    }
+  }
+
+  const copyDetails = async () => {
+    if (!justSubmitted) return
+    try {
+      await navigator.clipboard.writeText(justSubmitted)
+      toast.success('Copied — paste it into an email to your account manager.')
+    } catch {
+      toast.error('Could not copy. Select and copy the text manually.')
     }
   }
 
@@ -321,8 +389,20 @@ export default function ActivateWorkspacePage() {
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <NumField label="TVs" value={custom.screens} onChange={(v) => setCustom({ ...custom, screens: v })} min={1} />
               <NumField label="Clients" value={custom.clients} onChange={(v) => setCustom({ ...custom, clients: v })} />
+              <NumField label="Ad slots" value={custom.ads} onChange={(v) => setCustom({ ...custom, ads: v })} />
               <NumField label="Storage (GB)" value={custom.storage} onChange={(v) => setCustom({ ...custom, storage: v })} />
               <NumField label="Access period (days)" value={custom.days} onChange={(v) => setCustom({ ...custom, days: v })} min={1} />
+            </div>
+            <div>
+              <span className="mb-2 block text-xs font-semibold text-muted-foreground">
+                Who should we contact? <span className="font-normal normal-case text-muted-foreground/70">(so pricing goes to the right person)</span>
+              </span>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField label="Company name" value={custom.company} onChange={(v) => setCustom({ ...custom, company: v })} placeholder={user?.organization_name || 'Acme Pvt Ltd'} />
+                <TextField label="Contact name" value={custom.contactName} onChange={(v) => setCustom({ ...custom, contactName: v })} placeholder={user?.full_name || user?.username} />
+                <TextField label="Email" type="email" value={custom.contactEmail} onChange={(v) => setCustom({ ...custom, contactEmail: v })} placeholder="you@company.com" />
+                <TextField label="Phone" type="tel" value={custom.contactPhone} onChange={(v) => setCustom({ ...custom, contactPhone: v })} placeholder="+91 98765 43210" />
+              </div>
             </div>
             <div>
               <span className="mb-2 block text-xs font-semibold text-muted-foreground">Features</span>
@@ -358,6 +438,25 @@ export default function ActivateWorkspacePage() {
               {busyKey === 'custom-submit' ? 'Sending…' : 'Send request'}
             </Button>
           </form>
+        )}
+
+        {/* The request is already saved regardless of whether a mail app actually opened --
+            this is the fallback for "nothing happened" (no default mail client) or "I want
+            to paste this into an email myself". */}
+        {justSubmitted && (
+          <div className="mt-8 space-y-3 rounded-3xl border border-emerald-500/30 bg-emerald-500/5 p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="font-semibold text-emerald-300">Request sent</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  It is already saved and visible to us. If an email draft did not open, copy the details below into one.
+                </p>
+              </div>
+              <Button type="button" variant="outline" size="sm" onClick={() => setJustSubmitted(null)}>Dismiss</Button>
+            </div>
+            <pre className="whitespace-pre-wrap rounded-xl border border-border bg-muted p-4 text-xs text-muted-foreground">{justSubmitted}</pre>
+            <Button type="button" variant="outline" onClick={copyDetails}>Copy details</Button>
+          </div>
         )}
       </div>
     </main>
@@ -412,6 +511,23 @@ function NumField({ label, value, onChange, min = 0 }: { label: string; value: s
         min={min}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-emerald-500/50"
+      />
+    </label>
+  )
+}
+
+function TextField({ label, value, onChange, placeholder, type = 'text' }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; type?: 'text' | 'email' | 'tel'
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
         className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-emerald-500/50"
       />
     </label>

@@ -624,6 +624,9 @@ export const api = {
   }),
   getMyCustomRequests: () => fetchWithAuth<CustomPlanRequestItem[]>('/billing/custom-request'),
   purchaseCustomRequest: (id: number) => fetchWithAuth<PurchaseResponse>(`/billing/custom-request/${id}/purchase`, { method: 'POST' }),
+  // Where a submitted custom request's mailto draft is addressed -- set by the operator on
+  // the admin Billing page. null means they have not set one yet.
+  getContactEmail: () => fetchWithAuth<{ email: string | null }>('/billing/contact'),
 
   // P6/P7 Endpoints
   getEmergencyBroadcasts: () => fetchWithAuth<EmergencyBroadcast[]>('/emergency/active'),

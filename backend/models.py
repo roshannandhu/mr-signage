@@ -309,6 +309,13 @@ class CustomPlanRequest(Base):
     price_paise = Column(BigInteger, nullable=False, default=0)
     status = Column(String(20), nullable=False, default="requested", index=True)
     notes = Column(String, nullable=True)
+    # Who to actually reach about this. Nullable: a request made before this column existed,
+    # or one the tenant left blank, falls back to whoever owns the organisation already --
+    # these never replace that, only add a specific contact when one was given.
+    company_name = Column(String, nullable=True)
+    contact_name = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
     # The one-time order raised to pay for this request, so the webhook can find it back.
     provider_order_id = Column(String, unique=True, nullable=True, index=True)
     created_at = Column(UtcDateTime, nullable=False, default=utcnow)

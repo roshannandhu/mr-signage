@@ -467,6 +467,10 @@ def serialize_custom_request(
         notes=request.notes,
         created_at=request.created_at,
         organization_name=(request.organization.name if include_org and request.organization else None),
+        company_name=request.company_name,
+        contact_name=request.contact_name,
+        contact_email=request.contact_email,
+        contact_phone=request.contact_phone,
     )
 
 
@@ -489,6 +493,10 @@ def create_custom_request(
         feature_flags_json=json.dumps(payload.feature_flags, sort_keys=True),
         notes=payload.notes,
         status="requested",
+        company_name=(payload.company_name or "").strip() or None,
+        contact_name=(payload.contact_name or "").strip() or None,
+        contact_email=payload.contact_email,
+        contact_phone=(payload.contact_phone or "").strip() or None,
     )
     scope.db.add(request)
     scope.db.commit()

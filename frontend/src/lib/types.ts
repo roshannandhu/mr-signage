@@ -257,6 +257,10 @@ export interface CustomPlanRequestInput {
   duration_days: number
   feature_flags: Record<string, boolean>
   notes?: string | null
+  company_name?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
 }
 
 /** A revision to a bespoke package. Every field optional -- send only what changed.
@@ -288,6 +292,10 @@ export interface CustomPlanRequestItem {
   notes: string | null
   created_at: string
   organization_name?: string | null
+  company_name?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
 }
 
 export interface PlatformPayment {
