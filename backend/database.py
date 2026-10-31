@@ -1,7 +1,9 @@
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 import os
 import pathlib
+import sys
 from dotenv import load_dotenv
 
 env_path = pathlib.Path(__file__).parent / ".env"
@@ -15,6 +17,43 @@ load_dotenv(dotenv_path=env_path)
 # happened on the first Render deploy and cost an afternoon of "why is Supabase empty?".
 # It still falls back, because local development wants that, but it now says so.
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./mr_signage.db")
+
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+_LOCAL_DB_HOSTS = {"", "localhost", "127.0.0.1", "::1"}
+
+
+def _running_under_tests() -> bool:
+    """True inside pytest, or when a script under tests/ is run directly with python."""
+    if "pytest" in sys.modules:
+        return True
+    entry = getattr(sys.modules.get("__main__"), "__file__", None)
+    if not entry:
+        return False
+    try:
+        return pathlib.Path(entry).resolve().parent == _REPO_ROOT / "tests"
+    except OSError:
+        return False
+
+
+def _refuse_remote_database_in_tests(url: str) -> None:
+    """Stop a test from binding to a hosted database.
+
+    load_dotenv above fills DATABASE_URL from backend/.env, which on a developer machine
+    points at the live Supabase database. A test script that forgets to set its own URL
+    would then create and delete tenants, users and screens in production -- this has
+    happened before. Tests may use SQLite or a database on this machine, nothing else.
+    """
+    host = (make_url(url).host or "").lower()
+    if host in _LOCAL_DB_HOSTS:
+        return
+    raise RuntimeError(
+        f"Refusing to run tests against a hosted database ({host}). Set DATABASE_URL to "
+        "sqlite or to a Postgres on localhost before importing backend."
+    )
+
+
+if _running_under_tests():
+    _refuse_remote_database_in_tests(SQLALCHEMY_DATABASE_URL)
 
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     import logging

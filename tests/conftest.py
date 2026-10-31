@@ -166,6 +166,8 @@ PURE_MODULES = {
     "test_public_media_bucket.py",
     # The pairing code must outlive the moment the player replaces it.
     "test_pairing_code_window.py",
+    # Hosted databases are refused while tests run (backend/database.py).
+    "test_database_guard.py",
 }
 
 
