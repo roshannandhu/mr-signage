@@ -53,8 +53,5 @@ class MaintenanceGesture(private val windowMs: Long = WINDOW_MS) {
             KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_CENTER
         )
-
-        /** Wrong pins tolerated before the prompt closes and the gesture must be repeated. */
-        const val MAX_PIN_ATTEMPTS = 3
     }
 }

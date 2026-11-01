@@ -479,6 +479,23 @@ export interface LockPin {
   lock_pin: string | null
 }
 
+/** Whether the lock the plan sells is actually active. Off by default -- a plan gaining
+ *  the feature never retroactively locks an already-paired fleet on its own. */
+export interface LockEnabled {
+  lock_enabled: boolean
+}
+
+/** One PIN attempt or remote unlock, for the admin audit log. */
+export interface KioskUnlockEvent {
+  id: number
+  screen_id: number | null
+  screen_name: string | null
+  occurred_at: string
+  method: 'pin' | 'remote'
+  success: boolean
+  actor_username: string | null
+}
+
 /** An advertiser this tenant sells to. Reusable across bookings, unlike a typed-in name. */
 export interface Client {
   id: number

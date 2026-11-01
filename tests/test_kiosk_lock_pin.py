@@ -12,6 +12,10 @@ Pins:
   * a screen with uses_own_pin=True keeps its own PIN regardless of the workspace one
   * the sync response's kiosk_lock flag matches the plan, not a hardcoded value
   * clearing the workspace PIN (null) restores every screen to its own
+
+Whether the lock is actually armed (organizations.lock_enabled, tenant-controlled, default
+off) is covered separately in test_kiosk_lock_enabled.py -- this file only covers PIN
+resolution, so a locked plan with lock_enabled still unset reports kiosk_lock: false here.
 """
 import json
 import os
@@ -126,7 +130,7 @@ def run() -> None:
     # --- before any workspace PIN: every screen's sync offers its own ------------------------
     shared_sync_before = client.get(f"/api/screens/{shared_device}/sync", headers=shared_device_auth).json()
     check(shared_sync_before.get("maintenance_pin") == "1111", f"expected the screen's own PIN before any workspace PIN, got {shared_sync_before.get('maintenance_pin')!r}")
-    check(shared_sync_before.get("kiosk_lock") is True, f"expected kiosk_lock true for the locked plan, got {shared_sync_before.get('kiosk_lock')!r}")
+    check(shared_sync_before.get("kiosk_lock") is False, f"a locked plan should stay unlocked until the tenant enables it, got {shared_sync_before.get('kiosk_lock')!r}")
 
     # --- an owner sets the workspace PIN ------------------------------------------------------
     get_initial = client.get("/api/screens/lock-pin", headers=owner_auth)

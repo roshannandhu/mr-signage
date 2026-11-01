@@ -2,9 +2,10 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileVideo, LogIn, MonitorPlay, Palette, Users } from 'lucide-react'
+import { ArrowLeft, FileVideo, Lock, LogIn, MonitorPlay, Palette, Users } from 'lucide-react'
+import { toast } from 'sonner'
 import { adminApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
@@ -22,12 +23,16 @@ type Tab = 'screens' | 'content' | 'users'
  * real screens instead of through admin-only copies that would drift from them.
  *
  * Status and limits are still changed from the tenants list, which is where those belong.
+ * Remote unlock is the one exception: it is deliberately an OPERATOR act on the tenant's
+ * behalf, logged under the operator's own identity, not something "enter workspace" could
+ * express the same way.
  */
 export default function AdminTenantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const tenantId = Number(id)
   const [tab, setTab] = useState<Tab>('screens')
   const router = useRouter()
+  const queryClient = useQueryClient()
   const enterWorkspace = useAuthStore((state) => state.enterWorkspace)
 
   const tenantQuery = useQuery({
@@ -52,6 +57,19 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
     queryKey: ['admin', 'tenant', tenantId, 'users'],
     queryFn: () => adminApi.getTenantUsers(tenantId),
     enabled: tab === 'users',
+  })
+  const kioskEventsQuery = useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'kiosk-events'],
+    queryFn: () => adminApi.getKioskUnlockEvents(tenantId),
+    enabled: tab === 'screens',
+  })
+  const remoteUnlock = useMutation({
+    mutationFn: (screenId: number) => adminApi.remoteUnlockScreen(tenantId, screenId),
+    onSuccess: (result) => {
+      toast.success(result.queued ? 'Unlock queued -- takes effect at the screen’s next sync' : 'Could not queue the unlock; try again')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId, 'kiosk-events'] })
+    },
+    onError: (error: Error) => toast.error(error.message),
   })
 
   const tenant = tenantQuery.data
@@ -160,7 +178,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
               <Table
                 loading={screensQuery.isLoading}
                 empty="This workspace has no screens yet."
-                headers={['Name', 'Status', 'Playback', 'Location', 'Model', 'App', 'Last seen']}
+                headers={['Name', 'Status', 'Playback', 'Location', 'Model', 'App', 'Last seen', '']}
                 rows={(screensQuery.data ?? []).map((s) => [
                   s.name ?? `Screen ${s.id}`,
                   <StatusPill key="s" status={s.status} />,
@@ -169,6 +187,17 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                   s.model ?? '—',
                   s.app_version ?? '—',
                   s.last_seen ? new Date(s.last_seen).toLocaleString() : '—',
+                  // Harmless to queue on a screen that is not actually locked -- there is
+                  // nothing for it to do there, so this is never gated on knowing that.
+                  <button
+                    key="u"
+                    onClick={() => remoteUnlock.mutate(s.id)}
+                    disabled={remoteUnlock.isPending}
+                    title="Queue a remote unlock -- takes effect at this screen's next sync"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+                  >
+                    <Lock className="size-3" /> Remote unlock
+                  </button>,
                 ])}
               />
             )}
@@ -234,6 +263,35 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
               />
             )}
           </section>
+
+          {tab === 'screens' && (
+            <section className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border p-4">
+                <h2 className="text-sm font-semibold text-foreground">Kiosk unlock activity</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Every local PIN attempt and remote unlock for this workspace. Visibility only --
+                  there is nothing here that lets an operator skip the PIN itself.
+                </p>
+              </div>
+              <Table
+                loading={kioskEventsQuery.isLoading}
+                empty="No unlock activity recorded yet."
+                headers={['When', 'Screen', 'Method', 'Result', 'By']}
+                rows={(kioskEventsQuery.data ?? []).map((e) => [
+                  new Date(e.occurred_at).toLocaleString(),
+                  e.screen_name ?? (e.screen_id ? `Screen ${e.screen_id}` : '—'),
+                  e.method === 'remote' ? 'Remote unlock' : 'PIN entry',
+                  <span
+                    key={`result-${e.id}`}
+                    className={e.success ? 'text-emerald-400' : 'text-rose-400'}
+                  >
+                    {e.success ? 'Success' : 'Failed'}
+                  </span>,
+                  e.actor_username ?? '—',
+                ])}
+              />
+            </section>
+          )}
         </>
       )}
     </div>

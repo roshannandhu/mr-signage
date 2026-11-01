@@ -163,17 +163,23 @@ def effective_maintenance_pin(db: Session, screen) -> str | None:
 
 
 def kiosk_lock_enabled(screen) -> bool:
-    """Whether this screen's tenant plan sells the TV lock feature at all.
+    """Whether this screen is actually locked right now -- two conditions ANDed together.
 
-    False is the "not granted" default every other Phase 3.1 feature flag uses for a plan
-    that never set the key -- Free gets no lock, Starter and Business do, by the seeded
-    defaults. A screen with no organisation (never paired) has no plan either, so it reads
-    as unlocked rather than raising.
+    The plan has to sell the feature at all (False is the "not granted" default every other
+    Phase 3.1 feature flag uses for a plan that never set the key), AND the tenant has to
+    have turned it on themselves (Organization.lock_enabled, off by default). Separating
+    these is the point: a plan gaining the feature must never retroactively trap an
+    already-paired fleet the next time it syncs -- the tenant decides when, not the plan.
+
+    A screen with no organisation (never paired) has no plan either, so it reads as
+    unlocked rather than raising.
     """
     organization = getattr(screen, "organization", None)
     if organization is None or organization.plan is None:
         return False
-    return bool(plan_features(organization.plan).get("kiosk_lock", False))
+    if not bool(plan_features(organization.plan).get("kiosk_lock", False)):
+        return False
+    return bool(organization.lock_enabled)
 
 
 def master_maintenance_pin(db: Session) -> str | None:
@@ -1443,6 +1449,59 @@ def set_workspace_lock_pin(
     organization.lock_pin = payload.lock_pin
     scope.db.commit()
     return schemas.LockPinResponse(lock_pin=organization.lock_pin)
+
+
+@router.get("/lock-enabled", response_model=schemas.LockEnabledResponse)
+def get_workspace_lock_enabled(
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    return schemas.LockEnabledResponse(lock_enabled=scope.organization.lock_enabled)
+
+
+@router.put("/lock-enabled", response_model=schemas.LockEnabledResponse)
+def set_workspace_lock_enabled(
+    payload: schemas.LockEnabledUpdate,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    """The tenant's own switch for whether the lock their plan sells is actually active.
+
+    Separate from the plan entitlement on purpose: a plan gaining the kiosk_lock feature
+    must never retroactively trap an already-paired fleet the moment it next syncs. See
+    kiosk_lock_enabled, which ANDs this with the plan flag.
+    """
+    organization = scope.organization
+    organization.lock_enabled = payload.lock_enabled
+    scope.db.commit()
+    return schemas.LockEnabledResponse(lock_enabled=organization.lock_enabled)
+
+
+@router.post("/{device_id}/kiosk-attempt")
+async def report_kiosk_attempt(
+    device_id: str,
+    payload: schemas.KioskAttemptRequest,
+    db: Session = Depends(database.get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    """A TV reporting one local PIN check, for the admin audit log only.
+
+    The PIN check itself already happened on the device before this call -- it has to work
+    with no network, the same as the PIN prompt always has -- so this is purely a record,
+    best-effort like every other telemetry report here. A screen with no organisation yet
+    (never paired) has nothing to log against.
+    """
+    screen = verify_device_auth(device_id, credentials, db)
+    if screen.organization_id is None:
+        return {"status": "ok"}
+    db.add(models.KioskUnlockEvent(
+        organization_id=screen.organization_id,
+        screen_id=screen.id,
+        method="pin",
+        success=payload.success,
+    ))
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.put("/{screen_id}", response_model=schemas.ScreenResponse)

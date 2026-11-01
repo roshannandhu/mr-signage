@@ -197,6 +197,15 @@ class PlaylistSynchronizer(context: Context) {
                     if (cmd == "request_screenshot") {
                         com.olrac.signage.telemetry.ScreenshotManager.requestScreenshot()
                     }
+                    if (cmd == "remote_unlock") {
+                        // Flag consumed by MainActivity's own poll, which opens maintenance
+                        // as if the PIN had just been entered -- this call only makes sure
+                        // the TV is actually in front to show it.
+                        appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
+                        android.util.Log.i("PlaylistSynchronizer", "Received remote_unlock command from sync")
+                        com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "remote_unlock")
+                    }
                     if ((cmd == "bring_to_front" || cmd == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
                         android.util.Log.i("PlaylistSynchronizer", "Received $cmd command from sync; bringing app to front")
                         com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "sync_command")

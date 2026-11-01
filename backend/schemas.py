@@ -289,6 +289,34 @@ class LockPinResponse(BaseModel):
     lock_pin: Optional[str] = None
 
 
+class LockEnabledUpdate(BaseModel):
+    lock_enabled: bool
+
+
+class LockEnabledResponse(BaseModel):
+    lock_enabled: bool
+
+
+class KioskAttemptRequest(BaseModel):
+    """A TV reporting one local PIN check, right or wrong, best-effort."""
+
+    success: bool
+
+
+class KioskUnlockEventResponse(BaseModel):
+    id: int
+    screen_id: Optional[int] = None
+    screen_name: Optional[str] = None
+    occurred_at: datetime
+    method: str
+    success: bool
+    actor_username: Optional[str] = None
+
+
+class RemoteUnlockResponse(BaseModel):
+    queued: bool
+
+
 class ScreenResponse(ScreenBase):
     id: int
     pair_code: Optional[str]

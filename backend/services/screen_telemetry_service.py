@@ -22,6 +22,11 @@ _COMMAND_HOLD_SECONDS: Dict[str, int] = {
     "request_screenshot": 24 * 3600,
     "check_update": 7 * 24 * 3600,
     "deregister": 30 * 24 * 3600,
+    # A super admin's recovery lever for a tenant genuinely stuck behind a lost PIN. Held
+    # as long as bring_to_front/screenshot: a screen that was offline when this was queued
+    # should still get it once it's back, not only if it happens to reconnect within the
+    # hour.
+    "remote_unlock": 24 * 3600,
 }
 _DEFAULT_HOLD_SECONDS = 300
 _MAX_HOLD_SECONDS = max(_COMMAND_HOLD_SECONDS.values())

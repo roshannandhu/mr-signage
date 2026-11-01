@@ -442,6 +442,90 @@ def get_tenant_plays(
     return TenantPlaysOut(total_plays=total, online_plays=max(0, total - offline), offline_plays=offline)
 
 
+@router.get("/tenants/{org_id}/kiosk-events", response_model=List[schemas.KioskUnlockEventResponse])
+def get_kiosk_unlock_events(
+    org_id: int,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Every local PIN attempt and remote unlock for this tenant's fleet, newest first.
+
+    Visibility only -- nothing here lets an operator skip the PIN itself. That boundary
+    stays where Phase 1.7 put it when it removed the old master-PIN-opens-everything
+    fallback; a genuinely stuck tenant goes through remote_unlock below instead, which is
+    its own deliberate, logged act, not a standing bypass.
+    """
+    _get_org(db, org_id)
+    rows = (
+        db.query(models.KioskUnlockEvent, models.Screen.name, models.User.username)
+        .outerjoin(models.Screen, models.Screen.id == models.KioskUnlockEvent.screen_id)
+        .outerjoin(models.User, models.User.id == models.KioskUnlockEvent.actor_user_id)
+        .filter(models.KioskUnlockEvent.organization_id == org_id)
+        .order_by(models.KioskUnlockEvent.occurred_at.desc())
+        .limit(200)
+        .all()
+    )
+    return [
+        schemas.KioskUnlockEventResponse(
+            id=event.id,
+            screen_id=event.screen_id,
+            screen_name=screen_name,
+            occurred_at=event.occurred_at,
+            method=event.method,
+            success=event.success,
+            actor_username=actor_username,
+        )
+        for event, screen_name, actor_username in rows
+    ]
+
+
+@router.post(
+    "/tenants/{org_id}/screens/{screen_id}/remote-unlock",
+    response_model=schemas.RemoteUnlockResponse,
+)
+async def remote_unlock_screen(
+    org_id: int,
+    screen_id: int,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Queue a remote unlock for one screen -- the recovery lever for a tenant genuinely
+    locked out (lost PIN, nobody left who knows it).
+
+    Takes effect at that screen's next sync or heartbeat, same as every other queued
+    command; a screen that is offline right now gets it once it reconnects, not instantly.
+    Logged here rather than left implicit in the command queue, so "who unlocked this and
+    when" survives long after the 24-hour hold on the command itself expires.
+    """
+    organization = _get_org(db, org_id)
+    screen = (
+        db.query(models.Screen)
+        .filter(models.Screen.id == screen_id, models.Screen.organization_id == organization.id)
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="This screen has not paired yet")
+
+    from ..services import queue_device_command
+
+    queued = await queue_device_command(screen.device_id, "remote_unlock")
+    db.add(models.KioskUnlockEvent(
+        organization_id=organization.id,
+        screen_id=screen.id,
+        method="remote",
+        success=True,
+        actor_user_id=scope.user.id,
+    ))
+    db.commit()
+    logger.info(
+        "Remote unlock queued for screen %s (org %s) by %s",
+        screen.id, organization.id, scope.user.username,
+    )
+    return schemas.RemoteUnlockResponse(queued=queued)
+
+
 @router.get("/tenants/{org_id}/screens", response_model=List[TenantScreenOut])
 def get_tenant_screens(
     org_id: int,

@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { WorkspaceLockPinCard } from '@/components/dashboard/workspace-lock-pin-card'
+import { WorkspaceLockToggleCard } from '@/components/dashboard/workspace-lock-toggle-card'
 import { useBulkSelection } from '@/hooks/use-bulk-selection'
 import { api } from '@/lib/api'
 import { bulkSummary, runBulk } from '@/lib/bulk'
@@ -297,7 +298,12 @@ export default function ScreensPage() {
         actions={canEdit ? addScreen : <Badge variant="outline">View only</Badge>}
       />
 
-      {hasKioskLock && user?.role === 'owner' && <WorkspaceLockPinCard />}
+      {hasKioskLock && user?.role === 'owner' && (
+        <div className="space-y-3">
+          <WorkspaceLockToggleCard />
+          <WorkspaceLockPinCard />
+        </div>
+      )}
 
       {/* Two groups, not six loose children: nothing here can wrap into a ragged third row. */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

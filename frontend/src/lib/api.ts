@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -215,6 +215,11 @@ export const api = {
   setWorkspaceLockPin: (lock_pin: string | null) =>
     fetchWithAuth<LockPin>('/screens/lock-pin', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lock_pin }),
+    }),
+  getWorkspaceLockEnabled: () => fetchWithAuth<LockEnabled>('/screens/lock-enabled'),
+  setWorkspaceLockEnabled: (lock_enabled: boolean) =>
+    fetchWithAuth<LockEnabled>('/screens/lock-enabled', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lock_enabled }),
     }),
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
@@ -697,6 +702,11 @@ export const adminApi = {
   getTenantScreens: (id: number) => fetchWithAuth<TenantScreen[]>(`/admin/tenants/${id}/screens`),
   getTenantContent: (id: number) => fetchWithAuth<TenantContent[]>(`/admin/tenants/${id}/content`),
   getTenantUsers: (id: number) => fetchWithAuth<TenantUser[]>(`/admin/tenants/${id}/users`),
+  // Visibility only -- see the route's own docstring for why this never lets an operator
+  // skip the PIN itself.
+  getKioskUnlockEvents: (orgId: number) => fetchWithAuth<KioskUnlockEvent[]>(`/admin/tenants/${orgId}/kiosk-events`),
+  remoteUnlockScreen: (orgId: number, screenId: number) =>
+    fetchWithAuth<{ queued: boolean }>(`/admin/tenants/${orgId}/screens/${screenId}/remote-unlock`, { method: 'POST' }),
 
   approveTenant: (id: number, body: { plan_id?: number; max_screens?: number; max_ad_slots?: number }) =>
     fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/approve`, {

@@ -317,4 +317,15 @@ interface ApiService {
         @Path("device_id") deviceId: String,
         @retrofit2.http.Part file: okhttp3.MultipartBody.Part
     ): Response<Void>
+
+    // Best-effort audit trail for the admin console -- the PIN check itself already
+    // happened locally before this call, so a failure here never affects whether the TV
+    // unlocks, only whether a super admin can see that it tried.
+    @POST("api/screens/{device_id}/kiosk-attempt")
+    suspend fun reportKioskAttempt(
+        @Path("device_id") deviceId: String,
+        @Body request: KioskAttemptRequest
+    ): Response<Unit>
 }
+
+data class KioskAttemptRequest(val success: Boolean)

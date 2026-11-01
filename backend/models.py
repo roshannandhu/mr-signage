@@ -123,6 +123,13 @@ class Organization(Base):
     # out per-TV (Screen.uses_own_pin) for a panel that needs a different code, a lobby
     # display a cleaner also has to open, say, without handing them the whole fleet's PIN.
     lock_pin = Column(String(4), nullable=True)
+    # The tenant's own on/off switch for the lock -- separate from whether their PLAN
+    # includes the feature at all (plan_features(plan)["kiosk_lock"]). Defaults off: a
+    # tenant whose plan just started selling TV lock is not retroactively trapped on
+    # every paired screen the moment an admin flips their plan; they turn it on when
+    # they're ready. The effective state a TV actually enforces is both of these ANDed
+    # together -- see routers/screens.kiosk_lock_enabled.
+    lock_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
 
     created_at = Column(UtcDateTime, nullable=False, default=utcnow)
 
@@ -1256,6 +1263,32 @@ Index(
     postgresql_where=Alert.resolved_at.is_(None),
     sqlite_where=Alert.resolved_at.is_(None),
 )
+
+
+class KioskUnlockEvent(Base):
+    """One attempt to get out of a locked TV, kept so a super admin can see it and -- when a
+    tenant is genuinely stuck -- act on it.
+
+    Two methods write this: a TV reports every local PIN attempt (right or wrong, best
+    effort, offline-tolerant -- the PIN check itself never needs the server, only this log
+    entry does) and the admin console records the moment it queues a remote unlock. No
+    foreign key to Screen for the same reason PlayLog and Alert carry none: this outlives
+    the screen row it describes.
+    """
+
+    __tablename__ = "kiosk_unlock_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    screen_id = Column(Integer, nullable=True, index=True)
+
+    occurred_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
+    # "pin": entered locally on the TV. "remote": a super admin queued it from the console.
+    method = Column(String(10), nullable=False)
+    success = Column(Boolean, nullable=False)
+    # Who queued a remote unlock. Null for a local PIN attempt -- the TV has no way to know
+    # which human typed it, and a device-signed report must not be allowed to claim one.
+    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
 
 class PlayLogHourlyRollup(Base):

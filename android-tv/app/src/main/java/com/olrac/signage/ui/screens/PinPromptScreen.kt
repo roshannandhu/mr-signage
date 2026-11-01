@@ -11,18 +11,22 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.olrac.signage.data.MaintenanceGesture
+import com.olrac.signage.data.PinAttemptLimiter
+import com.olrac.signage.telemetry.KioskAttemptReporter
+import kotlinx.coroutines.delay
 
 @Composable
 fun PinPromptScreen(
@@ -39,19 +43,44 @@ fun PinPromptScreen(
     onCancel: () -> Unit
 ) {
     BackHandler(onBack = onCancel)
+    val context = LocalContext.current
 
     var entered by remember { mutableStateOf("") }
-    var attemptsLeft by remember { mutableIntStateOf(MaintenanceGesture.MAX_PIN_ATTEMPTS) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Loaded once per reveal, not reset by it -- the whole point is that repeating the
+    // gesture does not hand out five fresh guesses.
+    var limiterState by remember { mutableStateOf(PinAttemptLimiter.load(context)) }
+    var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val cooldownRemaining = PinAttemptLimiter.cooldownRemainingMs(limiterState, nowMs)
+
+    // Ticks once a second only while a cooldown is actually counting down, so the
+    // "Xs left" message updates without the rest of the screen recomposing constantly.
+    LaunchedEffect(limiterState.cooldownUntil) {
+        while (PinAttemptLimiter.cooldownRemainingMs(limiterState, System.currentTimeMillis()) > 0) {
+            delay(1_000L)
+            nowMs = System.currentTimeMillis()
+        }
+    }
 
     fun submit() {
-        if (entered == expectedPin || (masterPin != null && entered == masterPin)) {
+        val correct = entered == expectedPin || (masterPin != null && entered == masterPin)
+        KioskAttemptReporter.report(context, correct)
+        if (correct) {
+            limiterState = PinAttemptLimiter.recordSuccess()
+            PinAttemptLimiter.save(context, limiterState)
             onUnlocked()
             return
         }
-        attemptsLeft -= 1
+        val now = System.currentTimeMillis()
+        limiterState = PinAttemptLimiter.recordFailure(limiterState, now)
+        PinAttemptLimiter.save(context, limiterState)
         entered = ""
-        if (attemptsLeft <= 0) onCancel() else error = "Incorrect pin. $attemptsLeft left."
+        nowMs = now
+        error = if (PinAttemptLimiter.cooldownRemainingMs(limiterState, now) > 0) {
+            "Too many wrong attempts."
+        } else {
+            "Incorrect pin."
+        }
     }
 
     SetupSurface {
@@ -68,10 +97,18 @@ fun PinPromptScreen(
                 entered = typed.filter { it.isDigit() }.take(4)
                 error = null
             },
+            enabled = cooldownRemaining <= 0,
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Pin") },
-            supportingText = error?.let { message -> { Text(message) } },
-            isError = error != null,
+            supportingText = run {
+                val message = if (cooldownRemaining > 0) {
+                    "Too many wrong attempts. Try again in ${cooldownRemaining / 1000 + 1}s."
+                } else {
+                    error
+                }
+                message?.let { text -> { Text(text) } }
+            },
+            isError = error != null || cooldownRemaining > 0,
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -80,7 +117,7 @@ fun PinPromptScreen(
         Spacer(modifier = Modifier.height(16.dp))
         Button(
             onClick = { submit() },
-            enabled = entered.length == 4,
+            enabled = entered.length == 4 && cooldownRemaining <= 0,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = AccentGreen, contentColor = Color.Black)
         ) {

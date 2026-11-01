@@ -172,6 +172,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // Runs for the whole life of the Activity, unlike the gate loop above: a remote
+            // unlock can arrive at any time, not only during setup. Checked here rather than
+            // only in onResume because a device-owner TV resuming into lock task does not
+            // always re-run onResume the instant PlaybackService sets the flag.
+            LaunchedEffect(Unit) {
+                val prefs = getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+                while (true) {
+                    if (prefs.getBoolean(PREF_PENDING_REMOTE_UNLOCK, false)) {
+                        prefs.edit().putBoolean(PREF_PENDING_REMOTE_UNLOCK, false).apply()
+                        if (!showPinPrompt && !showServerSetup) {
+                            android.util.Log.i("MainActivity", "Applying a remote unlock")
+                            enterMaintenance()
+                            showServerSetup = true
+                        }
+                    }
+                    delay(2_000L)
+                }
+            }
+
             if (showPinPrompt) {
                 PinPromptScreen(
                     expectedPin = deviceState.maintenancePin,
@@ -1207,6 +1226,10 @@ class MainActivity : ComponentActivity() {
         // v3: 1.0.28 gated the ask off for TVs; re-open it for the KONKA test.
         private const val PREF_HOME_ROLE_ASKED_AT = "home_role_asked_v3_at"
         const val PREF_HOME_ROLE_RESULT = "home_role_request_result"
+        /** Set by the command poll in PlaybackService on a "remote_unlock" command; consumed
+         *  by the polling LaunchedEffect below, which opens maintenance as if the PIN had
+         *  just been entered correctly. */
+        const val PREF_PENDING_REMOTE_UNLOCK = "pending_remote_unlock"
 
         /** Whether the player is on screen. Read by PlaybackService, which shares the process. */
         @Volatile var visible = false
