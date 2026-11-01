@@ -596,6 +596,84 @@ async def remote_unlock_screen(
     return schemas.RemoteUnlockResponse(queued=queued)
 
 
+class AdminProvisioningRequest(BaseModel):
+    wifi_ssid: str = Field(min_length=1, max_length=64)
+    wifi_password: str = Field(default="", max_length=128)
+    wifi_security_type: str = "WPA"
+    max_uses: int = Field(default=1, ge=1, le=1000)
+
+
+@router.post("/tenants/{org_id}/provisioning/qr")
+def generate_tenant_provisioning_qr(
+    org_id: int,
+    req: AdminProvisioningRequest,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Zero-touch provisioning for a TENANT the operator chooses explicitly.
+
+    The tenant-facing POST /api/provisioning/qr (routers/provisioning.py) binds the
+    enrollment token to scope.organization_id -- correct for an owner setting up their
+    own fleet, wrong for an operator doing it on a tenant's behalf from the admin console,
+    where there is no "Enter workspace" step and so no acting org to fall back to; it
+    would otherwise mint a token bound to the OPERATOR's own house organisation, and the
+    TV would enrol into the wrong tenant's workspace. This route takes the target
+    explicitly instead of inferring it from the caller.
+    """
+    import secrets
+
+    organization = _get_org(db, org_id)
+    if organization.deleted_at is not None:
+        raise HTTPException(status_code=409, detail="This workspace has been removed.")
+
+    cert_hash = os.getenv("PROVISIONING_CERT_SHA256_BASE64")
+    apk_url = os.getenv("PROVISIONING_APK_URL")
+    base_url = os.getenv("PUBLIC_BASE_URL")
+    if not cert_hash or not apk_url or not base_url:
+        missing = [
+            name for name, value in (
+                ("PROVISIONING_CERT_SHA256_BASE64", cert_hash),
+                ("PROVISIONING_APK_URL", apk_url),
+                ("PUBLIC_BASE_URL", base_url),
+            ) if not value
+        ]
+        raise HTTPException(
+            status_code=503,
+            detail=f"Provisioning is not configured yet. Set {', '.join(missing)} in .env and restart the API.",
+        )
+
+    token = models.EnrollmentToken(
+        organization_id=organization.id,
+        token=secrets.token_urlsafe(32),
+        description=f"Admin-generated provisioning QR for {organization.name} (site {req.wifi_ssid})",
+        is_active=True,
+        max_uses=req.max_uses,
+    )
+    db.add(token)
+    # The token itself is a bearer credential; never in the audit trail, only that one
+    # was minted and for whom -- the same rule the secret-shaped fields in audit.py apply.
+    _audit(db, scope, request, "tenant.provisioning_qr", org=organization, target_type="enrollment_token",
+           after={"wifi_ssid": req.wifi_ssid, "max_uses": req.max_uses})
+    db.commit()
+    db.refresh(token)
+
+    return {
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME": "com.olrac.signage/.receivers.SignageDeviceAdminReceiver",
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION": apk_url,
+        "android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM": cert_hash,
+        "android.app.extra.PROVISIONING_WIFI_SSID": req.wifi_ssid,
+        "android.app.extra.PROVISIONING_WIFI_PASSWORD": req.wifi_password,
+        "android.app.extra.PROVISIONING_WIFI_SECURITY_TYPE": req.wifi_security_type,
+        "android.app.extra.PROVISIONING_SKIP_ENCRYPTION": True,
+        "android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED": True,
+        "android.app.extra.PROVISIONING_ADMIN_EXTRAS_BUNDLE": {
+            "enrollment_token": token.token,
+            "api_base_url": base_url,
+        },
+    }
+
+
 @router.get("/tenants/{org_id}/screens", response_model=List[TenantScreenOut])
 def get_tenant_screens(
     org_id: int,
