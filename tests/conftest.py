@@ -108,6 +108,8 @@ ISOLATED_SCRIPTS = {
     # "View workspace (read-only)" refuses every write: a static sweep of every write
     # route plus live checks across clients, playlists, branding and billing.
     "test_act_as_read_only.py",
+    # Mission Control: numbers correct, cache works, query count flat regardless of tenant count.
+    "test_admin_overview.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -345,6 +347,8 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     # "View workspace (read-only)" refuses every write: a static sweep of every write
     # route plus live checks across clients, playlists, branding and billing.
     "test_act_as_read_only.py",
+    # Mission Control: numbers correct, cache works, query count flat regardless of tenant count.
+    "test_admin_overview.py",
 }
 
 

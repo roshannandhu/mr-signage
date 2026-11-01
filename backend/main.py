@@ -747,7 +747,8 @@ async def health_check(db: Session = Depends(database.get_db)):
 # One import, at the point of use. There were two of these -- an identical line at the
 # top of the file and this one -- so adding a router meant remembering to edit both.
 from .routers import (
-    admin, alerts, analytics, auth, billing, branding, clients, content, device_diagnostics, emergency, enrollment_tokens,
+    admin, admin_overview, alerts, analytics, auth, billing, branding, clients, content, device_diagnostics,
+    emergency, enrollment_tokens,
     groups, placements, playlists, provisioning, releases, screens, screenshots,
     tenant_plans, users, websockets,
 )
@@ -767,6 +768,7 @@ async def platform_health(
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_overview.router, prefix="/api/admin", tags=["admin"])
 app.include_router(screens.router, prefix="/api/screens", tags=["screens"])
 app.include_router(device_diagnostics.router, prefix="/api/screens", tags=["screens"])
 app.include_router(groups.router, prefix="/api/groups", tags=["groups"])
