@@ -306,7 +306,7 @@ export default function AdDetailPage() {
           icon: Film,
           value: (report?.lifetime.total_plays ?? 0).toLocaleString(),
           note: report?.lifetime.total_plays
-            ? `${report.lifetime.success_percent}% completed`
+            ? `${report.lifetime.online_plays.toLocaleString()} online · ${report.lifetime.offline_plays.toLocaleString()} offline`
             : 'No plays recorded yet',
         },
       ]

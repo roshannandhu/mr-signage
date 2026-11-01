@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [PlaylistItemEntity::class, PlayEventEntity::class], version = 8, exportSchema = false)
+@Database(entities = [PlaylistItemEntity::class, PlayEventEntity::class], version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
     abstract fun playEventDao(): PlayEventDao
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "signage_database"
                 ).addMigrations(
                     MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6,
-                    MIGRATION_6_7, MIGRATION_7_8
+                    MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
                 ).build()
                 INSTANCE = instance
                 instance
@@ -86,6 +86,15 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE play_events ADD COLUMN clockOffsetMs INTEGER")
+            }
+        }
+
+        // Nullable, same reasoning as clockOffsetMs above: a play already queued before this
+        // update was never asked whether it was offline, so null is the honest value for it,
+        // not a guessed true or false.
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE play_events ADD COLUMN playedOffline INTEGER")
             }
         }
 

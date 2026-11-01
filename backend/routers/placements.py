@@ -1552,13 +1552,16 @@ def build_booking_report(scope: TenantScope, placement: models.AdPlacement) -> d
         func.coalesce(func.sum(models.PlayLogHourlyRollup.total_plays), 0),
         func.coalesce(func.sum(models.PlayLogHourlyRollup.completed_plays), 0),
         func.coalesce(func.sum(models.PlayLogHourlyRollup.error_plays), 0),
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.offline_plays), 0),
     ).filter(*window).one()
-    total, completed, errors = totals_row
+    total, completed, errors, offline = totals_row
     totals = {
         "total_plays": total,
         "completed_plays": completed,
         "error_plays": errors,
         "success_percent": round(completed / total * 100, 1) if total else 0.0,
+        "online_plays": max(0, total - offline),
+        "offline_plays": offline,
     }
 
     counts = dict(

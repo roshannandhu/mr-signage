@@ -58,7 +58,10 @@ export default function CampaignAnalyticsPage() {
     { label: 'Assigned screens', value: info.assigned_screens.toLocaleString(), icon: MonitorPlay, note: `${info.online} online · ${info.currently_playing} playing` },
     { label: 'Plays today', value: stats.today.total_plays.toLocaleString(), icon: BarChart3, note: `${stats.today.success_percent}% successful` },
     { label: 'Plays this week', value: stats.week.total_plays.toLocaleString(), icon: BarChart3, note: `${stats.week.success_percent}% successful` },
-    { label: 'Lifetime plays', value: stats.lifetime.total_plays.toLocaleString(), icon: CheckCircle2, note: `${stats.lifetime.success_percent}% successful` },
+    {
+      label: 'Lifetime plays', value: stats.lifetime.total_plays.toLocaleString(), icon: CheckCircle2,
+      note: `${stats.lifetime.online_plays.toLocaleString()} online · ${stats.lifetime.offline_plays.toLocaleString()} offline`,
+    },
   ]
 
   return (

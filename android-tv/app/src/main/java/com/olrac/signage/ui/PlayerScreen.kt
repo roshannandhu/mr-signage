@@ -300,7 +300,8 @@ private fun DualSurfacePlayer(
             durationMs = durationMs,
             status = recorded.status,
             errorMessage = recorded.errorMessage,
-            clockOffsetMs = effectiveOffset
+            clockOffsetMs = effectiveOffset,
+            playedOffline = !com.olrac.signage.network.ConnectivityWatcher.isOnline(context)
         )
 
         val dao = com.olrac.signage.data.AppDatabase.getDatabase(context).playEventDao()
@@ -687,6 +688,9 @@ private suspend fun recoverInterruptedPlay(context: android.content.Context) {
         status = PlayCompletion.status(PlayEndReason.INTERRUPTED, finalError),
         errorMessage = finalError,
         clockOffsetMs = effectiveOffset
+        // playedOffline left null (the default): this is a play recovered after the app
+        // restarted, not one observed finishing -- connectivity right now says nothing
+        // about whether the network was up at the moment it actually ended.
     )
     com.olrac.signage.data.AppDatabase.getDatabase(context).playEventDao().insert(event)
     Log.i(TAG, "Recovered interrupted play for item $itemId (${event.durationMs}ms)")

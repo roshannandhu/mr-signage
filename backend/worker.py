@@ -99,6 +99,13 @@ STUCK_AFTER = timedelta(minutes=10)
 MAX_PROCESSING_ATTEMPTS = 3
 
 
+# How long a play may sit on the device before aggregation assumes it was offline, for the
+# plays whose TV app never said either way (played_offline is null). A TV with a live
+# connection uploads within seconds of a play finishing; a half-hour gap is the device
+# queuing it because it had nothing to upload TO.
+OFFLINE_UPLOAD_GAP = timedelta(minutes=30)
+
+
 def is_transient_storage_error(exc: BaseException) -> bool:
     """Whether an exception is the object store or the network having a bad moment.
 
@@ -691,7 +698,7 @@ def _aggregate_play_logs_portable(db) -> None:
         # A plain dict key is already NULL-safe, which is what IS NOT DISTINCT FROM buys
         # on the Postgres path.
         totals = buckets.setdefault(
-            key, {"total": 0, "completed": 0, "partial": 0, "error": 0, "duration": 0}
+            key, {"total": 0, "completed": 0, "partial": 0, "error": 0, "duration": 0, "offline": 0}
         )
         totals["total"] += 1
         if log.status == "completed":
@@ -701,6 +708,11 @@ def _aggregate_play_logs_portable(db) -> None:
         elif log.status == "error":
             totals["error"] += 1
         totals["duration"] += log.duration_ms or 0
+        if log.played_offline is True or (
+            log.played_offline is None and log.received_at and log.corrected_finished_at
+            and log.received_at - log.corrected_finished_at > OFFLINE_UPLOAD_GAP
+        ):
+            totals["offline"] += 1
         log.aggregated = True
 
     for (org_id, campaign_id, screen_id, media_id, hour), totals in buckets.items():
@@ -729,6 +741,7 @@ def _aggregate_play_logs_portable(db) -> None:
                 partial_plays=totals["partial"],
                 error_plays=totals["error"],
                 duration_ms=totals["duration"],
+                offline_plays=totals["offline"],
             ))
         else:
             row.total_plays += totals["total"]
@@ -736,6 +749,7 @@ def _aggregate_play_logs_portable(db) -> None:
             row.partial_plays += totals["partial"]
             row.error_plays += totals["error"]
             row.duration_ms = (row.duration_ms or 0) + totals["duration"]
+            row.offline_plays = (row.offline_plays or 0) + totals["offline"]
 
 
 def aggregate_play_logs_sync(db: SessionLocal) -> int:
@@ -767,25 +781,31 @@ def aggregate_play_logs_sync(db: SessionLocal) -> int:
                 RETURNING *
             ),
             agg AS (
-                SELECT 
-                    organization_id, campaign_id, screen_id, media_id, 
+                SELECT
+                    organization_id, campaign_id, screen_id, media_id,
                     date_trunc('hour', corrected_started_at) AS date_hour,
                     COUNT(*) AS total_plays,
                     SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_plays,
                     SUM(CASE WHEN status = 'partial' THEN 1 ELSE 0 END) AS partial_plays,
                     SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_plays,
-                    SUM(duration_ms) AS duration_ms
+                    SUM(duration_ms) AS duration_ms,
+                    -- Explicitly offline, or unlabelled and uploaded more than
+                    -- OFFLINE_UPLOAD_GAP after the play finished.
+                    SUM(CASE WHEN played_offline IS TRUE
+                             OR (played_offline IS NULL AND received_at - corrected_finished_at > INTERVAL '30 minutes')
+                        THEN 1 ELSE 0 END) AS offline_plays
                 FROM to_aggregate
                 GROUP BY organization_id, campaign_id, screen_id, media_id, date_trunc('hour', corrected_started_at)
             ),
             updated AS (
                 UPDATE play_log_hourly_rollups p
-                SET 
+                SET
                     total_plays = p.total_plays + agg.total_plays,
                     completed_plays = p.completed_plays + agg.completed_plays,
                     partial_plays = p.partial_plays + agg.partial_plays,
                     error_plays = p.error_plays + agg.error_plays,
-                    duration_ms = p.duration_ms + agg.duration_ms
+                    duration_ms = p.duration_ms + agg.duration_ms,
+                    offline_plays = p.offline_plays + agg.offline_plays
                 FROM agg
                 WHERE p.organization_id = agg.organization_id
                   AND p.screen_id = agg.screen_id
@@ -795,12 +815,12 @@ def aggregate_play_logs_sync(db: SessionLocal) -> int:
                 RETURNING p.organization_id, p.campaign_id, p.screen_id, p.media_id, p.date_hour
             )
             INSERT INTO play_log_hourly_rollups (
-                organization_id, campaign_id, screen_id, media_id, date_hour, 
-                total_plays, completed_plays, partial_plays, error_plays, duration_ms
+                organization_id, campaign_id, screen_id, media_id, date_hour,
+                total_plays, completed_plays, partial_plays, error_plays, duration_ms, offline_plays
             )
-            SELECT 
+            SELECT
                 agg.organization_id, agg.campaign_id, agg.screen_id, agg.media_id, agg.date_hour,
-                agg.total_plays, agg.completed_plays, agg.partial_plays, agg.error_plays, agg.duration_ms
+                agg.total_plays, agg.completed_plays, agg.partial_plays, agg.error_plays, agg.duration_ms, agg.offline_plays
             FROM agg
             LEFT JOIN updated u
             ON agg.organization_id = u.organization_id

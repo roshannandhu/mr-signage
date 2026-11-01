@@ -350,6 +350,8 @@ export interface CampaignInfo extends Campaign {
 export interface CampaignPeriodStats {
   total_plays: number
   success_percent: number
+  online_plays: number
+  offline_plays: number
 }
 
 export interface CampaignStats {
@@ -393,6 +395,8 @@ export interface MediaPeriodStats {
   completed_plays: number
   error_plays: number
   success_percent: number
+  online_plays: number
+  offline_plays: number
 }
 
 export interface MediaScreenRow {
@@ -405,6 +409,8 @@ export interface MediaScreenRow {
   total_plays: number
   completed_plays: number
   error_plays: number
+  online_plays: number
+  offline_plays: number
   last_played: string | null
 }
 

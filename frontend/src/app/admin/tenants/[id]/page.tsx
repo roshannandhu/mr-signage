@@ -34,6 +34,10 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
     queryKey: ['admin', 'tenant', tenantId],
     queryFn: () => adminApi.getTenant(tenantId),
   })
+  const playsQuery = useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'plays'],
+    queryFn: () => adminApi.getTenantPlays(tenantId),
+  })
   const screensQuery = useQuery({
     queryKey: ['admin', 'tenant', tenantId, 'screens'],
     queryFn: () => adminApi.getTenantScreens(tenantId),
@@ -90,7 +94,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl border border-border bg-muted p-4">
               <p className="mb-2 text-xs text-muted-foreground">TV screens</p>
               <QuotaBar used={tenant.screens_count} max={tenant.max_screens} />
@@ -109,6 +113,13 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
               </p>
               <p className="mt-2 text-xs text-muted-foreground">
                 Joined {tenant.created_at ? new Date(tenant.created_at).toLocaleDateString() : '—'}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-muted p-4">
+              <p className="mb-2 text-xs text-muted-foreground">Ad plays, last 30 days</p>
+              <p className="text-sm font-semibold">{(playsQuery.data?.total_plays ?? 0).toLocaleString()}</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {playsQuery.isLoading ? 'Loading…' : `${(playsQuery.data?.online_plays ?? 0).toLocaleString()} online · ${(playsQuery.data?.offline_plays ?? 0).toLocaleString()} offline`}
               </p>
             </div>
           </div>

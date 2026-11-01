@@ -508,7 +508,10 @@ def build_pdf(report: dict) -> bytes:
     story.append(_tiles(style, [
         ("Campaign period", f"{_date(report['starts_at'])}<br/>to {_date(ends_at)}", "Start to end"),
         ("Total locations", str(len(report["per_location"])), "Active locations"),
-        ("Total ad plays", f"{totals['total_plays']:,}", "Verified count"),
+        (
+            "Total ad plays", f"{totals['total_plays']:,}",
+            f"{totals.get('online_plays', totals['total_plays']):,} online &#183; {totals.get('offline_plays', 0):,} offline",
+        ),
         # Total on-screen exposure: plays x the creative's real length. The headline number a
         # client wants -- how long their advert was actually up. Completion % moved to its own
         # card below, so no duplication. Not "Amount paid": what they owe is on the invoice.

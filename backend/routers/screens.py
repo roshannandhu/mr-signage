@@ -2035,7 +2035,8 @@ def batch_upload_play_logs(
             "duration_ms": ev.duration_ms,
             "status": ev.status,
             "error_message": ev.error_message,
-            "received_at": now
+            "received_at": now,
+            "played_offline": ev.played_offline,
         })
         
     stmt = insert(models.PlayLog).values(values)

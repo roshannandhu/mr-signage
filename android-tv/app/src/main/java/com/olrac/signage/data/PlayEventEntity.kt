@@ -32,5 +32,15 @@ data class PlayEventEntity(
      * one stamped with no offset is corrected with the offset learned since. See
      * ProofOfPlayWorker.
      */
-    val clockOffsetMs: Long? = null
+    val clockOffsetMs: Long? = null,
+    /**
+     * Whether the TV had a live network connection the moment this play finished.
+     *
+     * Nullable for the same reason clockOffsetMs is: a row recorded before this column
+     * existed has no honest answer, and null says that rather than guessing. The upload
+     * side (ProofOfPlayWorker) estimates one for those from the gap between when the play
+     * finished and when it was finally uploaded, exactly as the server does for an app too
+     * old to send this at all.
+     */
+    val playedOffline: Boolean? = null
 )

@@ -23,6 +23,7 @@ from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import database, models, schemas
@@ -409,6 +410,36 @@ def get_tenant(
     db: Session = Depends(database.get_db),
 ):
     return _summarise(db, _get_org(db, org_id))
+
+
+class TenantPlaysOut(BaseModel):
+    total_plays: int
+    online_plays: int
+    offline_plays: int
+
+
+@router.get("/tenants/{org_id}/plays", response_model=TenantPlaysOut)
+def get_tenant_plays(
+    org_id: int,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """The last 30 days, fleet-wide -- not the per-campaign or per-advert breakdown the
+    tenant's own reports show, just enough for an operator to tell a quiet tenant from a
+    working one at a glance. A separate route, not a field on TenantSummaryOut: that schema
+    also serves the tenants LIST, and summing rollups for every row on one page is exactly
+    the kind of query this app's database (Supabase, ~114ms/round trip) cannot afford N times.
+    """
+    _get_org(db, org_id)
+    since = models.utcnow() - timedelta(days=30)
+    total, offline = db.query(
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.total_plays), 0),
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.offline_plays), 0),
+    ).filter(
+        models.PlayLogHourlyRollup.organization_id == org_id,
+        models.PlayLogHourlyRollup.date_hour >= since,
+    ).one()
+    return TenantPlaysOut(total_plays=total, online_plays=max(0, total - offline), offline_plays=offline)
 
 
 @router.get("/tenants/{org_id}/screens", response_model=List[TenantScreenOut])

@@ -1173,13 +1173,18 @@ class PlayLog(Base):
     corrected_finished_at = Column(UtcDateTime, nullable=False)
 
     duration_ms = Column(Integer, nullable=False)
-    
+
     # "completed", "partial", "error"
     status = Column(String, nullable=False)
     error_message = Column(Text, nullable=True)
 
     received_at = Column(UtcDateTime, nullable=False, default=utcnow)
     aggregated = Column(Boolean, nullable=False, default=False, index=True)
+    # Whether the TV had a live connection the moment this play finished. Null when the app
+    # that sent it predates this column, or hasn't learned its own answer yet (a row queued
+    # before the device's own app update) -- aggregate_play_logs_sync then estimates it from
+    # how long the play sat on the device before finally being uploaded.
+    played_offline = Column(Boolean, nullable=True)
 
 from sqlalchemy import Index, func
 Index("ix_play_logs_org_started_at", PlayLog.organization_id, PlayLog.corrected_started_at)
@@ -1261,6 +1266,11 @@ class PlayLogHourlyRollup(Base):
     partial_plays = Column(Integer, nullable=False, default=0)
     error_plays = Column(Integer, nullable=False, default=0)
     duration_ms = Column(BigInteger, nullable=False, default=0)
+    # Of total_plays, how many happened with no live connection -- PlayLog.played_offline
+    # TRUE, or NULL and uploaded more than 30 minutes after it finished (worker.py's
+    # OFFLINE_UPLOAD_GAP). online = total_plays - offline_plays; never stored separately,
+    # the same way completed/partial/error are never cross-checked against total either.
+    offline_plays = Column(Integer, nullable=False, default=0, server_default="0")
 
 # COALESCE, not the bare columns. campaign_id and media_id are both nullable, and Postgres
 # treats NULLs as distinct in a unique index -- so on the bare columns this index enforced

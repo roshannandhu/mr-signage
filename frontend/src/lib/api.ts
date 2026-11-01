@@ -684,6 +684,8 @@ export const adminApi = {
   listTenants: (status?: string) =>
     fetchWithAuth<TenantSummary[]>(`/admin/tenants${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   getTenant: (id: number) => fetchWithAuth<TenantSummary>(`/admin/tenants/${id}`),
+  // Fleet-wide, last 30 days -- not the tenants LIST, which must stay cheap.
+  getTenantPlays: (id: number) => fetchWithAuth<{ total_plays: number; online_plays: number; offline_plays: number }>(`/admin/tenants/${id}/plays`),
   getTenantScreens: (id: number) => fetchWithAuth<TenantScreen[]>(`/admin/tenants/${id}/screens`),
   getTenantContent: (id: number) => fetchWithAuth<TenantContent[]>(`/admin/tenants/${id}/content`),
   getTenantUsers: (id: number) => fetchWithAuth<TenantUser[]>(`/admin/tenants/${id}/users`),

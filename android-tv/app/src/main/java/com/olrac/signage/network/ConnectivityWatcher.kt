@@ -32,4 +32,16 @@ class ConnectivityWatcher(
         runCatching { connectivityManager.unregisterNetworkCallback(callback) }
         registered = false
     }
+
+    companion object {
+        /** A point-in-time check, for stamping a play as online/offline the moment it
+         * finishes -- the long-lived watcher above is for a different question ("tell me
+         * when the network comes BACK"), not "was it up just now". */
+        fun isOnline(context: Context): Boolean {
+            val manager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val network = manager.activeNetwork ?: return false
+            val capabilities = manager.getNetworkCapabilities(network) ?: return false
+            return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        }
+    }
 }

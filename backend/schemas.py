@@ -1036,6 +1036,10 @@ class PlayEventItem(BaseModel):
     duration_ms: int
     status: Literal["completed", "partial", "error"]
     error_message: Optional[str] = None
+    # Null for a TV app built before this field existed, or a play it genuinely never
+    # learned the answer for -- aggregation estimates those from the upload gap instead of
+    # guessing per-event.
+    played_offline: Optional[bool] = None
 
 
 class PlayLogBatchRequest(BaseModel):

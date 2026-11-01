@@ -108,7 +108,8 @@ def get_campaign_stats(
         query = db.query(
             func.sum(PlayLogHourlyRollup.total_plays),
             func.sum(PlayLogHourlyRollup.completed_plays),
-            func.sum(PlayLogHourlyRollup.error_plays)
+            func.sum(PlayLogHourlyRollup.error_plays),
+            func.sum(PlayLogHourlyRollup.offline_plays)
         ).filter(
             PlayLogHourlyRollup.organization_id == tenant.organization_id,
             PlayLogHourlyRollup.campaign_id == campaign_id,
@@ -124,7 +125,8 @@ def get_campaign_stats(
     lifetime = db.query(
         func.sum(PlayLogHourlyRollup.total_plays),
         func.sum(PlayLogHourlyRollup.completed_plays),
-        func.sum(PlayLogHourlyRollup.error_plays)
+        func.sum(PlayLogHourlyRollup.error_plays),
+        func.sum(PlayLogHourlyRollup.offline_plays)
     ).filter(
         PlayLogHourlyRollup.organization_id == tenant.organization_id,
         PlayLogHourlyRollup.campaign_id == campaign_id
@@ -134,10 +136,15 @@ def get_campaign_stats(
         total = row[0] or 0
         completed = row[1] or 0
         error = row[2] or 0
+        offline = row[3] or 0
         success_pct = (completed / total * 100) if total > 0 else 0
         return {
             "total_plays": total,
-            "success_percent": round(success_pct, 1)
+            "success_percent": round(success_pct, 1),
+            # offline_plays is the counted/estimated subset; online is simply what's left,
+            # the same way completed/error are never reconciled against total either.
+            "online_plays": max(0, total - offline),
+            "offline_plays": offline,
         }
 
     return {
@@ -310,18 +317,21 @@ def get_media_report(
             func.coalesce(func.sum(PlayLogHourlyRollup.total_plays), 0),
             func.coalesce(func.sum(PlayLogHourlyRollup.completed_plays), 0),
             func.coalesce(func.sum(PlayLogHourlyRollup.error_plays), 0),
+            func.coalesce(func.sum(PlayLogHourlyRollup.offline_plays), 0),
         ).filter(
             PlayLogHourlyRollup.organization_id == target_org_id,
             PlayLogHourlyRollup.media_id == content_id,
         )
         if since is not None:
             query = query.filter(PlayLogHourlyRollup.date_hour >= since)
-        total, completed, errors = query.one()
+        total, completed, errors, offline = query.one()
         return {
             "total_plays": total,
             "completed_plays": completed,
             "error_plays": errors,
             "success_percent": round(completed / total * 100, 1) if total else 0.0,
+            "online_plays": max(0, total - offline),
+            "offline_plays": offline,
         }
 
     # Every screen in the fleet, whether or not it has played this advert yet. An inner
@@ -339,6 +349,7 @@ def get_media_report(
             func.coalesce(func.sum(PlayLogHourlyRollup.total_plays), 0).label("plays"),
             func.coalesce(func.sum(PlayLogHourlyRollup.completed_plays), 0).label("completed"),
             func.coalesce(func.sum(PlayLogHourlyRollup.error_plays), 0).label("errors"),
+            func.coalesce(func.sum(PlayLogHourlyRollup.offline_plays), 0).label("offline"),
             func.max(PlayLogHourlyRollup.date_hour).label("last_played"),
         )
         .outerjoin(
@@ -370,6 +381,8 @@ def get_media_report(
             "total_plays": row.plays,
             "completed_plays": row.completed,
             "error_plays": row.errors,
+            "online_plays": max(0, row.plays - row.offline),
+            "offline_plays": row.offline,
             "last_played": row.last_played.isoformat() if row.last_played else None,
         }
         for row in per_screen_rows
