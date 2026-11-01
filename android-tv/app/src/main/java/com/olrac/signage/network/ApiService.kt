@@ -186,7 +186,13 @@ data class SyncResponse(
     // which a paired TV never shows again.
     val brand_name: String? = null,
     val brand_logo_url: String? = null,
-    val brand_color: String? = null
+    val brand_color: String? = null,
+    // Nullable, not a Kotlin default: Gson's reflective Kotlin instantiation does not run
+    // the constructor for a field missing from the response, so a plain `Boolean = true`
+    // here would read as false -- the opposite of "an old server means stay locked" -- the
+    // moment this field did not exist yet on the server. Resolved explicitly at the call
+    // site (`?: true`) instead.
+    val kiosk_lock: Boolean? = null
 )
 
 data class AppVersionDto(

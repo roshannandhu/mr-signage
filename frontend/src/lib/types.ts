@@ -147,6 +147,8 @@ export interface Screen {
   fit_mode?: FitMode
   /** Unlocks the player's on-TV maintenance screen. Four digits, per screen. */
   maintenance_pin?: string | null
+  /** Keeps this screen on its own PIN even when the workspace has set a shared one. */
+  uses_own_pin?: boolean
   sync_playback?: boolean
   sync_role?: SyncRole
   leader_screen_id?: number | null
@@ -178,7 +180,8 @@ export interface Screen {
    * null = the player has not reported yet (an older build).
    */
   device_owner?: boolean | null
-  /** What actually opens the maintenance door: this screen's PIN, else the platform one. */
+  /** What actually opens the maintenance door: this screen's own PIN, or the workspace
+   *  PIN if one is set and this screen has not opted to keep its own. */
   effective_maintenance_pin?: string | null
   android_version: string | null
   sdk_int: number | null
@@ -468,6 +471,12 @@ export interface Branding {
   logo_url: string | null
   /** What the report actually prints, once the workspace-name fallback is applied. */
   effective_name: string
+}
+
+/** The one PIN that can cover every screen in the workspace. Null means unset -- every
+ *  screen stays on its own PIN, today's only behaviour. */
+export interface LockPin {
+  lock_pin: string | null
 }
 
 /** An advertiser this tenant sells to. Reusable across bookings, unlike a typed-in name. */

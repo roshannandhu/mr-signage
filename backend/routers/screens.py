@@ -76,7 +76,7 @@ from ..services import (
     issue_device_secret,
 )
 from ..services.device_auth_service import DEVICE_TOKEN_TYPE
-from ..billing import serving_block_reason
+from ..billing import serving_block_reason, plan_features
 
 
 
@@ -142,13 +142,38 @@ UNIVERSAL_PIN_KEY = "universal_maintenance_pin"
 
 
 def effective_maintenance_pin(db: Session, screen) -> str | None:
-    """The screen's own maintenance PIN.
+    """The PIN this screen's maintenance prompt actually accepts, feature-gated workspace
+    PIN first.
 
-    Every screen has one: the column is NOT NULL with a random default, deliberately per
-    screen so that one leaked code does not open the whole fleet. This is the code a TENANT
-    uses on their own wall.
+    Every screen has its own maintenance_pin: the column is NOT NULL with a random default,
+    deliberately per screen so that one leaked code does not open the whole fleet on its
+    own. An owner may additionally set ONE workspace PIN (Organization.lock_pin) that
+    covers every screen at once -- simpler for a venue with many panels than memorising one
+    code per wall -- unless that particular screen opted back out (Screen.uses_own_pin),
+    for the one panel that needs to stay on its own code. Resolution order matches today's
+    behaviour exactly when no workspace PIN is set, so setting one is the only way anything
+    here changes for an existing tenant.
     """
-    return (getattr(screen, "maintenance_pin", None) or "").strip() or None
+    own_pin = (getattr(screen, "maintenance_pin", None) or "").strip() or None
+    if getattr(screen, "uses_own_pin", False):
+        return own_pin
+    organization = getattr(screen, "organization", None)
+    workspace_pin = (getattr(organization, "lock_pin", None) or "").strip() or None
+    return workspace_pin or own_pin
+
+
+def kiosk_lock_enabled(screen) -> bool:
+    """Whether this screen's tenant plan sells the TV lock feature at all.
+
+    False is the "not granted" default every other Phase 3.1 feature flag uses for a plan
+    that never set the key -- Free gets no lock, Starter and Business do, by the seeded
+    defaults. A screen with no organisation (never paired) has no plan either, so it reads
+    as unlocked rather than raising.
+    """
+    organization = getattr(screen, "organization", None)
+    if organization is None or organization.plan is None:
+        return False
+    return bool(plan_features(organization.plan).get("kiosk_lock", False))
 
 
 def master_maintenance_pin(db: Session) -> str | None:
@@ -1330,11 +1355,14 @@ async def get_screens(
             update={
                 "latest_screenshot": shots.get(screen.id),
                 "effective_playlist_id": screen.resolve_playlist_id(groups),
-                # What opens the maintenance door on THIS screen: its own PIN, and only that.
+                # What opens the maintenance door on THIS screen: its own PIN, or the
+                # workspace PIN if one is set and this screen has not opted out of it --
+                # same resolution effective_maintenance_pin() gives the TV itself, so the
+                # dashboard never shows a code that would not actually open the panel.
                 # This used to fall back to the platform operator's master code for a screen
                 # with a blank PIN, which put the one code that opens EVERY screen in front of
                 # a tenant -- the opposite of what the master code is for.
-                "effective_maintenance_pin": (screen.maintenance_pin or "").strip() or None,
+                "effective_maintenance_pin": effective_maintenance_pin(scope.db, screen),
                 **hidden,
             }
         )
@@ -1388,6 +1416,33 @@ def _latest_screenshots(scope: TenantScope, screens) -> dict[int, str]:
     ).all()
 
     return {screen_id: resolve_media_url(file_url) for screen_id, file_url in rows}
+
+
+# Declared before PUT /{screen_id} below: Starlette matches in definition order, and a
+# literal path registered after a parameterised one of the same method is shadowed by it --
+# "lock-pin" would be read as screen_id, exactly the ordering bug the dashboard websocket
+# route already documents.
+@router.get("/lock-pin", response_model=schemas.LockPinResponse)
+def get_workspace_lock_pin(
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    return schemas.LockPinResponse(lock_pin=scope.organization.lock_pin)
+
+
+@router.put("/lock-pin", response_model=schemas.LockPinResponse)
+def set_workspace_lock_pin(
+    payload: schemas.LockPinUpdate,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    """The one PIN that covers every screen in the workspace at once, unless a screen has
+    opted to keep its own (Screen.uses_own_pin). See effective_maintenance_pin.
+    """
+    organization = scope.organization
+    organization.lock_pin = payload.lock_pin
+    scope.db.commit()
+    return schemas.LockPinResponse(lock_pin=organization.lock_pin)
 
 
 @router.put("/{screen_id}", response_model=schemas.ScreenResponse)
@@ -1456,6 +1511,7 @@ def patch_screen(
         "leader_screen_id",
         "operating_mode",
         "operating_hours",
+        "uses_own_pin",
     ):
         if field in fields:
             setattr(db_screen, field, getattr(patch, field))
@@ -1850,6 +1906,7 @@ async def sync_tv(
             brand_name=screen.organization.brand_name if screen.organization else None,
             brand_logo_url=resolve_media_url(screen.organization.logo_url) if screen.organization else None,
             brand_color=screen.organization.brand_color if screen.organization else None,
+            kiosk_lock=kiosk_lock_enabled(screen),
         )
 
     playlist_id = resolve_screen_playlist(screen, db)
@@ -1958,6 +2015,7 @@ async def sync_tv(
         brand_name=screen.organization.brand_name if screen.organization else None,
         brand_logo_url=resolve_media_url(screen.organization.logo_url) if screen.organization else None,
         brand_color=screen.organization.brand_color if screen.organization else None,
+        kiosk_lock=kiosk_lock_enabled(screen),
     )
 
 

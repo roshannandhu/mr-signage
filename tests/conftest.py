@@ -95,6 +95,8 @@ ISOLATED_SCRIPTS = {
     "test_dashboard_ws_act_as.py",
     # The TV's sync response carries the tenant's own brand, never the raw org name.
     "test_sync_branding.py",
+    # Workspace lock PIN resolution, per-screen opt-out, and the kiosk_lock feature gate.
+    "test_kiosk_lock_pin.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -324,6 +326,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_alert_email_notification.py",
     "test_dashboard_ws_act_as.py",
     "test_sync_branding.py",
+    "test_kiosk_lock_pin.py",
 }
 
 

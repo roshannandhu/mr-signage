@@ -52,6 +52,10 @@ class MaintenanceKeyDispatcher(
      * @param gestureEnabled false on the surfaces where these keys are someone's navigation
      *   rather than a gesture -- the pin prompt and the setup screen -- so a press mid-form
      *   is never swallowed.
+     * @param kioskLocked false when the tenant's plan does not sell the TV lock feature (or
+     *   has turned it off): BACK over the player is then someone's ordinary navigation, not
+     *   a kiosk to escape, and passes straight through with no PIN involved. True is the
+     *   safe default an unrecognised or pre-3.10 caller gets.
      */
     fun onKeyEvent(
         action: Int,
@@ -59,11 +63,14 @@ class MaintenanceKeyDispatcher(
         repeatCount: Int,
         gestureEnabled: Boolean,
         nowMs: Long,
-        surface: KeySurface = KeySurface.PLAYER
+        surface: KeySurface = KeySurface.PLAYER,
+        kioskLocked: Boolean = true
     ): KeyOutcome {
         // BACK was handled nowhere, so the default finished the Activity and left the viewer
         // on the TV's launcher -- the one thing kiosk exists to prevent, and reachable without
-        // the maintenance gesture. It is taken everywhere except the screen that owns it.
+        // the maintenance gesture. It is taken everywhere except the screen that owns it --
+        // and except the player itself once the plan has turned kiosk lock off, where BACK
+        // leaving IS the point rather than the thing being guarded against.
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             return when (surface) {
                 KeySurface.SERVER_SETUP -> KeyOutcome.PASS_THROUGH
@@ -71,7 +78,7 @@ class MaintenanceKeyDispatcher(
                 // dismiss this one the instant it opens.
                 KeySurface.PIN_PROMPT ->
                     if (action == KeyEvent.ACTION_UP) KeyOutcome.CANCEL_PIN else KeyOutcome.CONSUME
-                KeySurface.PLAYER -> KeyOutcome.CONSUME
+                KeySurface.PLAYER -> if (kioskLocked) KeyOutcome.CONSUME else KeyOutcome.PASS_THROUGH
             }
         }
 

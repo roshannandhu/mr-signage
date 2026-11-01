@@ -17,7 +17,9 @@ import type { Screen } from '@/lib/types'
  */
 export function KioskExitCard({ screen }: { screen: Screen }) {
   const pin = screen.effective_maintenance_pin || screen.maintenance_pin
-  const isOwnPin = Boolean((screen.maintenance_pin || '').trim())
+  // The effective code differs from this screen's own only when a workspace PIN is set
+  // and this screen has not opted out of it (Settings > "Keep this screen on its own pin").
+  const isOwnPin = !screen.effective_maintenance_pin || screen.effective_maintenance_pin === screen.maintenance_pin
 
   return (
     <details className="ring-hairline bg-card group rounded-2xl ring-1 [&[open]_.chevron]:rotate-180">
@@ -73,7 +75,8 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
         )}
         {pin && !isOwnPin && (
           <span className="text-muted-foreground/70 text-sm">
-            (set by your platform administrator for all screens)
+            (the workspace pin, set on the Screens page — this covers every screen that has
+            not opted to keep its own)
           </span>
         )}
       </div>

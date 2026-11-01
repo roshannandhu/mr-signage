@@ -127,8 +127,18 @@ class MainActivity : ComponentActivity() {
             // Recreated by a Home press while the operator is outside the player: no kiosk.
             openSystemLauncher()
         } else {
+            // Status bar, keyguard, auto-grant and uninstall protection stay on regardless --
+            // those guard the DEVICE, not the viewer's ability to leave the player, and
+            // kiosk_lock is about the latter. Only the task pin (startLockTask) is gated.
+            //
+            // Read here and in rearmLockTask, not watched live: a plan change that flips
+            // this while a device-owner TV is already pinned takes effect from its next
+            // restart, not mid-session. The non-device-owner path (MaintenanceKeyDispatcher)
+            // has no such lag -- it reads the same flag fresh on every BACK press.
             DeviceOwnerManager.applyKioskPolicy(this)
-            if (DeviceOwnerManager.isDeviceOwner(this)) {
+            if (DeviceOwnerManager.isDeviceOwner(this) &&
+                com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
+            ) {
                 try {
                     startLockTask()
                 } catch (e: Exception) {
@@ -452,7 +462,9 @@ class MainActivity : ComponentActivity() {
      *  pinned (a no-op). This is what closes the hole where the gesture alone, or a
      *  cancelled/failed pin, left the TV un-pinned until the next reboot. */
     private fun rearmLockTask() {
-        if (DeviceOwnerManager.isDeviceOwner(this) && !showPinPrompt && !showServerSetup) {
+        if (DeviceOwnerManager.isDeviceOwner(this) && !showPinPrompt && !showServerSetup &&
+            com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
+        ) {
             try { startLockTask() } catch (e: Exception) {}
         }
     }
@@ -608,7 +620,8 @@ class MainActivity : ComponentActivity() {
             repeatCount = event.repeatCount,
             gestureEnabled = gestureEnabled,
             nowMs = System.currentTimeMillis(),
-            surface = surface
+            surface = surface,
+            kioskLocked = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
         )
         return when (outcome) {
             KeyOutcome.REVEAL_PIN -> {

@@ -117,6 +117,13 @@ class Organization(Base):
     logo_url = Column(String, nullable=True)
     brand_color = Column(String(9), nullable=True)
 
+    # One PIN for the whole fleet, set by an owner on the Screens page. Null means no
+    # workspace PIN has been set, so every screen keeps using its own -- today's only
+    # behaviour, unchanged until an owner opts into a shared one. A screen can still opt
+    # out per-TV (Screen.uses_own_pin) for a panel that needs a different code, a lobby
+    # display a cleaner also has to open, say, without handing them the whole fleet's PIN.
+    lock_pin = Column(String(4), nullable=True)
+
     created_at = Column(UtcDateTime, nullable=False, default=utcnow)
 
     users = relationship("User", back_populates="organization")
@@ -461,6 +468,11 @@ class Screen(Base):
     maintenance_pin = Column(
         String, nullable=False, default=lambda: f"{secrets.randbelow(10000):04d}"
     )
+    # True keeps this one screen on its own maintenance_pin even when the workspace has set
+    # a shared lock PIN -- see effective_maintenance_pin, the only place that reads this
+    # alongside Organization.lock_pin. Defaults false so setting a workspace PIN immediately
+    # covers every existing screen, which is the point of having one.
+    uses_own_pin = Column(Boolean, nullable=False, default=False, server_default="false")
     # Video-wall support: followers take their playback clock from a leader screen.
     sync_playback = Column(Boolean, nullable=False, default=False)
     sync_role = Column(String, nullable=False, default="leader")

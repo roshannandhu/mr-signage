@@ -22,8 +22,9 @@ class MaintenanceKeyDispatcherTest {
         action: Int = KeyEvent.ACTION_DOWN,
         repeatCount: Int = 0,
         gestureEnabled: Boolean = true,
-        surface: KeySurface = KeySurface.PLAYER
-    ) = d.onKeyEvent(action, keyCode, repeatCount, gestureEnabled, nowMs, surface)
+        surface: KeySurface = KeySurface.PLAYER,
+        kioskLocked: Boolean = true
+    ) = d.onKeyEvent(action, keyCode, repeatCount, gestureEnabled, nowMs, surface, kioskLocked)
 
     private val back = KeyEvent.KEYCODE_BACK
 
@@ -34,6 +35,54 @@ class MaintenanceKeyDispatcherTest {
         val d = MaintenanceKeyDispatcher()
         assertEquals(KeyOutcome.CONSUME, press(d, back, 0))
         assertEquals(KeyOutcome.CONSUME, press(d, back, 1, action = KeyEvent.ACTION_UP))
+    }
+
+    @Test
+    fun `back over the player passes through once kiosk lock is off`() {
+        // Phase 3.10: a plan without the TV lock feature (or an owner who turned it off)
+        // leaves BACK as ordinary navigation -- it is not guarding anything anymore.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, back, 0, kioskLocked = false))
+        assertEquals(
+            KeyOutcome.PASS_THROUGH,
+            press(d, back, 1, action = KeyEvent.ACTION_UP, kioskLocked = false)
+        )
+    }
+
+    @Test
+    fun `an unspecified kiosk lock defaults to locked`() {
+        // The caller omitting the parameter (an older call site, or a test that predates
+        // this) must get today's behaviour, not an accidental unlock.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(
+            KeyOutcome.CONSUME,
+            d.onKeyEvent(KeyEvent.ACTION_DOWN, back, 0, gestureEnabled = true, nowMs = 0)
+        )
+    }
+
+    @Test
+    fun `kiosk lock off does not affect the pin prompt or setup screen's own back handling`() {
+        // The flag only changes what BACK means over the bare player; a prompt that owns
+        // its own BACK (or that is mid-entry) is unaffected either way.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, back, 0, surface = KeySurface.SERVER_SETUP, kioskLocked = false))
+        assertEquals(KeyOutcome.CONSUME, press(d, back, 1, surface = KeySurface.PIN_PROMPT, kioskLocked = false))
+        assertEquals(
+            KeyOutcome.CANCEL_PIN,
+            press(d, back, 2, action = KeyEvent.ACTION_UP, surface = KeySurface.PIN_PROMPT, kioskLocked = false)
+        )
+    }
+
+    @Test
+    fun `the maintenance gesture still works with kiosk lock off`() {
+        // Unlocking BACK does not remove the maintenance screen itself -- it may still be
+        // wanted for settings or diagnostics even when nothing is trapping the viewer.
+        val d = MaintenanceKeyDispatcher()
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, up, 0, kioskLocked = false))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, up, 1, kioskLocked = false))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, down, 2, kioskLocked = false))
+        assertEquals(KeyOutcome.PASS_THROUGH, press(d, down, 3, kioskLocked = false))
+        assertEquals(KeyOutcome.REVEAL_PIN, press(d, ok, 4, kioskLocked = false))
     }
 
     @Test

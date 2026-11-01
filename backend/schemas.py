@@ -243,6 +243,9 @@ class ScreenPatch(BaseModel):
     leader_screen_id: Optional[int] = None
     operating_mode: Optional[OperatingMode] = None
     operating_hours: Optional[dict[str, list[str]]] = None
+    # True keeps this screen on its own maintenance_pin even when the workspace has set a
+    # shared lock PIN. See effective_maintenance_pin.
+    uses_own_pin: Optional[bool] = None
 
     @field_validator("orientation")
     @classmethod
@@ -270,6 +273,20 @@ class ScreenPatch(BaseModel):
                 if not _HHMM.fullmatch(stamp):
                     raise ValueError(f"{day}: '{stamp}' is not HH:MM")
         return value
+
+
+class LockPinUpdate(BaseModel):
+    """Set or clear the whole workspace's shared maintenance PIN.
+
+    Blank restores today's behaviour (every screen on its own PIN) rather than locking the
+    fleet out with an empty code -- the same "blank means unset" the brand name field uses.
+    """
+
+    lock_pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$")
+
+
+class LockPinResponse(BaseModel):
+    lock_pin: Optional[str] = None
 
 
 class ScreenResponse(ScreenBase):
@@ -857,6 +874,12 @@ class SyncResponse(BaseModel):
     brand_name: Optional[str] = None
     brand_logo_url: Optional[str] = None
     brand_color: Optional[str] = None
+    # Whether this tenant's plan sells the TV lock feature at all. False (including a field
+    # missing on an older server, which Gson reads as the Kotlin default) means stay locked
+    # -- the safe failure, since the alternative is every TV on a lapsed plan unlocking
+    # itself. True does not by itself mean "locked right now"; maintenance_pin above still
+    # carries the code that actually opens it.
+    kiosk_lock: bool = True
 
 
 class PlanResponse(BaseModel):

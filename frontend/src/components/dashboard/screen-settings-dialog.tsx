@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PlaceSearch } from '@/components/dashboard/place-search'
 import { api } from '@/lib/api'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 import type { FitMode, Screen, SyncRole } from '@/lib/types'
 
@@ -49,6 +50,7 @@ export function ScreenSettingsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const queryClient = useQueryClient()
+  const hasKioskLock = usePlanFeatures().has('kiosk_lock')
 
   const [name, setName] = useState(screen.name || '')
   const [description, setDescription] = useState(screen.description || '')
@@ -64,6 +66,7 @@ export function ScreenSettingsDialog({
   const [advanced, setAdvanced] = useState(false)
   const [fitMode, setFitMode] = useState<FitMode>(screen.fit_mode || 'contain')
   const [maintenancePin, setMaintenancePin] = useState(screen.maintenance_pin || '')
+  const [usesOwnPin, setUsesOwnPin] = useState(Boolean(screen.uses_own_pin))
   const [timezone, setTimezone] = useState(screen.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone)
   const [syncPlayback, setSyncPlayback] = useState(Boolean(screen.sync_playback))
   const [syncRole, setSyncRole] = useState<SyncRole>(screen.sync_role || 'leader')
@@ -94,6 +97,7 @@ export function ScreenSettingsDialog({
       ...(/^\d{4}$/.test(maintenancePin) && maintenancePin !== screen.maintenance_pin
         ? { maintenance_pin: maintenancePin }
         : {}),
+      ...(hasKioskLock && usesOwnPin !== Boolean(screen.uses_own_pin) ? { uses_own_pin: usesOwnPin } : {}),
       timezone,
       sync_playback: syncPlayback,
       sync_role: syncRole,
@@ -218,6 +222,23 @@ export function ScreenSettingsDialog({
                   a change here applies at the next sync.
                 </p>
               </div>
+
+              {hasKioskLock && (
+                <label className="flex cursor-pointer items-start gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    className="accent-primary mt-0.5 size-4"
+                    checked={usesOwnPin}
+                    onChange={(event) => setUsesOwnPin(event.target.checked)}
+                  />
+                  <span>
+                    Keep this screen on its own pin
+                    <span className="text-muted-foreground block text-xs">
+                      Ignores the workspace lock pin set on the Screens page, if any.
+                    </span>
+                  </span>
+                </label>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="screen-timezone">Timezone</Label>

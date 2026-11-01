@@ -168,6 +168,10 @@ class PlaylistSynchronizer(context: Context) {
                     .putString(KEY_BRAND_NAME, syncData.brand_name)
                     .putString(KEY_BRAND_LOGO_URL, syncData.brand_logo_url)
                     .putString(KEY_BRAND_COLOR, syncData.brand_color)
+                    // Missing on an old server means stay locked -- see the field's own
+                    // comment on SyncResponseDto for why this is resolved here, not left to
+                    // a Kotlin default.
+                    .putBoolean(KEY_KIOSK_LOCK, syncData.kiosk_lock ?: true)
                     .apply()
 
                 // pending_commands carries every command still within its hold time, for a
@@ -516,6 +520,20 @@ class PlaylistSynchronizer(context: Context) {
                 color = prefs.getString(KEY_BRAND_COLOR, null),
             )
         }
+
+        private const val KEY_KIOSK_LOCK = "kiosk_lock"
+
+        /**
+         * Whether this tenant's plan sells the TV lock feature, as of the last sync.
+         *
+         * Defaults true -- the safe failure before the first sync has ever completed, same
+         * as a sync response missing the field entirely. A screen only ever becomes
+         * unlocked after the server has explicitly said so.
+         */
+        fun kioskLockEnabled(context: Context): Boolean =
+            context.applicationContext
+                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_KIOSK_LOCK, true)
 
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_PLAYLIST_UPDATED_AT = "playlist_updated_at"

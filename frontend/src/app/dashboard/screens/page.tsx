@@ -20,12 +20,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { WorkspaceLockPinCard } from '@/components/dashboard/workspace-lock-pin-card'
 import { useBulkSelection } from '@/hooks/use-bulk-selection'
 import { api } from '@/lib/api'
 import { bulkSummary, runBulk } from '@/lib/bulk'
 import { relativeTime } from '@/lib/format'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 import type { Screen, ScreenGroup } from '@/lib/types'
 
@@ -60,6 +62,7 @@ export default function ScreensPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const hasKioskLock = usePlanFeatures().has('kiosk_lock')
 
   // Screens report in on their own cadence; a slow poll keeps the wall of thumbnails
   // roughly live without hammering the API at 500 screens.
@@ -293,6 +296,8 @@ export default function ScreensPage() {
         description="Every display paired to this workspace — what it is showing, and whether it has reported in."
         actions={canEdit ? addScreen : <Badge variant="outline">View only</Badge>}
       />
+
+      {hasKioskLock && user?.role === 'owner' && <WorkspaceLockPinCard />}
 
       {/* Two groups, not six loose children: nothing here can wrap into a ragged third row. */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">

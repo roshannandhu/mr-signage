@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -205,9 +205,17 @@ export const api = {
     leader_screen_id: number | null
     operating_mode: OperatingMode
     operating_hours: Record<string, [string, string]> | null
+    /** True keeps this screen on its own PIN even when a workspace PIN is set. */
+    uses_own_pin: boolean
   }>) => fetchWithAuth<Screen>(`/screens/${id}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   }),
+  getWorkspaceLockPin: () => fetchWithAuth<LockPin>('/screens/lock-pin'),
+  /** Null clears it, restoring every screen to its own PIN. */
+  setWorkspaceLockPin: (lock_pin: string | null) =>
+    fetchWithAuth<LockPin>('/screens/lock-pin', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lock_pin }),
+    }),
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
   }),
