@@ -143,6 +143,7 @@ def billing_summary(scope: TenantScope = Depends(get_tenant_scope)):
 
 @router.post("/checkout", response_model=schemas.CheckoutResponse)
 def create_checkout(payload: schemas.CheckoutRequest, scope: TenantScope = Depends(get_tenant_scope)):
+    scope.require_write_access()
     if scope.user.role != "owner":
         raise HTTPException(status_code=403, detail="Only an organization owner can change billing")
     plan = scope.db.query(models.Plan).filter(
@@ -373,6 +374,7 @@ def purchase_plan(
     activated on the spot; a paid one raises a provider order and is activated by the webhook
     (real) or /billing/mock/confirm (mock).
     """
+    scope.require_write_access()
     if scope.user.role != "owner":
         raise HTTPException(status_code=403, detail="Only an organization owner can buy a plan")
     plan = scope.db.query(models.Plan).filter(
@@ -439,6 +441,7 @@ def mock_confirm(
     PAYMENT_PROVIDER=mock in production by accident cannot turn payment off; only activates
     an order raised by the caller's own workspace.
     """
+    scope.require_write_access()
     from ..billing import mock_payments_enabled
 
     if not mock_payments_enabled():
@@ -496,6 +499,7 @@ def create_custom_request(
 ):
     """Ask for a bespoke package. It queues for the operator to price; the tenant pays once
     priced. Does not grant anything on its own."""
+    scope.require_write_access()
     if scope.user.role != "owner":
         raise HTTPException(status_code=403, detail="Only an organization owner can request a custom plan")
     request = models.CustomPlanRequest(
@@ -530,6 +534,7 @@ def list_my_custom_requests(scope: TenantScope = Depends(get_billing_scope)):
 @router.post("/custom-request/{request_id}/purchase", response_model=schemas.PurchaseResponse)
 def purchase_custom_request(request_id: int, scope: TenantScope = Depends(get_billing_scope)):
     """Pay a priced custom request. Same order flow as a standard package."""
+    scope.require_write_access()
     if scope.user.role != "owner":
         raise HTTPException(status_code=403, detail="Only an organization owner can buy a plan")
     request = scope.db.query(models.CustomPlanRequest).filter(

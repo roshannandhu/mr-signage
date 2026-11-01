@@ -99,6 +99,15 @@ ISOLATED_SCRIPTS = {
     "test_kiosk_lock_pin.py",
     # A plan with kiosk_lock stays unlocked until the tenant enables it; audit log; scoped remote unlock.
     "test_kiosk_lock_enabled.py",
+    # Every admin change writes one audit row; act-as writes are recorded, reads are not.
+    "test_admin_audit_log.py",
+    # The tenants list costs the same queries for 2 tenants as for 22, with quota-true counts.
+    "test_admin_query_budget.py",
+    # Self-demotion, confirmed promotion, release auth, plan FK, suspended socket, reel upload.
+    "test_admin_guards.py",
+    # "View workspace (read-only)" refuses every write: a static sweep of every write
+    # route plus live checks across clients, playlists, branding and billing.
+    "test_act_as_read_only.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -330,6 +339,12 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_sync_branding.py",
     "test_kiosk_lock_pin.py",
     "test_kiosk_lock_enabled.py",
+    "test_admin_audit_log.py",
+    "test_admin_query_budget.py",
+    "test_admin_guards.py",
+    # "View workspace (read-only)" refuses every write: a static sweep of every write
+    # route plus live checks across clients, playlists, branding and billing.
+    "test_act_as_read_only.py",
 }
 
 

@@ -7,6 +7,7 @@ import { Package as PackageIcon, Plus, Save, Trash2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import type { Package, PackageWrite } from '@/lib/types'
 import { FEATURES, Feedback, LimitInput, PageHeader, UNLIMITED, formatBytes, formatPaise } from '@/components/admin/admin-ui'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 
 const GIB = 1024 ** 3
 
@@ -38,6 +39,7 @@ const blank: PackageWrite = {
  */
 export default function AdminPackagesPage() {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [draft, setDraft] = useState<PackageWrite | null>(null)
   const [editing, setEditing] = useState<Record<number, Partial<PackageWrite>>>({})
   const [message, setMessage] = useState('')
@@ -105,7 +107,7 @@ export default function AdminPackagesPage() {
       <PageHeader title="Packages" description="Price, access period, limits and features a workspace can be sold on">
         <button
           onClick={() => setDraft(draft ? null : blank)}
-          className="flex items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/10 px-4 py-2 text-sm text-violet-300 transition-all hover:bg-violet-500/20"
+          className="flex items-center gap-2 rounded-xl border border-border bg-accent px-4 py-2 text-sm text-foreground transition-all hover:bg-foreground/10"
         >
           <Plus className="size-4" />
           {draft ? 'Cancel' : 'New package'}
@@ -113,7 +115,7 @@ export default function AdminPackagesPage() {
       </PageHeader>
       <p className="-mt-4 text-xs text-muted-foreground">
         Looking for a tenant&apos;s custom / Business request, payments, or the contact address on their email draft? That moved to{' '}
-        <Link href="/admin/billing" className="text-violet-400 hover:underline">Billing</Link>.
+        <Link href="/admin/billing" className="text-foreground hover:underline">Billing</Link>.
       </p>
 
       <Feedback ok={message} error={error} />
@@ -121,7 +123,7 @@ export default function AdminPackagesPage() {
       {draft && (
         <form
           onSubmit={(e) => { e.preventDefault(); create.mutate(draft) }}
-          className="space-y-4 rounded-2xl border border-violet-500/20 bg-violet-500/[0.03] p-5"
+          className="space-y-4 rounded-2xl border border-border bg-muted/40 p-5"
         >
           <h2 className="font-semibold">New package</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -170,12 +172,12 @@ export default function AdminPackagesPage() {
                     type="checkbox"
                     checked={Boolean(draft.feature_flags[f.key])}
                     onChange={(e) => setDraft({ ...draft, feature_flags: { ...draft.feature_flags, [f.key]: e.target.checked } })}
-                    className="size-4 accent-violet-500"
+                    className="size-4 accent-foreground"
                   />
                   {f.label}
                   {!f.enforced && (
                     <span
-                      className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80"
+                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80"
                       title="Sold as a commitment, not enforced by the software"
                     >
                       Not enforced
@@ -187,7 +189,7 @@ export default function AdminPackagesPage() {
           </Field>
           <button
             type="submit" disabled={create.isPending}
-            className="rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-violet-500 disabled:opacity-50"
+            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
           >
             {create.isPending ? 'Creating…' : 'Create package'}
           </button>
@@ -196,7 +198,7 @@ export default function AdminPackagesPage() {
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <PackageIcon className="size-4 text-violet-400" />
+          <PackageIcon className="size-4 text-foreground" />
           {packages.length} packages
         </div>
 
@@ -267,7 +269,7 @@ export default function AdminPackagesPage() {
                                 type="checkbox"
                                 checked={Boolean(featuresOf(pkg)[f.key])}
                                 onChange={(e) => toggleFeature(pkg, f.key, e.target.checked)}
-                                className="size-3.5 accent-violet-500"
+                                className="size-3.5 accent-foreground"
                               />
                               {f.label}
                             </label>
@@ -279,7 +281,7 @@ export default function AdminPackagesPage() {
                           type="checkbox"
                           checked={Boolean(fieldOf(pkg, 'is_active'))}
                           onChange={(e) => edit(pkg.id, 'is_active', e.target.checked)}
-                          className="size-4 accent-violet-500"
+                          className="size-4 accent-foreground"
                         />
                       </td>
                       <td className="p-4 pr-5">
@@ -287,19 +289,23 @@ export default function AdminPackagesPage() {
                           <button
                             onClick={() => update.mutate({ id: pkg.id, body: editing[pkg.id] ?? {} })}
                             disabled={!dirty || update.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-400 transition-all hover:bg-violet-500/20 disabled:opacity-30"
+                            className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-1.5 text-xs text-foreground transition-all hover:bg-foreground/10 disabled:opacity-30"
                           >
                             <Save className="size-3" />
                             Save
                           </button>
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Delete "${pkg.name}"? Tenants already on it keep their limits and the package is retired instead.`)) {
-                                remove.mutate(pkg.id)
-                              }
+                            onClick={async () => {
+                              const result = await confirm({
+                                title: `Delete the ${pkg.name} package?`,
+                                description: 'If any workspace is on or subscribed to it, it is retired instead of deleted, and they keep their limits.',
+                                destructive: true,
+                                confirmLabel: 'Delete package',
+                              })
+                              if (result) remove.mutate(pkg.id)
                             }}
                             disabled={remove.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
+                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
                           >
                             <Trash2 className="size-3" />
                           </button>
@@ -318,7 +324,7 @@ export default function AdminPackagesPage() {
 }
 
 const inputClass =
-  'rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-violet-500/50'
+  'rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-ring'
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (

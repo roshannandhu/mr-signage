@@ -17,20 +17,22 @@ import os
 import pathlib
 import re
 import shutil
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Literal, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from .. import database, models, schemas
 from ..billing import TERMINAL_SUBSCRIPTION_STATUSES, apply_plan, plan_features, subscription_state
 from ..limiter import limiter
 from ..media_urls import resolve_media_url
-from ..services import legacy_device_auth_allowed, screens_without_secret
+from ..services import audit, legacy_device_auth_allowed, screens_without_secret
+from ..services.admin_metrics import TenantUsage, fleet_screen_filter, screen_is_online, tenant_usage
 from ..services.storage_service import forget_cached_usage
 from ..services.tenant_purge import TENANT_PURGE_AFTER_DAYS, purge_due_at, purge_organization
 from ..tenancy import TenantScope, require_super_admin
@@ -275,48 +277,22 @@ def _iso(value) -> Optional[str]:
     return value.isoformat() if value else None
 
 
-def _owner_of(db: Session, org_id: int) -> Optional[models.User]:
-    return (
-        db.query(models.User)
-        .filter(models.User.organization_id == org_id, models.User.role == "owner")
-        .order_by(models.User.created_at)
-        .first()
-    )
+def _summaries(db: Session, orgs: List[models.Organization]) -> List[TenantSummaryOut]:
+    """Summaries for many tenants in a fixed number of queries (see admin_metrics).
+
+    This used to run ~9 queries per tenant plus 2 per ad booking, which at production's
+    ~114 ms per query made the tenants list take most of a minute at 30 tenants.
+    """
+    usage = tenant_usage(db, [org.id for org in orgs])
+    return [_summary_from(org, usage[org.id]) for org in orgs]
 
 
 def _summarise(db: Session, org: models.Organization) -> TenantSummaryOut:
-    owner = _owner_of(db, org.id)
-    # "waiting_pairing" rows are unclaimed registrations, not screens this tenant owns, so
-    # they must not count against a quota the operator is about to size.
-    screens_count = db.query(models.Screen).filter(
-        models.Screen.organization_id == org.id,
-        models.Screen.status != "waiting_pairing",
-    ).count()
-    online_count = db.query(models.Screen).filter(
-        models.Screen.organization_id == org.id,
-        models.Screen.status == "online",
-    ).count()
-    # Counted the same way the quota is enforced, on the effective end rather than the sold
-    # one. An extended campaign runs past its original ends_at while still holding its slot,
-    # so counting the raw column showed an operator fewer ads in use than the tenant was
-    # actually being refused for -- the console said 3/5 while a booking was bouncing off
-    # the cap.
-    ads_used = sum(
-        1
-        for placement in db.query(models.AdPlacement).filter(
-            models.AdPlacement.organization_id == org.id
-        )
-        if placement.effective_ends_at >= models.utcnow()
-    )
-    from sqlalchemy import func
+    return _summaries(db, [org])[0]
 
-    # Content AND renditions, the same sum the quota is enforced against. Summing only
-    # Content showed roughly a third of the truth, so an operator looked at "3 GB of 10 GB"
-    # for a workspace that was actually full and being refused uploads.
-    from ..services.storage_service import organization_storage_used
 
-    storage_used = organization_storage_used(db, org.id)
-
+def _summary_from(org: models.Organization, used: TenantUsage) -> TenantSummaryOut:
+    owner = used.owner
     return TenantSummaryOut(
         id=org.id,
         name=org.name,
@@ -327,8 +303,8 @@ def _summarise(db: Session, org: models.Organization) -> TenantSummaryOut:
         owner_name=(owner.full_name or owner.username) if owner else None,
         plan_id=org.plan_id,
         plan_name=org.plan.name if org.plan else None,
-        screens_count=screens_count,
-        online_screens_count=online_count,
+        screens_count=used.screens,
+        online_screens_count=used.online_screens,
         # The limit actually enforced, not the raw override column. Reporting the column
         # meant the console showed 0 -- rendered as an infinity sign by the quota bar --
         # for every tenant whose limit came from their package, which is all of them. An
@@ -338,13 +314,11 @@ def _summarise(db: Session, org: models.Organization) -> TenantSummaryOut:
         max_ad_slots=org.effective_max_ad_slots,
         max_screens_override=org.max_screens or 0,
         max_ad_slots_override=org.max_ad_slots or 0,
-        ad_slots_used=ads_used,
+        ad_slots_used=used.ad_slots_used,
         max_clients=org.effective_max_clients,
-        clients_used=db.query(models.Client).filter(
-            models.Client.organization_id == org.id
-        ).count(),
+        clients_used=used.clients,
         feature_flags=plan_features(org.plan) if org.plan else {},
-        storage_used_bytes=int(storage_used),
+        storage_used_bytes=used.storage_bytes,
         storage_quota_bytes=org.storage_quota_bytes,
         rejection_reason=org.rejection_reason,
         subscription_state=subscription_state(org.subscription),
@@ -355,6 +329,49 @@ def _summarise(db: Session, org: models.Organization) -> TenantSummaryOut:
         ),
         deleted_at=_iso(org.deleted_at),
         purge_at=_iso(purge_due_at(org)),
+    )
+
+
+def _tenant_state(org: models.Organization) -> dict:
+    """The fields an audit entry compares before and after a tenant lifecycle change."""
+    sub = org.subscription
+    return {
+        "status": org.status,
+        "plan_id": org.plan_id,
+        "max_screens": org.max_screens,
+        "max_ad_slots": org.max_ad_slots,
+        "max_clients": org.max_clients,
+        "storage_quota_bytes": org.storage_quota_bytes,
+        "deleted_at": _iso(org.deleted_at),
+        "subscription_status": sub.status if sub else None,
+        "current_period_end": _iso(sub.current_period_end) if sub else None,
+    }
+
+
+def _audit(
+    db: Session,
+    scope: TenantScope,
+    request: Request,
+    action: str,
+    *,
+    org: Optional[models.Organization] = None,
+    org_id: Optional[int] = None,
+    target_type: Optional[str] = None,
+    target_id=None,
+    before=None,
+    after=None,
+) -> None:
+    audit.record(
+        db,
+        actor=scope.user,
+        action=action,
+        request=request,
+        target_org_id=org.id if org is not None else org_id,
+        target_type=target_type or ("organization" if org is not None else None),
+        target_id=target_id if target_id is not None else (org.id if org is not None else None),
+        before=before,
+        after=after,
+        acting_org_id=scope.acting_organization_id,
     )
 
 
@@ -389,18 +406,68 @@ def _apply_plan(org: models.Organization, plan: models.Plan) -> None:
 # --------------------------------------------------------------------------- tenants
 
 
+TOTAL_COUNT_HEADER = "X-Total-Count"
+
+_TENANT_SORTS = {
+    "created_desc": models.Organization.created_at.desc(),
+    "created_asc": models.Organization.created_at.asc(),
+    "name_asc": func.lower(models.Organization.name).asc(),
+    "name_desc": func.lower(models.Organization.name).desc(),
+}
+
+
+def like_pattern(term: str) -> str:
+    """A substring ILIKE pattern with the user's own % and _ taken literally."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 @router.get("/tenants", response_model=List[TenantSummaryOut])
 def list_tenants(
+    response: Response,
     status: Optional[str] = None,
+    q: Optional[str] = Query(default=None, max_length=100),
+    plan_id: Optional[int] = None,
+    sort: Literal["created_desc", "created_asc", "name_asc", "name_desc"] = "created_desc",
+    limit: Optional[int] = Query(default=None, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
-    """Every workspace on the platform, newest first. `?status=pending_approval` filters."""
+    """Workspaces on the platform, newest first by default.
+
+    Every parameter is optional and the body is the same plain list it always was; with
+    `limit` the total matching count comes back in X-Total-Count for paging.
+    """
     query = db.query(models.Organization)
     if status:
         query = query.filter(models.Organization.status == status)
-    orgs = query.order_by(models.Organization.created_at.desc()).all()
-    return [_summarise(db, org) for org in orgs]
+    if plan_id is not None:
+        query = query.filter(models.Organization.plan_id == plan_id)
+    if q and q.strip():
+        pattern = like_pattern(q.strip())
+        owner_match = (
+            db.query(models.User.id)
+            .filter(
+                models.User.organization_id == models.Organization.id,
+                models.User.role == "owner",
+                models.User.email.ilike(pattern, escape="\\"),
+            )
+            .exists()
+        )
+        query = query.filter(
+            models.Organization.name.ilike(pattern, escape="\\")
+            | models.Organization.slug.ilike(pattern, escape="\\")
+            | owner_match
+        )
+    if limit is not None:
+        response.headers[TOTAL_COUNT_HEADER] = str(query.count())
+    query = query.options(
+        selectinload(models.Organization.plan), selectinload(models.Organization.subscription),
+    ).order_by(_TENANT_SORTS[sort], models.Organization.id.desc()).offset(offset)
+    if limit is not None:
+        query = query.limit(limit)
+    return _summaries(db, query.all())
 
 
 @router.get("/tenants/{org_id}", response_model=TenantSummaryOut)
@@ -486,6 +553,7 @@ def get_kiosk_unlock_events(
 async def remote_unlock_screen(
     org_id: int,
     screen_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -518,6 +586,8 @@ async def remote_unlock_screen(
         success=True,
         actor_user_id=scope.user.id,
     ))
+    _audit(db, scope, request, "screen.remote_unlock", org=organization,
+           target_type="screen", target_id=screen.id, after={"queued": queued})
     db.commit()
     logger.info(
         "Remote unlock queued for screen %s (org %s) by %s",
@@ -611,12 +681,14 @@ def get_tenant_users(
 @router.post("/tenants/{org_id}/approve", response_model=TenantSummaryOut)
 def approve_tenant(
     org_id: int,
+    request: Request,
     req: ApprovalRequest = ApprovalRequest(),
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
     """Let a workspace in, on a package or on hand-set limits."""
     org = _get_org(db, org_id)
+    before = _tenant_state(org)
 
     if req.plan_id is not None:
         plan = db.query(models.Plan).filter(models.Plan.id == req.plan_id).first()
@@ -633,6 +705,7 @@ def approve_tenant(
     org.approved_at = models.utcnow()
     org.approved_by_user_id = scope.user.id
     org.rejection_reason = None
+    _audit(db, scope, request, "tenant.approve", org=org, before=before, after=_tenant_state(org))
     db.commit()
     db.refresh(org)
     logger.info(
@@ -712,6 +785,7 @@ def get_maintenance_pin(
 @router.put("/maintenance-pin", response_model=MaintenancePinOut)
 def set_maintenance_pin(
     req: MaintenancePinWrite,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -728,6 +802,9 @@ def set_maintenance_pin(
         models.SystemSetting.key == UNIVERSAL_PIN_KEY
     ).first()
     pin = req.pin.strip()
+    # The PIN itself never reaches the trail; only whether one is set.
+    _audit(db, scope, request, "platform.maintenance_pin.update", target_type="setting",
+           target_id=UNIVERSAL_PIN_KEY, before={"set": setting is not None}, after={"set": bool(pin)})
     if not pin:
         if setting:
             db.delete(setting)
@@ -844,6 +921,7 @@ def platform_storage(
 def update_tenant_subscription(
     org_id: int,
     req: SubscriptionUpdateRequest,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -855,6 +933,7 @@ def update_tenant_subscription(
     another month" except editing the database.
     """
     org = _get_org(db, org_id)
+    before = _tenant_state(org)
     subscription = org.subscription
     if subscription is None:
         if org.plan_id is None:
@@ -905,6 +984,10 @@ def update_tenant_subscription(
         subscription.grace_period_end = None
 
     subscription.updated_at = now
+    db.flush()
+    db.refresh(org)
+    _audit(db, scope, request, "tenant.subscription.update", org=org, before=before,
+           after={**_tenant_state(org), "request": req.model_dump(exclude_none=True)})
     db.commit()
     db.refresh(org)
     logger.info(
@@ -919,6 +1002,7 @@ def update_tenant_subscription(
 def grant_custom_limits(
     org_id: int,
     req: GrantRequest,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -934,6 +1018,7 @@ def grant_custom_limits(
     limit. Re-granting edits that same package rather than accumulating one per change.
     """
     org = _get_org(db, org_id)
+    before = {**_tenant_state(org), "features": plan_features(org.plan) if org.plan else {}}
 
     slug = f"custom-org-{org.id}"
     plan = db.query(models.Plan).filter(models.Plan.slug == slug).first()
@@ -983,6 +1068,15 @@ def grant_custom_limits(
         org.approved_by_user_id = scope.user.id
         org.rejection_reason = None
 
+    _audit(db, scope, request, "tenant.grant", org=org, before=before, after={
+        **_tenant_state(org),
+        "features": plan_features(plan),
+        "plan_limits": {
+            "max_screens": plan.max_screens, "max_ad_slots": plan.max_ad_slots,
+            "max_clients": plan.max_clients, "max_storage_bytes": plan.max_storage_bytes,
+            "duration_days": plan.duration_days,
+        },
+    })
     db.commit()
     db.refresh(org)
     logger.info(
@@ -997,11 +1091,13 @@ def grant_custom_limits(
 def update_tenant_quota(
     org_id: int,
     req: QuotaUpdateRequest,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
     """Change a tenant's package or its individual limits, at any time."""
     org = _get_org(db, org_id)
+    before = _tenant_state(org)
 
     if req.plan_id is not None:
         plan = db.query(models.Plan).filter(models.Plan.id == req.plan_id).first()
@@ -1014,6 +1110,7 @@ def update_tenant_quota(
     if req.max_ad_slots is not None:
         org.max_ad_slots = req.max_ad_slots
 
+    _audit(db, scope, request, "tenant.quota.update", org=org, before=before, after=_tenant_state(org))
     db.commit()
     db.refresh(org)
     logger.info("Quota updated for org %s by %s: %s", org.name, scope.user.username, req.model_dump(exclude_none=True))
@@ -1023,6 +1120,7 @@ def update_tenant_quota(
 @router.post("/tenants/{org_id}/reject", response_model=TenantSummaryOut)
 def reject_tenant(
     org_id: int,
+    request: Request,
     req: RejectionRequest = RejectionRequest(),
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
@@ -1030,8 +1128,11 @@ def reject_tenant(
     org = _get_org(db, org_id)
     if org.id == scope.user.organization_id:
         raise HTTPException(status_code=400, detail="Cannot reject your own organization.")
+    before = _tenant_state(org)
     org.status = "rejected"
     org.rejection_reason = req.reason
+    _audit(db, scope, request, "tenant.reject", org=org, before=before,
+           after={**_tenant_state(org), "rejection_reason": req.reason})
     db.commit()
     db.refresh(org)
     logger.info("Org %s (ID %s) rejected by %s", org.name, org.id, scope.user.username)
@@ -1041,6 +1142,7 @@ def reject_tenant(
 @router.post("/tenants/{org_id}/suspend", response_model=TenantSummaryOut)
 def suspend_tenant(
     org_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1048,7 +1150,9 @@ def suspend_tenant(
     org = _get_org(db, org_id)
     if org.id == scope.user.organization_id:
         raise HTTPException(status_code=400, detail="Cannot suspend your own organization.")
+    before = _tenant_state(org)
     org.status = "suspended"
+    _audit(db, scope, request, "tenant.suspend", org=org, before=before, after=_tenant_state(org))
     db.commit()
     db.refresh(org)
     logger.info("Org %s (ID %s) suspended by %s", org.name, org.id, scope.user.username)
@@ -1058,14 +1162,17 @@ def suspend_tenant(
 @router.post("/tenants/{org_id}/reinstate", response_model=TenantSummaryOut)
 def reinstate_tenant(
     org_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
     org = _get_org(db, org_id)
+    before = _tenant_state(org)
     org.status = "active"
     org.rejection_reason = None
     if org.approved_at is None:
         org.approved_at = models.utcnow()
+    _audit(db, scope, request, "tenant.reinstate", org=org, before=before, after=_tenant_state(org))
     db.commit()
     db.refresh(org)
     logger.info("Org %s (ID %s) reinstated by %s", org.name, org.id, scope.user.username)
@@ -1075,6 +1182,7 @@ def reinstate_tenant(
 @router.delete("/tenants/{org_id}", response_model=TenantSummaryOut)
 def remove_tenant(
     org_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1094,7 +1202,10 @@ def remove_tenant(
     if org.deleted_at is not None:
         raise HTTPException(status_code=409, detail="This workspace has already been removed.")
 
+    before = _tenant_state(org)
     org.deleted_at = models.utcnow()
+    _audit(db, scope, request, "tenant.remove", org=org, before=before,
+           after={**_tenant_state(org), "purge_at": _iso(purge_due_at(org))})
     db.commit()
     db.refresh(org)
     logger.warning(
@@ -1108,6 +1219,7 @@ def remove_tenant(
 @router.post("/tenants/{org_id}/restore", response_model=TenantSummaryOut)
 def restore_tenant(
     org_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1121,7 +1233,9 @@ def restore_tenant(
     if org.deleted_at is None:
         raise HTTPException(status_code=409, detail="This workspace has not been removed.")
 
+    before = _tenant_state(org)
     org.deleted_at = None
+    _audit(db, scope, request, "tenant.restore", org=org, before=before, after=_tenant_state(org))
     db.commit()
     db.refresh(org)
     logger.info("Org %s (ID %s) restored by %s", org.name, org.id, scope.user.username)
@@ -1132,6 +1246,7 @@ def restore_tenant(
 def delete_tenant_permanently(
     org_id: int,
     confirm_name: str,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1149,13 +1264,27 @@ def delete_tenant_permanently(
         raise HTTPException(status_code=400, detail="The name typed does not match this workspace.")
 
     name = org.name
+    before = _tenant_state(org)
     try:
         report = purge_organization(db, org, immediately=True)
+        audit.record(
+            db, actor=scope.user, action="tenant.purge", request=request,
+            target_org_id=org_id, target_type="organization", target_id=org_id,
+            before={**before, "name": name}, after={"rows": report["rows"],
+            "objects_deleted": report["objects_deleted"], "objects_missed": report["objects_missed"]},
+            acting_org_id=scope.acting_organization_id,
+        )
         db.commit()
     except Exception:
         db.rollback()
         logger.exception("Permanent delete of org %s (ID %s) failed", name, org_id)
-        raise HTTPException(status_code=500, detail="Could not delete this workspace. Try again; restore is still possible if its rows remain.")
+        # Files are deleted before rows (so a failure leaves rows to retry against), which
+        # means some media may already be gone: retrying is safe, restoring is not.
+        raise HTTPException(
+            status_code=500,
+            detail="Could not finish deleting this workspace. Its records were kept so you can "
+                   "retry the delete, but some of its files may already be gone -- do not restore it.",
+        )
     forget_cached_usage()
     logger.warning(
         "Org %s (ID %s) permanently deleted by %s: %s",
@@ -1216,6 +1345,7 @@ def list_plans(
 @router.post("/plans", response_model=PlanOut, status_code=201)
 def create_plan(
     payload: PlanWrite,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1227,6 +1357,9 @@ def create_plan(
     features = fields.pop("feature_flags")
     plan = models.Plan(**_store_limits(fields), feature_flags_json=json.dumps(features, sort_keys=True))
     db.add(plan)
+    db.flush()
+    _audit(db, scope, request, "plan.create", target_type="plan", target_id=plan.id,
+           after=_plan_out(plan).model_dump())
     db.commit()
     db.refresh(plan)
     logger.info("Package %s created by %s", plan.slug, scope.user.username)
@@ -1237,6 +1370,7 @@ def create_plan(
 def update_plan(
     plan_id: int,
     payload: PlanPatch,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1249,12 +1383,15 @@ def update_plan(
     plan = db.query(models.Plan).filter(models.Plan.id == plan_id).first()
     if not plan:
         raise HTTPException(status_code=404, detail="Package not found")
+    before = _plan_out(plan).model_dump()
     fields = payload.model_dump(exclude_unset=True, exclude_none=True)
     features = fields.pop("feature_flags", None)
     if features is not None:
         plan.feature_flags_json = json.dumps(features, sort_keys=True)
     for field, value in _store_limits(fields).items():
         setattr(plan, field, value)
+    _audit(db, scope, request, "plan.update", target_type="plan", target_id=plan.id,
+           before=before, after=_plan_out(plan).model_dump())
     db.commit()
     db.refresh(plan)
     logger.info("Package %s updated by %s", plan.slug, scope.user.username)
@@ -1264,6 +1401,7 @@ def update_plan(
 @router.delete("/plans/{plan_id}")
 def delete_plan(
     plan_id: int,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1277,15 +1415,25 @@ def delete_plan(
     if not plan:
         raise HTTPException(status_code=404, detail="Package not found")
 
+    before = _plan_out(plan).model_dump()
+    # Both columns, not just the organisation's: a subscription can outlive a tenant
+    # being moved off the package, and its FK made the hard delete fail with a 500.
     in_use = db.query(models.Organization).filter(models.Organization.plan_id == plan_id).count()
-    if in_use:
+    subscribed = db.query(models.Subscription).filter(models.Subscription.plan_id == plan_id).count()
+    if in_use or subscribed:
         plan.is_active = False
+        _audit(db, scope, request, "plan.deactivate", target_type="plan", target_id=plan.id,
+               before=before, after={**before, "is_active": False})
         db.commit()
         return {
             "status": "deactivated",
-            "detail": f"{in_use} workspace(s) are on this package, so it was retired rather than deleted.",
+            "detail": (
+                f"{max(in_use, subscribed)} workspace(s) are on or subscribed to this package, "
+                "so it was retired rather than deleted."
+            ),
         }
 
+    _audit(db, scope, request, "plan.delete", target_type="plan", target_id=plan.id, before=before)
     db.delete(plan)
     db.commit()
     logger.info("Package %s deleted by %s", plan.slug, scope.user.username)
@@ -1323,6 +1471,7 @@ def list_custom_requests(
 def price_custom_request(
     request_id: int,
     payload: schemas.CustomPlanRequestPrice,
+    http_request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1336,9 +1485,13 @@ def price_custom_request(
         raise HTTPException(status_code=404, detail="Request not found")
     if request.status == "paid":
         raise HTTPException(status_code=409, detail="This request has already been paid")
+    before = {"status": request.status, "price_paise": request.price_paise}
     request.price_paise = payload.price_paise
     request.status = "priced"
     request.updated_at = models.utcnow()
+    _audit(db, scope, http_request, "custom_request.price", org_id=request.organization_id,
+           target_type="custom_request", target_id=request.id, before=before,
+           after={"status": "priced", "price_paise": payload.price_paise})
     db.commit()
     db.refresh(request)
     logger.info("Custom request %s priced at %s paise by %s", request.id, payload.price_paise, scope.user.username)
@@ -1349,6 +1502,7 @@ def price_custom_request(
 def update_custom_request(
     request_id: int,
     payload: schemas.CustomPlanRequestUpdate,
+    http_request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1377,6 +1531,10 @@ def update_custom_request(
         raise HTTPException(status_code=409, detail="A rejected request cannot be edited")
 
     fields = payload.model_dump(exclude_unset=True)
+    _audit(db, scope, http_request, "custom_request.update", org_id=request.organization_id,
+           target_type="custom_request", target_id=request.id,
+           before={"status": request.status, "price_paise": request.price_paise},
+           after={**fields, "status": request.status})
     if "feature_flags" in fields:
         request.feature_flags_json = json.dumps(fields.pop("feature_flags") or {})
     for name, value in fields.items():
@@ -1420,6 +1578,7 @@ def update_custom_request(
 @router.post("/custom-requests/{request_id}/reject", response_model=schemas.CustomPlanRequestResponse)
 def reject_custom_request(
     request_id: int,
+    http_request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1432,20 +1591,18 @@ def reject_custom_request(
         raise HTTPException(status_code=404, detail="Request not found")
     if request.status == "paid":
         raise HTTPException(status_code=409, detail="A paid request cannot be rejected")
+    _audit(db, scope, http_request, "custom_request.reject", org_id=request.organization_id,
+           target_type="custom_request", target_id=request.id,
+           before={"status": request.status}, after={"status": "rejected"})
     request.status = "rejected"
     request.updated_at = models.utcnow()
     db.commit()
     db.refresh(request)
+    logger.info("Custom request %s rejected by %s", request.id, scope.user.username)
     return serialize_custom_request(request, include_org=True)
 
 
 # ------------------------------------------------------------------ fleet version monitor
-
-# A TV is counted online if it has been heard from within this window. Derived from
-# last_seen rather than Screen.status, which the heartbeat rewrites to "online" and nothing
-# flips back, so a TV that dropped still reads "online" until it happens to be touched.
-FLEET_ONLINE_WINDOW = timedelta(seconds=150)
-
 
 class FleetScreenOut(BaseModel):
     id: int
@@ -1501,15 +1658,7 @@ def fleet_overview(
 
     # Real fleet screens only: archived rows and never-paired registrations are not TVs an
     # operator is monitoring.
-    screens = (
-        db.query(models.Screen)
-        .filter(
-            models.Screen.deleted_at.is_(None),
-            models.Screen.organization_id.isnot(None),
-            models.Screen.status != "waiting_pairing",
-        )
-        .all()
-    )
+    screens = db.query(models.Screen).filter(*fleet_screen_filter()).all()
 
     now = models.utcnow()
     rows: List[FleetScreenOut] = []
@@ -1517,7 +1666,8 @@ def fleet_overview(
     online = on_latest = updating = failed = 0
 
     for screen in screens:
-        is_online = screen.last_seen is not None and (now - screen.last_seen) <= FLEET_ONLINE_WINDOW
+        # From last_seen, not Screen.status, which lags until the health pass flips it.
+        is_online = screen_is_online(screen.last_seen, now)
         if is_online:
             online += 1
         label = screen.app_version or "unknown"
@@ -1588,37 +1738,63 @@ def _store_demo_video(db: Session, url: str, description: Optional[str]) -> mode
     return setting
 
 
+def _current_demo_video(db: Session) -> Optional[str]:
+    setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == DEMO_VIDEO_KEY).first()
+    return setting.value if setting else None
+
+
 @router.post("/demo-video")
 def set_universal_demo_video(
     payload: DemoVideoPayload,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
+    _audit(db, scope, request, "platform.demo_video.update", target_type="setting",
+           target_id=DEMO_VIDEO_KEY, before={"url": _current_demo_video(db)}, after={"url": payload.url})
     setting = _store_demo_video(db, payload.url, payload.description)
+    logger.info("Universal demo reel set to %s by %s", setting.value, scope.user.username)
     return {"status": "ok", "url": setting.value}
 
 
+DEMO_VIDEO_MAX_BYTES = 500 * 1024 * 1024
+
+
 @router.post("/demo-video/upload")
-async def upload_universal_demo_video(
+def upload_universal_demo_video(
+    request: Request,
     file: UploadFile = File(...),
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
-    base_uploads = os.path.join(pathlib.Path(__file__).parent.parent.parent.absolute(), "uploads", "demo")
-    os.makedirs(base_uploads, exist_ok=True)
+    from .. import media_storage
 
     # Extension taken from a fixed allow-list rather than from the upload's own filename,
     # which is attacker-controlled and lands under a directory served by StaticFiles.
     extension = os.path.splitext(file.filename or "")[1].lower()
     if extension not in {".mp4", ".webm", ".mov", ".m4v"}:
         raise HTTPException(status_code=400, detail="Demo reel must be an .mp4, .webm, .mov or .m4v file")
+    file.file.seek(0, os.SEEK_END)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size > DEMO_VIDEO_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Demo reel must be 500 MB or smaller")
 
-    saved_filename = f"demo_reel_{uuid.uuid4().hex[:8]}{extension}"
-    with open(os.path.join(base_uploads, saved_filename), "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # Through media_storage like every tenant upload, so it lands in object storage when
+    # that is configured instead of on the instance disk, which a redeploy wipes.
+    key = f"platform/demo/demo_reel_{uuid.uuid4().hex[:8]}{extension}"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = pathlib.Path(tmp.name)
+    try:
+        stored = media_storage.store(tmp_path, key)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
-    relative_url = f"/uploads/demo/{saved_filename}"
-    resolved_url = resolve_media_url(relative_url) or relative_url
+    resolved_url = resolve_media_url(stored) or stored
+    _audit(db, scope, request, "platform.demo_video.update", target_type="setting",
+           target_id=DEMO_VIDEO_KEY, before={"url": _current_demo_video(db)},
+           after={"url": resolved_url, "filename": file.filename, "size_bytes": size})
     _store_demo_video(db, resolved_url, f"Universal Demo Video ({file.filename})")
 
     logger.info("Universal demo reel updated by %s (%s)", scope.user.username, resolved_url)
@@ -1632,12 +1808,17 @@ async def upload_universal_demo_video(
 
 class UserRoleUpdate(BaseModel):
     role: str = Field(..., description="Role to assign: super_admin, owner, editor, viewer")
+    # Granting platform-wide access is the one role change that cannot be undone by the
+    # person it is done to, so it is confirmed by typing their username, here and not just
+    # in the browser.
+    confirm_username: Optional[str] = None
 
 
 @router.patch("/users/{user_id}/role")
 def update_user_role(
     user_id: int,
     payload: UserRoleUpdate,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1649,6 +1830,20 @@ def update_user_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    # Refusing self-demotion is also what guarantees an administrator always remains: the
+    # caller is one, and is the only account this route cannot demote.
+    if user.id == scope.user.id and payload.role != "super_admin":
+        raise HTTPException(status_code=400, detail="You cannot remove your own platform administrator role.")
+    if payload.role == "super_admin" and user.role != "super_admin":
+        if (payload.confirm_username or "").strip() != user.username:
+            raise HTTPException(
+                status_code=400,
+                detail="Type the user's username to confirm granting platform administrator access.",
+            )
+
+    _audit(db, scope, request, "user.role.update", org_id=user.organization_id, target_type="user",
+           target_id=user.id, before={"role": user.role, "username": user.username},
+           after={"role": payload.role, "username": user.username})
     user.role = payload.role
     db.commit()
     db.refresh(user)
@@ -1743,6 +1938,7 @@ def get_contact_email(
 @router.put("/settings/contact-email", response_model=ContactEmailOut)
 def set_contact_email(
     payload: ContactEmailWrite,
+    request: Request,
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
@@ -1750,10 +1946,14 @@ def set_contact_email(
     if email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=422, detail="That does not look like an email address")
     setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == CONTACT_EMAIL_KEY).first()
+    _audit(db, scope, request, "platform.contact_email.update", target_type="setting",
+           target_id=CONTACT_EMAIL_KEY, before={"email": setting.value if setting else None},
+           after={"email": email or None})
     if not email:
         if setting:
             db.delete(setting)
         db.commit()
+        logger.info("Platform contact email cleared by %s", scope.user.username)
         return ContactEmailOut(email=None)
     if setting:
         setting.value = email
@@ -1820,4 +2020,6 @@ def send_test_email(
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 - surfacing the real SMTP error is the whole point
         raise HTTPException(status_code=502, detail=f"Could not send the email: {exc}")
+    _audit(scope.db, scope, request, "platform.test_email.send", target_type="email", after={"to": to})
+    scope.db.commit()
     return {"status": "sent", "to": to}

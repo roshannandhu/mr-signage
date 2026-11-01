@@ -5,6 +5,10 @@ import type { User } from './types'
 export interface ActingWorkspace {
   id: number
   name: string
+  // "View workspace (read-only)" from the admin Tenant 360 page. Every write the frontend
+  // sends while this is set carries X-Act-As-Mode: read, and the server enforces it --
+  // this only changes the UI's own behaviour (the banner, and what it warns about).
+  readOnly?: boolean
 }
 
 interface AuthState {

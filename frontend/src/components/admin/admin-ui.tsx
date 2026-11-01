@@ -12,15 +12,15 @@ import { AlertTriangle, CheckCircle, Clock, XCircle } from 'lucide-react'
  */
 
 export const statusStyles: Record<string, { label: string; className: string; Icon: typeof CheckCircle }> = {
-  active: { label: 'Active', className: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30', Icon: CheckCircle },
-  pending_approval: { label: 'Pending', className: 'text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
-  suspended: { label: 'Suspended', className: 'text-rose-400 bg-rose-500/15 border-rose-500/30', Icon: XCircle },
-  rejected: { label: 'Rejected', className: 'text-red-400 bg-red-500/15 border-red-500/30', Icon: XCircle },
+  active: { label: 'Active', className: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/30', Icon: CheckCircle },
+  pending_approval: { label: 'Pending', className: 'text-amber-700 dark:text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
+  suspended: { label: 'Suspended', className: 'text-rose-700 dark:text-rose-400 bg-rose-500/15 border-rose-500/30', Icon: XCircle },
+  rejected: { label: 'Rejected', className: 'text-red-700 dark:text-red-400 bg-red-500/15 border-red-500/30', Icon: XCircle },
   // Screens. They share this pill with tenants, and drawing every screen that was not online as
   // "Suspended" told an operator a TV had been cut off when it was merely unplugged or unpaired.
-  online: { label: 'Online', className: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30', Icon: CheckCircle },
+  online: { label: 'Online', className: 'text-emerald-700 dark:text-emerald-400 bg-emerald-500/15 border-emerald-500/30', Icon: CheckCircle },
   offline: { label: 'Offline', className: 'text-muted-foreground bg-muted border-border', Icon: XCircle },
-  waiting_pairing: { label: 'Waiting to pair', className: 'text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
+  waiting_pairing: { label: 'Waiting to pair', className: 'text-amber-700 dark:text-amber-400 bg-amber-500/15 border-amber-500/30', Icon: Clock },
 }
 
 export function StatusPill({ status }: { status: string }) {
@@ -46,11 +46,11 @@ export function StatusPill({ status }: { status: string }) {
 // source text, and this project has no config file and no safelist -- so not one of those
 // generated classes existed in the stylesheet and every stat card rendered unstyled.
 const accents = {
-  violet: { tile: 'bg-violet-500/10 border-violet-500/20', icon: 'text-violet-400' },
-  emerald: { tile: 'bg-emerald-500/10 border-emerald-500/20', icon: 'text-emerald-400' },
-  amber: { tile: 'bg-amber-500/10 border-amber-500/20', icon: 'text-amber-400' },
-  cyan: { tile: 'bg-cyan-500/10 border-cyan-500/20', icon: 'text-cyan-400' },
-  rose: { tile: 'bg-rose-500/10 border-rose-500/20', icon: 'text-rose-400' },
+  violet: { tile: 'bg-accent border-border', icon: 'text-foreground' },
+  emerald: { tile: 'bg-emerald-500/10 border-emerald-500/20', icon: 'text-emerald-700 dark:text-emerald-400' },
+  amber: { tile: 'bg-amber-500/10 border-amber-500/20', icon: 'text-amber-700 dark:text-amber-400' },
+  cyan: { tile: 'bg-cyan-500/10 border-cyan-500/20', icon: 'text-cyan-700 dark:text-cyan-400' },
+  rose: { tile: 'bg-rose-500/10 border-rose-500/20', icon: 'text-rose-700 dark:text-rose-400' },
 } as const
 
 export type Accent = keyof typeof accents
@@ -79,8 +79,11 @@ export function QuotaBar({ used, max }: { used: number; max: number | null }) {
   // the whole estate while the packages behind them were capped.
   const unlimited = max === null || max === undefined
   const pct = unlimited || max === 0 ? 100 : Math.min(100, Math.round((used / max) * 100))
-  const barColor = pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-violet-500'
-  const textColor = pct >= 100 ? 'text-rose-400 font-semibold' : pct >= 80 ? 'text-amber-400' : 'text-muted-foreground'
+  const barColor = pct >= 100 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-primary'
+  // Unlimited is never "at the limit": pct is 100 there only so no bar is drawn.
+  const textColor = unlimited ? 'text-muted-foreground'
+    : pct >= 100 ? 'text-rose-700 dark:text-rose-400 font-semibold'
+      : pct >= 80 ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
@@ -103,8 +106,8 @@ export function Feedback({ ok, error }: { ok?: string; error?: string }) {
       role="status"
       className={`flex items-center gap-2 rounded-xl border p-3 text-sm ${
         error
-          ? 'border-rose-500/30 bg-rose-500/10 text-rose-400'
-          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+          ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400'
+          : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
       }`}
     >
       {error ? <AlertTriangle className="size-4 shrink-0" /> : <CheckCircle className="size-4 shrink-0" />}
@@ -189,7 +192,7 @@ export function LimitInput({
           type="checkbox"
           checked={unlimited}
           onChange={(e) => onChange(e.target.checked ? UNLIMITED : scale)}
-          className="size-3.5 accent-violet-500"
+          className="size-3.5 accent-foreground"
         />
         Unlimited
       </label>

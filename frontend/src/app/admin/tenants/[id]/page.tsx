@@ -4,10 +4,11 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileVideo, Lock, LogIn, MonitorPlay, Palette, Users } from 'lucide-react'
+import { ArrowLeft, Eye, FileVideo, Lock, LogIn, MonitorPlay, Palette, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { adminApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 import {
   Feedback, PageHeader, QuotaBar, StatusPill, formatBytes,
 } from '@/components/admin/admin-ui'
@@ -34,6 +35,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
   const router = useRouter()
   const queryClient = useQueryClient()
   const enterWorkspace = useAuthStore((state) => state.enterWorkspace)
+  const confirm = useConfirm()
 
   const tenantQuery = useQuery({
     queryKey: ['admin', 'tenant', tenantId],
@@ -106,10 +108,21 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
             </button>
             <button
               onClick={() => {
+                enterWorkspace({ id: tenant.id, name: tenant.name, readOnly: true })
+                router.push('/dashboard/screens')
+              }}
+              title="Look around without being able to change anything"
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-muted px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+            >
+              <Eye className="size-4" />
+              View (read-only)
+            </button>
+            <button
+              onClick={() => {
                 enterWorkspace({ id: tenant.id, name: tenant.name })
                 router.push('/dashboard/screens')
               }}
-              className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
             >
               <LogIn className="size-4" />
               Enter workspace
@@ -117,7 +130,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
           </PageHeader>
 
           {tenant.rejection_reason && (
-            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-300">
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-700 dark:text-rose-300">
               Rejection reason: {tenant.rejection_reason}
             </div>
           )}
@@ -163,7 +176,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                 onClick={() => setTab(key)}
                 className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm transition-all ${
                   tab === key
-                    ? 'border-violet-500 font-semibold text-violet-300'
+                    ? 'border-foreground font-semibold text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-muted-foreground'
                 }`}
               >
@@ -227,7 +240,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                     key={`role-${u.id}`}
                     className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-semibold ${
                       u.role === 'super_admin'
-                        ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                        ? 'bg-accent text-foreground border border-border'
                         : 'bg-muted text-muted-foreground'
                     }`}
                   >
@@ -237,24 +250,38 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                   <button
                     key={`action-${u.id}`}
                     onClick={async () => {
-                      const newRole = u.role === 'super_admin' ? 'owner' : 'super_admin'
-                      const confirmed = window.confirm(
-                        u.role === 'super_admin'
-                          ? `Demote ${u.username} from Super Admin to Owner?`
-                          : `Hire/Promote ${u.username} to Platform Super Admin?`
-                      )
-                      if (!confirmed) return
+                      const promoting = u.role !== 'super_admin'
+                      // Granting platform-wide access is confirmed by typing the username,
+                      // which the server checks too.
+                      const result = await confirm(promoting ? {
+                        title: `Make ${u.username} a platform administrator?`,
+                        description: 'They will be able to see and change every tenant, package and TV on the platform.',
+                        level: 3,
+                        confirmText: u.username,
+                        destructive: true,
+                        confirmLabel: 'Grant admin access',
+                      } : {
+                        title: `Remove ${u.username}'s platform administrator access?`,
+                        description: 'They become an owner of this workspace and lose access to the admin console.',
+                        level: 2,
+                        confirmLabel: 'Remove admin access',
+                      })
+                      if (!result) return
                       try {
-                        await adminApi.updateUserRole(u.id, newRole)
+                        await adminApi.updateUserRole(u.id, promoting ? 'super_admin' : 'owner', {
+                          confirmUsername: promoting ? u.username : undefined,
+                          reason: result.reason,
+                        })
+                        toast.success(promoting ? `${u.username} is now a platform administrator.` : `${u.username} is now an owner.`)
                         usersQuery.refetch()
                       } catch (err) {
-                        alert(err instanceof Error ? err.message : 'Failed to update role')
+                        toast.error(err instanceof Error ? err.message : 'Failed to update role')
                       }
                     }}
                     className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-all ${
                       u.role === 'super_admin'
-                        ? 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border border-rose-500/20'
-                        : 'bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 border border-violet-500/20'
+                        ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 hover:bg-rose-500/25 border border-rose-500/20'
+                        : 'bg-accent text-foreground hover:bg-foreground/10 border border-border'
                     }`}
                   >
                     {u.role === 'super_admin' ? 'Demote to Owner' : 'Promote to Super Admin'}
@@ -283,7 +310,7 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
                   e.method === 'remote' ? 'Remote unlock' : 'PIN entry',
                   <span
                     key={`result-${e.id}`}
-                    className={e.success ? 'text-emerald-400' : 'text-rose-400'}
+                    className={e.success ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}
                   >
                     {e.success ? 'Success' : 'Failed'}
                   </span>,

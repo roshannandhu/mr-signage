@@ -157,12 +157,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           someone else's workspace, so it sits above the header, states whose workspace it
           is, and keeps the way out one click away at all times. */}
       {acting && (
-        <div className="sticky top-0 z-50 flex flex-wrap items-center gap-x-3 gap-y-1 bg-violet-600 px-4 py-2 text-sm text-white sm:px-6 lg:px-8">
+        <div
+          className={`sticky top-0 z-50 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm text-white sm:px-6 lg:px-8 ${
+            acting.readOnly ? 'bg-neutral-700' : 'bg-violet-600'
+          }`}
+        >
           <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
           <p className="min-w-0 flex-1">
-            Platform operator — you are working inside{' '}
-            <strong className="font-semibold">{acting.name}</strong>. Everything you change here
-            belongs to them.
+            {acting.readOnly ? (
+              <>
+                Platform operator — <strong className="font-semibold">read-only view</strong> of{' '}
+                <strong className="font-semibold">{acting.name}</strong>. Nothing here can be changed.
+              </>
+            ) : (
+              <>
+                Platform operator — you are working inside{' '}
+                <strong className="font-semibold">{acting.name}</strong>. Everything you change here
+                belongs to them.
+              </>
+            )}
           </p>
           <button
             onClick={() => {

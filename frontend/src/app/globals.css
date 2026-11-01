@@ -154,59 +154,102 @@
 
 /* ---------------------------------------------------------------------------
    Admin console
-   The platform operator's surface, and deliberately NOT the tenant workspace.
+   The platform operator's control plane. Pure white surfaces in light mode, pure black
+   in dark, neutral greys for hierarchy -- colour is reserved for status (online,
+   warning, failed), so anything coloured on an admin page means something.
 
-   Admin is a control plane: it approves and suspends workspaces, prices plans and
-   pushes APK releases to every television in the fleet. It read as an ordinary tenant
-   page because it was converted to the tenant tokens, and in light mode the two were
-   indistinguishable -- which is exactly the moment an operator mistakes whose data
-   they are looking at.
-
-   Scoped to a wrapper rather than restyling the pages: CSS custom properties cascade,
-   so redefining them on `.admin-console` wins for that subtree no matter what the site
-   theme is, and every admin page keeps using bg-background / bg-card / text-foreground
-   untouched. Always dark, by design -- the theme toggle does not reach it.
-
-   Cool slate rather than the tenant's neutral near-black (#0b0b0c), with violet as the
-   accent instead of azure, so the two surfaces are never mistakable at a glance.
+   Scoped to `.admin-console` (the layout also puts it on <body> so dialogs and menus
+   rendered in portals inherit it), so the tenant dashboard's navy/azure theme is
+   untouched. Follows the site light/dark setting like the rest of the app.
    --------------------------------------------------------------------------- */
 .admin-console {
+  color-scheme: light;
+
+  --rail: #ffffff;
+  --rail-foreground: #0a0a0a;
+  --rail-muted: #6b6b6b;
+  --panel: #fafafa;
+  --brand: #0a0a0a;
+  --brand-soft: #0a0a0a;
+  --hairline: #ebebeb;
+
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --card: #ffffff;
+  --card-foreground: #0a0a0a;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
+  --primary: #0a0a0a;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #0a0a0a;
+  --muted: #f5f5f5;
+  /* 5.3:1 on white, 4.9:1 on --muted: secondary text clears AA on both. */
+  --muted-foreground: #6b6b6b;
+  --accent: #f0f0f0;
+  --accent-foreground: #0a0a0a;
+  --destructive: #dc2626;
+  --border: #e5e5e5;
+  --input: #e5e5e5;
+  --ring: #0a0a0a;
+  --chart-1: #0a0a0a;
+  --chart-2: #404040;
+  --chart-3: #737373;
+  --chart-4: #a3a3a3;
+  --chart-5: #d4d4d4;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0a0a0a;
+  --sidebar-primary: #0a0a0a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f0f0;
+  --sidebar-accent-foreground: #0a0a0a;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #0a0a0a;
+}
+
+.dark .admin-console {
   color-scheme: dark;
 
-  --rail: #0a0e1a;
-  --rail-foreground: #e8eaf2;
-  --rail-muted: rgb(226 232 255 / 0.55);
-  --panel: #171c2e;
-  --brand: #a78bfa;
-  --brand-soft: #a78bfa;
-  --hairline: rgb(167 139 250 / 0.16);
+  --rail: #000000;
+  --rail-foreground: #fafafa;
+  --rail-muted: #a3a3a3;
+  --panel: #0a0a0a;
+  --brand: #fafafa;
+  --brand-soft: #fafafa;
+  --hairline: #1a1a1a;
 
-  --background: #070a14;
-  --foreground: #e8eaf2;
-  --card: #0e1322;
-  --card-foreground: #e8eaf2;
-  --popover: #141a2b;
-  --popover-foreground: #e8eaf2;
-  --primary: #a78bfa;
-  --primary-foreground: #070a14;
-  --secondary: #171c2e;
-  --secondary-foreground: #e8eaf2;
-  --muted: #171c2e;
-  /* 4.8:1 on --card, so secondary text still clears AA. */
-  --muted-foreground: #9aa3bf;
-  --accent: #1e2438;
-  --accent-foreground: #e8eaf2;
-  --border: rgb(167 139 250 / 0.16);
-  --input: rgb(167 139 250 / 0.22);
-  --ring: #a78bfa;
-  --sidebar: #0e1322;
-  --sidebar-foreground: #e8eaf2;
-  --sidebar-primary: #a78bfa;
-  --sidebar-primary-foreground: #070a14;
-  --sidebar-accent: #1e2438;
-  --sidebar-accent-foreground: #e8eaf2;
-  --sidebar-border: rgb(167 139 250 / 0.16);
-  --sidebar-ring: #a78bfa;
+  --background: #000000;
+  --foreground: #fafafa;
+  --card: #0a0a0a;
+  --card-foreground: #fafafa;
+  --popover: #0f0f0f;
+  --popover-foreground: #fafafa;
+  --primary: #fafafa;
+  --primary-foreground: #000000;
+  --secondary: #141414;
+  --secondary-foreground: #fafafa;
+  --muted: #141414;
+  /* 7:1 or better on every dark surface. */
+  --muted-foreground: #a3a3a3;
+  --accent: #1a1a1a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --border: #1f1f1f;
+  --input: #262626;
+  --ring: #fafafa;
+  --chart-1: #fafafa;
+  --chart-2: #d4d4d4;
+  --chart-3: #a3a3a3;
+  --chart-4: #737373;
+  --chart-5: #404040;
+  --sidebar: #000000;
+  --sidebar-foreground: #fafafa;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: #1a1a1a;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #1f1f1f;
+  --sidebar-ring: #fafafa;
 }
 
 @layer base {

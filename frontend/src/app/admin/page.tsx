@@ -42,7 +42,7 @@ export default function AdminOverviewPage() {
       </div>
 
       {counts.suspended > 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-300">
+        <div className="flex items-center gap-2 rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-sm text-rose-700 dark:text-rose-300">
           <XCircle className="size-4 shrink-0" />
           {counts.suspended} workspace{counts.suspended === 1 ? ' is' : 's are'} suspended and cannot access the API.
         </div>
@@ -51,10 +51,10 @@ export default function AdminOverviewPage() {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border p-4">
           <span className="flex items-center gap-2 text-sm font-semibold">
-            <ShieldCheck className="size-4 text-amber-400" />
+            <ShieldCheck className="size-4 text-amber-700 dark:text-amber-400" />
             Approvals queue
           </span>
-          <Link href="/admin/approvals" className="text-xs text-violet-400 hover:text-violet-300">
+          <Link href="/admin/approvals" className="text-xs text-foreground hover:text-foreground">
             Open queue →
           </Link>
         </div>
@@ -81,10 +81,10 @@ export default function AdminOverviewPage() {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center justify-between border-b border-border p-4">
           <span className="flex items-center gap-2 text-sm font-semibold">
-            <Users className="size-4 text-violet-400" />
+            <Users className="size-4 text-foreground" />
             {tenants.length} registered tenants
           </span>
-          <Link href="/admin/tenants" className="text-xs text-violet-400 hover:text-violet-300">
+          <Link href="/admin/tenants" className="text-xs text-foreground hover:text-foreground">
             Manage all →
           </Link>
         </div>

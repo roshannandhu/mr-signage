@@ -786,6 +786,21 @@ export interface StorageTenant {
   quota_bytes: number
 }
 
+/** GET /api/admin/platform-health -- the full report; the public /api/health is a subset. */
+export interface PlatformHealth {
+  status: 'ok' | 'degraded'
+  database: string
+  backend: string
+  host: string | null
+  redis: 'connected' | 'unreachable'
+  object_storage: string
+  email: string
+  storage_env: { set: string[]; missing: string[]; unexpected: string[]; placeholder: string[] }
+  schema_migration_error: string | null
+  legacy_screens_without_secret: number | null
+  warning: string | null
+}
+
 export interface PlatformStorage {
   configured: boolean
   error?: string | null

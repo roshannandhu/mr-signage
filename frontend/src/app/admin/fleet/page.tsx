@@ -52,8 +52,8 @@ export default function AdminFleetPage() {
           role="status"
           className={`rounded-2xl border p-4 text-sm ${
             data.screens_without_secret === 0
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-              : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
+              : 'border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200'
           }`}
         >
           <p className="font-semibold">
@@ -84,10 +84,10 @@ export default function AdminFleetPage() {
       {/* Version spread */}
       <section className="rounded-2xl border border-border bg-card p-5">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Rocket className="size-4 text-violet-400" />
+          <Rocket className="size-4 text-foreground" />
           Version spread
-          {latest && <span className="ml-2 text-xs font-normal text-muted-foreground">latest released: <span className="text-emerald-400">{latest}</span></span>}
-          {data && data.updating > 0 && <span className="ml-auto text-xs font-normal text-amber-300">{data.updating} updating…</span>}
+          {latest && <span className="ml-2 text-xs font-normal text-muted-foreground">latest released: <span className="text-emerald-700 dark:text-emerald-400">{latest}</span></span>}
+          {data && data.updating > 0 && <span className="ml-auto text-xs font-normal text-amber-700 dark:text-amber-300">{data.updating} updating…</span>}
         </div>
         {versions.length === 0 ? (
           <p className="text-sm text-muted-foreground">No paired TVs yet.</p>
@@ -98,11 +98,11 @@ export default function AdminFleetPage() {
               const isLatest = latest !== null && version === latest
               return (
                 <div key={version} className="flex items-center gap-3">
-                  <span className={`w-28 shrink-0 truncate font-mono text-xs ${isLatest ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                  <span className={`w-28 shrink-0 truncate font-mono text-xs ${isLatest ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}>
                     {version}{isLatest && ' ✓'}
                   </span>
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                    <div className={`h-full rounded-full ${isLatest ? 'bg-emerald-500' : 'bg-violet-500'}`} style={{ width: `${pct}%` }} />
+                    <div className={`h-full rounded-full ${isLatest ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${pct}%` }} />
                   </div>
                   <span className="w-10 shrink-0 text-right text-xs text-muted-foreground">{count}</span>
                 </div>
@@ -115,7 +115,7 @@ export default function AdminFleetPage() {
       {/* Per-TV table */}
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <MonitorPlay className="size-4 text-violet-400" />
+          <MonitorPlay className="size-4 text-foreground" />
           {data?.screens.length ?? 0} TVs
         </div>
         {isLoading ? (
@@ -143,14 +143,14 @@ export default function AdminFleetPage() {
                     <td className="p-4 pl-5 font-medium">{s.name || `Screen ${s.id}`}</td>
                     <td className="p-4 text-xs text-muted-foreground">{s.organization_name}</td>
                     <td className="p-4">
-                      <span className={`font-mono text-xs ${latest && s.app_version === latest ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                      <span className={`font-mono text-xs ${latest && s.app_version === latest ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}>
                         {s.app_version || '—'}
                       </span>
                     </td>
                     <td className="p-4 text-xs text-muted-foreground">{s.target_version_code ?? '—'}</td>
                     <td className="p-4"><UpdateChip screen={s} /></td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center gap-1.5 text-xs ${s.online ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                      <span className={`inline-flex items-center gap-1.5 text-xs ${s.online ? 'text-emerald-700 dark:text-emerald-400' : 'text-muted-foreground'}`}>
                         <span className={`size-1.5 rounded-full ${s.online ? 'bg-emerald-400' : 'bg-muted'}`} />
                         {s.online ? 'Online' : 'Offline'}
                       </span>
@@ -171,13 +171,13 @@ export default function AdminFleetPage() {
 function UpdateChip({ screen }: { screen: FleetScreen }) {
   const s = screen.update_status
   if (s === 'failed' || s === 'rolled_back') {
-    return <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-400">{s === 'rolled_back' ? 'rolled back' : 'failed'}{screen.update_failure_count > 0 ? ` ×${screen.update_failure_count}` : ''}</span>
+    return <span className="rounded-full border border-rose-500/20 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-700 dark:text-rose-400">{s === 'rolled_back' ? 'rolled back' : 'failed'}{screen.update_failure_count > 0 ? ` ×${screen.update_failure_count}` : ''}</span>
   }
   if (s === 'pending' || s === 'downloading' || s === 'installing') {
-    return <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-300">{s}…</span>
+    return <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300">{s}…</span>
   }
   if (s === 'success') {
-    return <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">up to date</span>
+    return <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-400">up to date</span>
   }
   return <span className="text-xs text-muted-foreground">—</span>
 }
@@ -229,14 +229,14 @@ function UpdateNowControl({ screen, releases }: { screen: FleetScreen; releases:
         <button
           onClick={() => { setNote(null); update.mutate() }}
           disabled={update.isPending}
-          className="flex items-center gap-1.5 rounded-lg bg-violet-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-600 disabled:opacity-40"
+          className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
         >
           <Download className={`size-3.5 ${update.isPending ? 'animate-pulse' : ''}`} />
           {update.isPending ? 'Sending…' : 'Update now'}
         </button>
       </div>
       {note && (
-        <span className={`text-[11px] ${note.tone === 'ok' ? 'text-emerald-400' : 'text-rose-400'}`}>{note.text}</span>
+        <span className={`text-[11px] ${note.tone === 'ok' ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-700 dark:text-rose-400'}`}>{note.text}</span>
       )}
     </div>
   )

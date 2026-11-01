@@ -157,11 +157,16 @@ async def dashboard_websocket(
     needs to see what is happening there.
     """
     from ..routers.auth import get_current_user_ws
-    from ..tenancy import resolve_acting_organization
+    from ..tenancy import BLOCKED_ORGANIZATION_STATUSES, is_super_admin, resolve_acting_organization
 
     db = database.SessionLocal()
     try:
         user = await get_current_user_ws(token, db)
+        # A suspended, rejected or removed workspace kept receiving its live fleet events
+        # over an already-issued token. Pending ones are left alone: they have no fleet yet.
+        org_status = user.organization_status
+        if not is_super_admin(user) and org_status in ("suspended", "rejected", "removed"):
+            raise HTTPException(status_code=403, detail=BLOCKED_ORGANIZATION_STATUSES[org_status])
         organization_id = resolve_acting_organization(user, act_as, db) or user.organization_id
         username = user.username
     except HTTPException as e:

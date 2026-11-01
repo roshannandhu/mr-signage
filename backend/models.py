@@ -289,7 +289,7 @@ class PlatformPayment(Base):
     provider_order_id = Column(String, nullable=True, index=True)
     provider_payment_id = Column(String, nullable=True)
     status = Column(String(20), nullable=False, default="captured")
-    paid_at = Column(UtcDateTime, nullable=False, default=utcnow)
+    paid_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
 
 
 class CustomPlanRequest(Base):
@@ -501,7 +501,7 @@ class Screen(Base):
     # lose the windows an operator already typed in.
     operating_mode = Column(String, nullable=False, default="always")
     status = Column(String, default="offline")
-    last_seen = Column(UtcDateTime, nullable=False, default=utcnow)
+    last_seen = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
     device_version = Column(String, nullable=True)
     app_version = Column(String, nullable=True)
     storage_used = Column(String, nullable=True)
@@ -1289,6 +1289,34 @@ class KioskUnlockEvent(Base):
     # Who queued a remote unlock. Null for a local PIN attempt -- the TV has no way to know
     # which human typed it, and a device-signed report must not be allowed to claim one.
     actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class AdminAuditEvent(Base):
+    """One thing a platform operator did, append-only.
+
+    No foreign keys on purpose: the trail has to outlive what it describes -- a purged
+    tenant, a deleted user -- or the record of who destroyed something is destroyed with it.
+    The actor's username is snapshotted for the same reason.
+    """
+
+    __tablename__ = "admin_audit_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    occurred_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
+    actor_user_id = Column(Integer, nullable=True, index=True)
+    actor_username = Column(String(150), nullable=True)
+    # Set when the change was made from inside a tenant's workspace (X-Act-As-Org).
+    acting_org_id = Column(Integer, nullable=True)
+    target_org_id = Column(Integer, nullable=True, index=True)
+    target_type = Column(String(40), nullable=True)
+    target_id = Column(String(64), nullable=True)
+    action = Column(String(80), nullable=False, index=True)
+    reason = Column(String(500), nullable=True)
+    before_json = Column(Text, nullable=True)
+    after_json = Column(Text, nullable=True)
+    ip = Column(String(64), nullable=True)
+    user_agent = Column(String(300), nullable=True)
+    batch_id = Column(String(36), nullable=True, index=True)
 
 
 class PlayLogHourlyRollup(Base):

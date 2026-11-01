@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from typing import TypeVar
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Query, Session
 
 from . import database, models
@@ -70,6 +70,11 @@ class TenantScope:
     # `organization_id` still returned their own org -- so what they saw was a soup of all
     # workspaces, and anything they created was filed under the operator's own.
     acting_organization_id: int | None = None
+    # "View workspace (read-only)" from the admin Tenant 360 page, via X-Act-As-Mode: read.
+    # Only meaningful alongside acting_organization_id -- a super_admin working in their OWN
+    # organisation is never put in this mode, and resolve_acting_organization already leaves
+    # this False for anyone who is not a super_admin, since the header it reads is ignored.
+    acting_read_only: bool = False
 
     @property
     def organization_id(self) -> int:
@@ -127,6 +132,20 @@ class TenantScope:
     def get(self, model: type[TenantModel], record_id: int) -> TenantModel | None:
         return self.query(model).filter(model.id == record_id).first()
 
+    def require_write_access(self) -> None:
+        """Raise if this request is a read-only look into a tenant's workspace.
+
+        Separate from is_read_only(): that one is about the TENANT's own billing state, and
+        is deliberately bypassed while acting so an operator can fix a lapsed workspace. This
+        is the operator's OWN choice to only look, never change -- "Enter workspace" stays
+        full write access; "View workspace (read-only)" calls this on every write route.
+        """
+        if self.acting_read_only:
+            raise HTTPException(
+                status_code=403,
+                detail="This is a read-only view of the workspace. Use \"Enter workspace\" to make changes.",
+            )
+
     def is_read_only(self) -> bool:
         # A platform operator inside a workspace is not subject to that workspace's billing
         # state. Going in to fix something is most needed precisely when a subscription has
@@ -164,6 +183,7 @@ class TenantScope:
 
 
 ACT_AS_HEADER = "X-Act-As-Org"
+ACT_AS_MODE_HEADER = "X-Act-As-Mode"
 
 
 def resolve_acting_organization(
@@ -210,23 +230,56 @@ def resolve_acting_organization(
     return organization.id
 
 
+_READ_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def note_act_as_write(request: Request, user: models.User, acting: int | None) -> None:
+    """Mark a write made from inside a tenant's workspace for the audit middleware.
+
+    Only marked here; main.ActAsAuditMiddleware writes the row once the response is known
+    to have succeeded, so a refused or failed request leaves no misleading entry.
+    """
+    # Admin routes write their own, richer audit rows; marking them here would double them.
+    if acting is None or request.method in _READ_METHODS or request.url.path.startswith("/api/admin/"):
+        return
+    request.state.act_as_audit = {
+        "actor_user_id": user.id,
+        "actor_username": user.username,
+        "acting_org_id": acting,
+        "method": request.method,
+        "path": request.url.path,
+    }
+
+
+def _read_only_view_requested(acting: int | None, mode_header: str | None) -> bool:
+    return acting is not None and (mode_header or "").strip().lower() == "read"
+
+
 def get_tenant_scope(
+    request: Request,
     db: Session = Depends(database.get_db),
     user: models.User = Depends(get_current_user),
     act_as: str | None = Header(default=None, alias=ACT_AS_HEADER),
+    act_as_mode: str | None = Header(default=None, alias=ACT_AS_MODE_HEADER),
 ) -> TenantScope:
     acting = resolve_acting_organization(user, act_as, db)
+    note_act_as_write(request, user, acting)
     if not is_super_admin(user):
         blocked = BLOCKED_ORGANIZATION_STATUSES.get(user.organization_status)
         if blocked:
             raise HTTPException(status_code=403, detail=blocked)
-    return TenantScope(db=db, user=user, acting_organization_id=acting)
+    return TenantScope(
+        db=db, user=user, acting_organization_id=acting,
+        acting_read_only=_read_only_view_requested(acting, act_as_mode),
+    )
 
 
 def get_billing_scope(
+    request: Request,
     db: Session = Depends(database.get_db),
     user: models.User = Depends(get_current_user),
     act_as: str | None = Header(default=None, alias=ACT_AS_HEADER),
+    act_as_mode: str | None = Header(default=None, alias=ACT_AS_MODE_HEADER),
 ) -> TenantScope:
     """Scope for the storefront routes.
 
@@ -236,6 +289,7 @@ def get_billing_scope(
     still cannot reach it: those are operator decisions money is not allowed to override.
     """
     acting = resolve_acting_organization(user, act_as, db)
+    note_act_as_write(request, user, acting)
     if not is_super_admin(user):
         status = user.organization_status
         if status in ("suspended", "rejected", "removed"):
@@ -243,7 +297,10 @@ def get_billing_scope(
     # Same header as the tenant scope, or an operator inside a workspace would see the
     # storefront answer for their OWN organisation while every other page showed the
     # tenant's -- the two disagreeing about who is being looked at.
-    return TenantScope(db=db, user=user, acting_organization_id=acting)
+    return TenantScope(
+        db=db, user=user, acting_organization_id=acting,
+        acting_read_only=_read_only_view_requested(acting, act_as_mode),
+    )
 
 
 def require_super_admin(
@@ -310,11 +367,13 @@ def require_tenant_roles(*roles: str, writable: bool = True):
     def dependency(scope: TenantScope = Depends(get_tenant_scope)) -> TenantScope:
         if not is_super_admin(scope.user) and scope.user.role not in roles:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-        if writable and scope.is_read_only():
-            raise HTTPException(
-                status_code=403,
-                detail="Subscription requires attention; dashboard changes are read-only until billing is restored",
-            )
+        if writable:
+            scope.require_write_access()
+            if scope.is_read_only():
+                raise HTTPException(
+                    status_code=403,
+                    detail="Subscription requires attention; dashboard changes are read-only until billing is restored",
+                )
         return scope
 
     return dependency

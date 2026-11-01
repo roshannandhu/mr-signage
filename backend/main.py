@@ -312,7 +312,70 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # The console runs on another origin, and the browser hides any response header not
+    # listed here from its JavaScript -- including the paging total.
+    expose_headers=["X-Total-Count"],
 )
+
+
+def _record_act_as_write(request: Request, pending: dict) -> None:
+    from .services import audit
+
+    db = database.SessionLocal()
+    try:
+        actor = db.get(models.User, pending["actor_user_id"])
+        if actor is None:
+            return
+        audit.record(
+            db,
+            actor=actor,
+            action="act_as.write",
+            request=request,
+            target_org_id=pending["acting_org_id"],
+            acting_org_id=pending["acting_org_id"],
+            target_type="request",
+            after={"method": pending["method"], "path": pending["path"]},
+        )
+        db.commit()
+    except Exception:  # noqa: BLE001 - the write already succeeded; losing its trail is logged, not raised
+        logger.exception("Could not record act-as audit entry for %s", pending.get("path"))
+    finally:
+        db.close()
+
+
+class ActAsAuditMiddleware:
+    """Audit every successful write a super admin makes from inside a tenant's workspace.
+
+    tenancy.note_act_as_write marks the request; this writes the row only once the response
+    status is known to be a success. Pure ASGI rather than BaseHTTPMiddleware so streaming
+    responses and background tasks are untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("method") in ("GET", "HEAD", "OPTIONS"):
+            await self.app(scope, receive, send)
+            return
+        scope.setdefault("state", {})
+        status_code = 500
+
+        async def capture(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
+        await self.app(scope, receive, capture)
+        pending = scope["state"].get("act_as_audit")
+        if pending and status_code < 400:
+            from starlette.concurrency import run_in_threadpool
+
+            await run_in_threadpool(_record_act_as_write, Request(scope), pending)
+
+
+app.add_middleware(ActAsAuditMiddleware)
 
 # FastAPI's default 422 body echoes the offending request back to the caller under
 # "input". On any endpoint that accepts a credential that hands the plaintext secret
@@ -499,8 +562,7 @@ def serve_media(key: str, request: Request = None):
     )
 
 
-@app.get("/api/health")
-async def health_check(db: Session = Depends(database.get_db)):
+async def _health_details(db: Session) -> dict:
     """Liveness, plus WHICH database is actually behind it.
 
     This used to answer {"database": "connected"} for any working connection, which is
@@ -667,6 +729,21 @@ async def health_check(db: Session = Depends(database.get_db)):
     }
 
 
+# What anyone may read: enough for Render's health check and the tenant storage banner.
+_PUBLIC_HEALTH_FIELDS = ("status", "database", "redis", "object_storage")
+
+
+@app.get("/api/health")
+async def health_check(db: Session = Depends(database.get_db)):
+    """Liveness for the load balancer and the tenant dashboard's storage banner.
+
+    Unauthenticated, so it no longer carries the database host, environment variable names,
+    migration errors or the legacy-device count; those are at /api/admin/platform-health.
+    """
+    details = await _health_details(db)
+    return {field: details[field] for field in _PUBLIC_HEALTH_FIELDS}
+
+
 # One import, at the point of use. There were two of these -- an identical line at the
 # top of the file and this one -- so adding a router meant remembering to edit both.
 from .routers import (
@@ -674,6 +751,19 @@ from .routers import (
     groups, placements, playlists, provisioning, releases, screens, screenshots,
     tenant_plans, users, websockets,
 )
+
+# After the routers import: tenancy reaches routers.auth, so importing it any earlier is circular.
+from .tenancy import require_super_admin  # noqa: E402
+
+
+@app.get("/api/admin/platform-health")
+async def platform_health(
+    db: Session = Depends(database.get_db),
+    scope=Depends(require_super_admin),
+):
+    """The full health report, for platform operators only."""
+    return await _health_details(db)
+
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])

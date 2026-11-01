@@ -60,11 +60,11 @@ export default function AdminBillingPage() {
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Receipt className="size-4 text-violet-400" />
+            <Receipt className="size-4 text-foreground" />
             {paymentsQuery.data?.length ?? 0} payments
           </div>
           {paymentsQuery.data && paymentsQuery.data.length > 0 && (
-            <p className="flex items-center gap-1 text-sm font-semibold text-emerald-400">
+            <p className="flex items-center gap-1 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
               <IndianRupee className="size-3.5" /> {formatPaise(totalPaise)} total
             </p>
           )}
@@ -118,7 +118,7 @@ export default function AdminBillingPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <Mail className="size-4 text-violet-400" />
+            <Mail className="size-4 text-foreground" />
             Custom-plan request contact address
           </div>
           <p className="text-xs text-muted-foreground">
@@ -134,12 +134,12 @@ export default function AdminBillingPage() {
               value={contactValue}
               onChange={(e) => setContactDraft(e.target.value)}
               placeholder="sales@yourcompany.com"
-              className="min-w-0 flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-violet-500/50"
+              className="min-w-0 flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
             />
             <button
               type="submit"
               disabled={saveContact.isPending}
-              className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-xs text-violet-300 transition-all hover:bg-violet-500/20 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-2 text-xs text-foreground transition-all hover:bg-foreground/10 disabled:opacity-50"
             >
               <Save className="size-3.5" />
               {saveContact.isPending ? 'Saving…' : 'Save'}
@@ -150,16 +150,16 @@ export default function AdminBillingPage() {
         <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-sm font-semibold">
-              <Send className="size-4 text-violet-400" />
+              <Send className="size-4 text-foreground" />
               Email delivery
             </div>
             {statusQuery.data && (
               statusQuery.data.is_configured ? (
-                <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                   <CheckCircle2 className="size-3.5" /> Configured
                 </span>
               ) : (
-                <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-300">
+                <span className="flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                   <XCircle className="size-3.5" /> Not configured
                 </span>
               )
@@ -184,12 +184,12 @@ export default function AdminBillingPage() {
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
               placeholder="you@yourcompany.com"
-              className="min-w-0 flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-violet-500/50"
+              className="min-w-0 flex-1 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-ring"
             />
             <button
               type="submit"
               disabled={sendTest.isPending || !testTo.trim()}
-              className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-2 text-xs text-violet-300 transition-all hover:bg-violet-500/20 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-2 text-xs text-foreground transition-all hover:bg-foreground/10 disabled:opacity-50"
             >
               <Send className="size-3.5" />
               {sendTest.isPending ? 'Sending…' : 'Send test email'}

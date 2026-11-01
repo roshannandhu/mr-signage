@@ -105,17 +105,29 @@ def organization_storage_used(db: Session, organization_id: int) -> int:
     them -- a display that leaves them out is not a smaller truth, it is a different number
     from the one that refuses the next upload.
     """
-    content_bytes = db.query(
-        func.coalesce(func.sum(models.Content.file_size_bytes), 0)
-    ).filter(models.Content.organization_id == organization_id).scalar() or 0
+    return storage_used_by_organization(db, [organization_id]).get(organization_id, 0)
 
-    rendition_bytes = db.query(
-        func.coalesce(func.sum(models.MediaRendition.file_size_bytes), 0)
+
+def storage_used_by_organization(db: Session, organization_ids) -> dict[int, int]:
+    """The same definition for many workspaces at once: two grouped queries, not two each."""
+    ids = list(organization_ids)
+    totals = {org_id: 0 for org_id in ids}
+    if not ids:
+        return totals
+
+    content_rows = db.query(
+        models.Content.organization_id, func.coalesce(func.sum(models.Content.file_size_bytes), 0)
+    ).filter(models.Content.organization_id.in_(ids)).group_by(models.Content.organization_id).all()
+
+    rendition_rows = db.query(
+        models.Content.organization_id, func.coalesce(func.sum(models.MediaRendition.file_size_bytes), 0)
     ).join(
         models.Content, models.Content.id == models.MediaRendition.content_id
-    ).filter(models.Content.organization_id == organization_id).scalar() or 0
+    ).filter(models.Content.organization_id.in_(ids)).group_by(models.Content.organization_id).all()
 
-    return int(content_bytes) + int(rendition_bytes)
+    for org_id, used in [*content_rows, *rendition_rows]:
+        totals[org_id] += int(used or 0)
+    return totals
 
 
 # Listing a bucket is O(objects) and this is read by a dashboard, so the answer is held for

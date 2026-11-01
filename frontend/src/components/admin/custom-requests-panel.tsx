@@ -10,7 +10,7 @@ import { FEATURES, Feedback } from '@/components/admin/admin-ui'
 const GIB = 1024 ** 3
 
 const inputClass =
-  'rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-violet-500/50'
+  'rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-ring'
 
 function NumField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
   return (
@@ -87,7 +87,7 @@ export function CustomRequestsPanel() {
       <Feedback ok={message} error={error} />
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <Sparkles className="size-4 text-emerald-400" />
+          <Sparkles className="size-4 text-emerald-700 dark:text-emerald-400" />
           {customRequests.length} custom requests
         </div>
         {customRequests.length === 0 ? (
@@ -103,7 +103,7 @@ export function CustomRequestsPanel() {
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">
                       {request.organization_name ?? `Workspace ${request.organization_id}`}
-                      <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${request.status === 'paid' ? 'bg-violet-500/10 text-violet-300' : request.status === 'priced' ? 'bg-emerald-500/10 text-emerald-300' : 'bg-amber-500/10 text-amber-300'}`}>
+                      <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${request.status === 'paid' ? 'bg-accent text-foreground' : request.status === 'priced' ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'}`}>
                         {request.status}
                       </span>
                     </p>
@@ -137,7 +137,7 @@ export function CustomRequestsPanel() {
                             type="checkbox"
                             checked={draftFeatures[f.key] ?? false}
                             onChange={(e) => editReq(request.id, { feature_flags: { ...draftFeatures, [f.key]: e.target.checked } })}
-                            className="h-3.5 w-3.5 accent-violet-500"
+                            className="h-3.5 w-3.5 accent-foreground"
                           />
                           {f.label}
                         </label>
@@ -147,7 +147,7 @@ export function CustomRequestsPanel() {
                       <button
                         onClick={() => updateReq.mutate({ id: request.id, body: draft })}
                         disabled={updateReq.isPending}
-                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-300 transition-all hover:bg-violet-500/20 disabled:opacity-40"
+                        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-1.5 text-xs text-foreground transition-all hover:bg-foreground/10 disabled:opacity-40"
                       >
                         <Save className="h-3 w-3" />
                         {request.status === 'paid' ? 'Save (applies now, no re-bill)' : 'Save changes'}
@@ -169,7 +169,7 @@ export function CustomRequestsPanel() {
                         <button
                           onClick={() => priceReq.mutate({ id: request.id, pricePaise: Math.round(Number(prices[request.id] || 0) * 100) })}
                           disabled={priceReq.isPending || !prices[request.id]}
-                          className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300 transition-all hover:bg-emerald-500/20 disabled:opacity-30"
+                          className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-300 transition-all hover:bg-emerald-500/20 disabled:opacity-30"
                         >
                           Set price &amp; release
                         </button>
@@ -178,7 +178,7 @@ export function CustomRequestsPanel() {
                     <button
                       onClick={() => rejectReq.mutate(request.id)}
                       disabled={rejectReq.isPending}
-                      className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
+                      className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
                     >
                       Decline
                     </button>

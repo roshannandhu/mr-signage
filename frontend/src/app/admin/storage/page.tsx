@@ -57,7 +57,7 @@ export default function AdminStoragePage() {
           0 B, which is indistinguishable from a bucket that is genuinely empty. */}
       {data?.error && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <p className="text-muted-foreground">
             {data.error}
             {data.configured && ' Until this is fixed the totals below are not a measurement.'}
@@ -69,7 +69,7 @@ export default function AdminStoragePage() {
           nothing, rather than leaving four zeroes to be read as a failure. */}
       {data?.configured && !data.error && data.object_count === 0 && (
         <div className="flex items-start gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 p-4 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-sky-400" />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-sky-700 dark:text-sky-400" />
           <p className="text-muted-foreground">
             The bucket was counted successfully and holds nothing. Where a workspace shows
             bytes under &ldquo;per database&rdquo;, those files are still in the Postgres
@@ -106,7 +106,7 @@ export default function AdminStoragePage() {
 
           {orphanBytes > 0 && (
             <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400" />
               <p className="text-muted-foreground">
                 <span className="text-foreground">{formatBytes(orphanBytes)}</span> across{' '}
                 {unattributed.length} prefix{unattributed.length === 1 ? '' : 'es'} belongs to no
@@ -142,7 +142,7 @@ export default function AdminStoragePage() {
                     return (
                       <tr key={tenant.prefix} className="transition-colors hover:bg-muted">
                         <td className="p-4 pl-5">
-                          <span className={tenant.organization_id ? 'font-medium text-foreground' : 'text-amber-400'}>
+                          <span className={tenant.organization_id ? 'font-medium text-foreground' : 'text-amber-700 dark:text-amber-400'}>
                             {tenant.name}
                           </span>
                         </td>
@@ -152,7 +152,7 @@ export default function AdminStoragePage() {
                         <td className="p-4 text-right text-muted-foreground">
                           {formatBytes(tenant.database_bytes)}
                           {notable && (
-                            <span className="ml-1.5 text-[11px] text-amber-400">
+                            <span className="ml-1.5 text-[11px] text-amber-700 dark:text-amber-400">
                               {drift > 0 ? '+' : '−'}{formatBytes(Math.abs(drift))}
                             </span>
                           )}

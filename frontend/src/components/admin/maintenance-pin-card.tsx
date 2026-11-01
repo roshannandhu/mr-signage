@@ -46,8 +46,8 @@ export function MaintenancePinCard() {
   return (
     <section className="rounded-2xl border border-border bg-card p-5">
       <div className="flex items-start gap-3">
-        <div className="grid size-9 shrink-0 place-items-center rounded-xl border border-violet-500/20 bg-violet-500/10">
-          <KeyRound className="size-4 text-violet-400" />
+        <div className="grid size-9 shrink-0 place-items-center rounded-xl border border-border bg-accent">
+          <KeyRound className="size-4 text-foreground" />
         </div>
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-foreground">Universal maintenance PIN</h2>
@@ -60,8 +60,8 @@ export function MaintenancePinCard() {
         <span
           className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs ${
             data?.pin
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
-              : 'border-amber-500/20 bg-amber-500/10 text-amber-400'
+              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+              : 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
           }`}
         >
           {data?.pin ? `In use: ${data.pin}` : 'Not set'}
@@ -79,7 +79,7 @@ export function MaintenancePinCard() {
         <button
           onClick={() => { setMessage(''); setError(''); save.mutate(pin) }}
           disabled={!valid || save.isPending}
-          className="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-40"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
         >
           {save.isPending ? 'Saving…' : 'Set PIN'}
         </button>
@@ -101,12 +101,12 @@ export function MaintenancePinCard() {
       </p>
 
       {message && (
-        <p className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-500/10 p-2.5 text-xs text-emerald-400">
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-emerald-500/10 p-2.5 text-xs text-emerald-700 dark:text-emerald-400">
           <CheckCircle className="mt-0.5 size-3.5 shrink-0" />{message}
         </p>
       )}
       {error && (
-        <p className="mt-3 flex items-start gap-2 rounded-lg bg-rose-500/10 p-2.5 text-xs text-rose-400">
+        <p className="mt-3 flex items-start gap-2 rounded-lg bg-rose-500/10 p-2.5 text-xs text-rose-700 dark:text-rose-400">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />{error}
         </p>
       )}

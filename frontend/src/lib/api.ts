@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  PlatformStorage, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  PlatformStorage, PlatformHealth, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -88,7 +88,10 @@ async function authFetch(endpoint: string, options: RequestInit = {}): Promise<R
   // Attached here rather than at each call site so stepping into a workspace reaches every
   // existing tenant endpoint at once -- which is the whole reason admin does not need its
   // own parallel copies of them. The server ignores it for anyone but a super admin.
-  if (acting) headers.set('X-Act-As-Org', String(acting.id))
+  if (acting) {
+    headers.set('X-Act-As-Org', String(acting.id))
+    if (acting.readOnly) headers.set('X-Act-As-Mode', 'read')
+  }
 
   const response = await fetch(`${API_BASE}${endpoint}`, { ...options, headers })
   if (response.status === 401) {
@@ -268,9 +271,12 @@ export const api = {
       request.open('POST', `${API_BASE}/content/upload`)
       const { token, acting } = useAuthStore.getState()
       if (token) request.setRequestHeader('Authorization', `Bearer ${token}`)
-      // The same header authFetch sets. Without it, an upload made while a platform operator is
-      // inside a tenant's workspace was filed under the operator's own organisation.
-      if (acting) request.setRequestHeader('X-Act-As-Org', String(acting.id))
+      // The same headers authFetch sets. Without the org one, an upload made while a platform
+      // operator is inside a tenant's workspace was filed under the operator's own organisation.
+      if (acting) {
+        request.setRequestHeader('X-Act-As-Org', String(acting.id))
+        if (acting.readOnly) request.setRequestHeader('X-Act-As-Mode', 'read')
+      }
 
       request.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100))
@@ -693,7 +699,19 @@ export const api = {
  * the dev-only rewrite in next.config.ts -- in production those requests hit the Vercel
  * origin and 404, so the whole approvals screen was dead once deployed.
  */
+/**
+ * The operator's stated reason for an admin action, stored in the audit log. A header rather
+ * than a body field so every route takes it without a schema change; URI-encoded because
+ * header values must be latin-1.
+ */
+function reasonHeader(reason?: string): Record<string, string> {
+  const trimmed = reason?.trim()
+  return trimmed ? { 'X-Admin-Reason': encodeURIComponent(trimmed.slice(0, 500)) } : {}
+}
+
 export const adminApi = {
+  // Full health report (database host, storage env, workers). Super admins only.
+  platformHealth: () => fetchWithAuth<PlatformHealth>('/admin/platform-health'),
   listTenants: (status?: string) =>
     fetchWithAuth<TenantSummary[]>(`/admin/tenants${status ? `?status=${encodeURIComponent(status)}` : ''}`),
   getTenant: (id: number) => fetchWithAuth<TenantSummary>(`/admin/tenants/${id}`),
@@ -714,12 +732,13 @@ export const adminApi = {
     }),
   rejectTenant: (id: number, reason: string) =>
     fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/reject`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reason }),
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) },
+      body: JSON.stringify({ reason }),
     }),
-  suspendTenant: (id: number) =>
-    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/suspend`, { method: 'POST' }),
-  reinstateTenant: (id: number) =>
-    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/reinstate`, { method: 'POST' }),
+  suspendTenant: (id: number, reason?: string) =>
+    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/suspend`, { method: 'POST', headers: reasonHeader(reason) }),
+  reinstateTenant: (id: number, reason?: string) =>
+    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/reinstate`, { method: 'POST', headers: reasonHeader(reason) }),
   updateQuota: (id: number, body: { plan_id?: number; max_screens?: number; max_ad_slots?: number }) =>
     fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/quota`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -729,9 +748,11 @@ export const adminApi = {
   updateSubscription: (
     id: number,
     body: { extend_days?: number; period_end?: string; billing_period?: string; status?: 'active' | 'expired' },
+    reason?: string,
   ) =>
     fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/subscription`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) },
+      body: JSON.stringify(body),
     }),
   // Limits and features for one workspace, without touching the package everyone else is on.
   grantLimits: (
@@ -747,16 +768,16 @@ export const adminApi = {
 
   // Take a workspace off the platform. Nothing is destroyed today: the server marks it and
   // a nightly job purges it 30 days later, which is the window `restoreTenant` undoes it in.
-  removeTenant: (id: number) =>
-    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}`, { method: 'DELETE' }),
-  restoreTenant: (id: number) =>
-    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/restore`, { method: 'POST' }),
+  removeTenant: (id: number, reason?: string) =>
+    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}`, { method: 'DELETE', headers: reasonHeader(reason) }),
+  restoreTenant: (id: number, reason?: string) =>
+    fetchWithAuth<TenantSummary>(`/admin/tenants/${id}/restore`, { method: 'POST', headers: reasonHeader(reason) }),
   // Skip the rest of the 30 days: rows and files go now. Only for a removed workspace, and the
   // server checks the typed name as well.
-  deleteTenantPermanently: (id: number, confirmName: string) =>
+  deleteTenantPermanently: (id: number, confirmName: string, reason?: string) =>
     fetchWithAuth<{ name: string; rows: Record<string, number> }>(
       `/admin/tenants/${id}/permanent?confirm_name=${encodeURIComponent(confirmName)}`,
-      { method: 'DELETE' },
+      { method: 'DELETE', headers: reasonHeader(reason) },
     ),
 
   // What the bucket actually holds, and which workspace put it there. `refresh` forces a
@@ -843,11 +864,17 @@ export const adminApi = {
     })
   },
 
-  updateUserRole: (userId: number, role: 'super_admin' | 'owner' | 'editor' | 'viewer') =>
+  // Granting super_admin needs the user's username typed back (`confirmUsername`); the
+  // server checks it.
+  updateUserRole: (
+    userId: number,
+    role: 'super_admin' | 'owner' | 'editor' | 'viewer',
+    options: { confirmUsername?: string; reason?: string } = {},
+  ) =>
     fetchWithAuth<{ status: string; user_id: number; username: string; role: string; message: string }>(`/admin/users/${userId}/role`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ role }),
+      headers: { 'Content-Type': 'application/json', ...reasonHeader(options.reason) },
+      body: JSON.stringify({ role, confirm_username: options.confirmUsername }),
     }),
 }
 

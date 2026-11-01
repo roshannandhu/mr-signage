@@ -86,11 +86,13 @@ def run():
         db.commit()
 
         # Seed Screens for Tenant Alpha:
-        # 2 Online, 1 Offline, 1 waiting_pairing
+        # 2 Online, 1 Offline, 1 waiting_pairing. "Offline" means not heard from recently --
+        # the admin console counts by last_seen, so an offline TV needs a stale one.
+        stale = models.utcnow() - timedelta(hours=1)
         db.add_all([
             models.Screen(organization_id=org1.id, name="Alpha Screen 1", status="online"),
             models.Screen(organization_id=org1.id, name="Alpha Screen 2", status="online"),
-            models.Screen(organization_id=org1.id, name="Alpha Screen 3", status="offline"),
+            models.Screen(organization_id=org1.id, name="Alpha Screen 3", status="offline", last_seen=stale),
             models.Screen(organization_id=org1.id, name="Alpha Unpaired", status="waiting_pairing"),
         ])
 
@@ -98,7 +100,7 @@ def run():
         # 1 Online, 1 Offline
         db.add_all([
             models.Screen(organization_id=org2.id, name="Beta Screen 1", status="online"),
-            models.Screen(organization_id=org2.id, name="Beta Screen 2", status="offline"),
+            models.Screen(organization_id=org2.id, name="Beta Screen 2", status="offline", last_seen=stale),
         ])
         db.commit()
 

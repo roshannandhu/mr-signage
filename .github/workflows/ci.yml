@@ -127,3 +127,83 @@ jobs:
         run: npx eslint src
       - name: Production build
         run: npm run build
+
+  admin-e2e:
+    name: Admin console - Playwright smoke
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # Throwaway values against a database that exists only inside this job.
+      DATABASE_URL: "postgresql://olrac:olrac_password@localhost:5432/ci_e2e"
+      SECRET_KEY: "ci-not-a-real-secret"
+      AWS_ACCESS_KEY_ID: "mock"
+      AWS_SECRET_ACCESS_KEY: "mock"
+      REDIS_URL: "redis://localhost:6379"
+      CORS_ORIGINS: "http://localhost:3000"
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend deps
+        run: pip install -r backend/requirements-dev.txt
+      - name: Create the database from the migration chain
+        run: |
+          psql -h localhost -U postgres -c "CREATE ROLE olrac LOGIN PASSWORD 'olrac_password' CREATEDB"
+          psql -h localhost -U postgres -c "CREATE DATABASE ci_e2e OWNER olrac"
+          python -m alembic -c backend/alembic.ini upgrade head
+      - name: Start the backend
+        run: |
+          nohup python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 > backend.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://127.0.0.1:8000/api/health && break; sleep 1; done
+      - name: Install, build and start the frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          nohup npm start -- -p 3000 > ../frontend.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/login > /dev/null && break; sleep 1; done
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('frontend/package-lock.json') }}
+      - name: Install Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Smoke suite
+        working-directory: frontend
+        env:
+          CI: "1"
+          E2E_DATABASE_URL: "postgresql://olrac:olrac_password@localhost:5432/ci_e2e"
+        run: npx playwright test
+      - name: Server logs on failure
+        if: failure()
+        run: tail -n 200 backend.log frontend.log

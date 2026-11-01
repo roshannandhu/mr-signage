@@ -310,7 +310,11 @@ def test_area_4_role_promotion_and_approval_lifecycle():
         assert res_approve.json()["status"] == "active"
 
         # Step 5: Super Admin promotes user to Super Admin
-        res_promote = client.patch(f"/api/admin/users/{new_user.id}/role", json={"role": "super_admin"}, headers=admin_headers)
+        res_promote = client.patch(
+            f"/api/admin/users/{new_user.id}/role",
+            json={"role": "super_admin", "confirm_username": new_user.username},
+            headers=admin_headers,
+        )
         assert res_promote.status_code == 200
         assert res_promote.json()["role"] == "super_admin"
 

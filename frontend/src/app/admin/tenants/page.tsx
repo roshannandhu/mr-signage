@@ -10,6 +10,7 @@ import {
 import { adminApi } from '@/lib/api'
 import type { TenantSummary } from '@/lib/types'
 import { GrantLimitsDialog } from '@/components/admin/grant-limits-dialog'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 import {
   Feedback, PageHeader, QuotaBar, StatCard, StatusPill, formatBytes,
 } from '@/components/admin/admin-ui'
@@ -38,9 +39,9 @@ function PlanWindow({ tenant }: { tenant: TenantSummary }) {
   if (!state) return <span className="text-xs text-muted-foreground">—</span>
 
   const tone =
-    state === 'expired' ? 'border-rose-500/20 bg-rose-500/10 text-rose-400'
-      : state === 'grace' ? 'border-amber-500/20 bg-amber-500/10 text-amber-400'
-        : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
+    state === 'expired' ? 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-400'
+      : state === 'grace' ? 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+        : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
   const label = state === 'expired' ? 'Ended' : state === 'grace' ? 'Grace' : 'Running'
 
   return (
@@ -69,7 +70,7 @@ function Features({ tenant }: { tenant: TenantSummary }) {
         <span
           key={key}
           title={key.replace(/_/g, ' ')}
-          className="rounded border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] uppercase text-violet-400"
+          className="rounded border border-border bg-accent px-1.5 py-0.5 text-[10px] uppercase text-foreground"
         >
           {key.split('_').map((word) => word[0]).join('')}
         </span>
@@ -80,6 +81,7 @@ function Features({ tenant }: { tenant: TenantSummary }) {
 
 export default function AdminTenantsPage() {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [search, setSearch] = useState('')
   const [quotaFor, setQuotaFor] = useState<TenantSummary | null>(null)
   const [grantFor, setGrantFor] = useState<TenantSummary | null>(null)
@@ -100,15 +102,15 @@ export default function AdminTenantsPage() {
   const failed = (e: Error) => { setMessage(''); setError(e.message) }
 
   const setStatus = useMutation({
-    mutationFn: ({ id, action }: { id: number; action: 'suspend' | 'reinstate' }) =>
-      action === 'suspend' ? adminApi.suspendTenant(id) : adminApi.reinstateTenant(id),
+    mutationFn: ({ id, action, reason }: { id: number; action: 'suspend' | 'reinstate'; reason?: string }) =>
+      action === 'suspend' ? adminApi.suspendTenant(id, reason) : adminApi.reinstateTenant(id),
     onSuccess: (tenant) => done(`${tenant.name} is now ${tenant.status}.`),
     onError: failed,
   })
 
   const setPlanWindow = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: { extend_days?: number; status?: 'active' | 'expired' } }) =>
-      adminApi.updateSubscription(id, body),
+    mutationFn: ({ id, body, reason }: { id: number; body: { extend_days?: number; status?: 'active' | 'expired' }; reason?: string }) =>
+      adminApi.updateSubscription(id, body, reason),
     onSuccess: (tenant) => done(
       tenant.subscription_state === 'expired'
         ? `${tenant.name}'s plan has been ended. Their screens now show the demo reel.`
@@ -121,8 +123,8 @@ export default function AdminTenantsPage() {
   // rather than a click: everything in it is destroyed at the end of that window, and this
   // is the last point at which reading the name carefully still helps.
   const setRemoved = useMutation({
-    mutationFn: ({ id, action }: { id: number; action: 'remove' | 'restore' }) =>
-      action === 'remove' ? adminApi.removeTenant(id) : adminApi.restoreTenant(id),
+    mutationFn: ({ id, action, reason }: { id: number; action: 'remove' | 'restore'; reason?: string }) =>
+      action === 'remove' ? adminApi.removeTenant(id, reason) : adminApi.restoreTenant(id),
     onSuccess: (tenant) => done(
       tenant.deleted_at
         ? `${tenant.name} has been removed. Everything in it is deleted for good on ${formatWindowEnd(tenant.purge_at)}.`
@@ -132,7 +134,8 @@ export default function AdminTenantsPage() {
   })
 
   const deleteNow = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) => adminApi.deleteTenantPermanently(id, name),
+    mutationFn: ({ id, name, reason }: { id: number; name: string; reason?: string }) =>
+      adminApi.deleteTenantPermanently(id, name, reason),
     onSuccess: (report) => done(`${report.name} has been deleted permanently.`),
     onError: failed,
   })
@@ -190,12 +193,12 @@ export default function AdminTenantsPage() {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search by workspace, slug or owner email…"
-        className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-violet-500/50"
+        className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
       />
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <Users className="size-4 text-violet-400" />
+          <Users className="size-4 text-foreground" />
           {filtered.length} of {tenants.length} tenants
         </div>
 
@@ -229,11 +232,11 @@ export default function AdminTenantsPage() {
                       </Link>
                       <p className="font-mono text-xs text-muted-foreground">{tenant.slug}</p>
                     </td>
-                    <td className="p-4 font-mono text-xs text-emerald-400">{tenant.owner_email ?? '—'}</td>
+                    <td className="p-4 font-mono text-xs text-emerald-700 dark:text-emerald-400">{tenant.owner_email ?? '—'}</td>
                     <td className="p-4 text-xs text-muted-foreground">{tenant.plan_name ?? '—'}</td>
                     <td className="p-4">
                       {tenant.deleted_at ? (
-                        <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-400">
+                        <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-700 dark:text-rose-400">
                           Removed
                         </span>
                       ) : (
@@ -257,36 +260,32 @@ export default function AdminTenantsPage() {
                             existing, so only the one that calls it off is offered. */}
                         {tenant.deleted_at ? (
                           <>
-                            <span className="text-[11px] text-rose-400">
+                            <span className="text-[11px] text-rose-700 dark:text-rose-400">
                               Deleted for good on {formatWindowEnd(tenant.purge_at)}
                             </span>
                             <button
                               onClick={() => setRemoved.mutate({ id: tenant.id, action: 'restore' })}
                               disabled={setRemoved.isPending}
-                              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
+                              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
                             >
                               <RotateCcw className="size-3" />
                               Restore
                             </button>
                             <button
-                              onClick={() => {
-                                const typed = window.prompt(
-                                  `Delete "${tenant.name}" permanently, right now?
-
-Every screen, advert, playlist, user and file in this workspace is erased from the database and storage. This cannot be undone.
-
-Type the workspace name to confirm:`,
-                                )
-                                if (typed !== null && typed.trim() === tenant.name) {
-                                  deleteNow.mutate({ id: tenant.id, name: typed.trim() })
-                                } else if (typed !== null) {
-                                  setMessage('')
-                                  setError('That is not the workspace name — nothing was deleted.')
-                                }
+                              onClick={async () => {
+                                const result = await confirm({
+                                  title: `Delete ${tenant.name} permanently?`,
+                                  description: 'Every screen, advert, playlist, user and file in this workspace is erased from the database and storage. This cannot be undone.',
+                                  level: 3,
+                                  confirmText: tenant.name,
+                                  destructive: true,
+                                  confirmLabel: 'Delete permanently',
+                                })
+                                if (result) deleteNow.mutate({ id: tenant.id, name: tenant.name, reason: result.reason })
                               }}
                               disabled={deleteNow.isPending}
                               title="Erase this workspace from the database now instead of waiting 30 days"
-                              className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
+                              className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
                             >
                               <Trash2 className="size-3" />
                               {deleteNow.isPending ? 'Deleting…' : 'Delete now'}
@@ -296,7 +295,7 @@ Type the workspace name to confirm:`,
                           <>
                         <button
                           onClick={() => { setQuotaFor(tenant); setMessage(''); setError('') }}
-                          className="flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-400 transition-all hover:bg-violet-500/20"
+                          className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-1.5 text-xs text-foreground transition-all hover:bg-foreground/10"
                         >
                           <Gauge className="size-3" />
                           Limits
@@ -304,7 +303,7 @@ Type the workspace name to confirm:`,
                         <button
                           onClick={() => { setGrantFor(tenant); setMessage(''); setError('') }}
                           title="Set this tenant's screens, ads, clients, storage and features"
-                          className="flex items-center gap-1.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-1.5 text-xs text-fuchsia-400 transition-all hover:bg-fuchsia-500/20"
+                          className="flex items-center gap-1.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-1.5 text-xs text-fuchsia-700 dark:text-fuchsia-400 transition-all hover:bg-fuchsia-500/20"
                         >
                           <Sliders className="size-3" />
                           Grant
@@ -313,22 +312,25 @@ Type the workspace name to confirm:`,
                           onClick={() => setPlanWindow.mutate({ id: tenant.id, body: { extend_days: 30 } })}
                           disabled={setPlanWindow.isPending}
                           title="Add 30 days to this workspace's paid window"
-                          className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-400 transition-all hover:bg-sky-500/20 disabled:opacity-50"
+                          className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-400 transition-all hover:bg-sky-500/20 disabled:opacity-50"
                         >
                           <CalendarPlus className="size-3" />
                           +30 days
                         </button>
                         {tenant.subscription_state === 'active' && (
                           <button
-                            onClick={() => {
-                              if (window.confirm(
-                                `End "${tenant.name}"'s plan now? Their adverts stop and their screens show the demo reel. Nothing is deleted, and extending the plan puts it all back.`,
-                              )) {
-                                setPlanWindow.mutate({ id: tenant.id, body: { status: 'expired' } })
-                              }
+                            onClick={async () => {
+                              const result = await confirm({
+                                title: `End ${tenant.name}'s plan now?`,
+                                description: 'Their adverts stop and their screens show the demo reel. Nothing is deleted, and extending the plan puts it all back.',
+                                impact: `${tenant.screens_count} TV${tenant.screens_count === 1 ? '' : 's'} switch to the demo reel.`,
+                                level: 2,
+                                confirmLabel: 'End plan',
+                              })
+                              if (result) setPlanWindow.mutate({ id: tenant.id, body: { status: 'expired' }, reason: result.reason })
                             }}
                             disabled={setPlanWindow.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-400 transition-all hover:bg-amber-500/20 disabled:opacity-50"
+                            className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400 transition-all hover:bg-amber-500/20 disabled:opacity-50"
                           >
                             <CalendarX className="size-3" />
                             End plan
@@ -337,43 +339,44 @@ Type the workspace name to confirm:`,
                         {tenant.status === 'suspended' ? (
                           <button
                             onClick={() => setStatus.mutate({ id: tenant.id, action: 'reinstate' })}
-                            className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400 transition-all hover:bg-emerald-500/20"
+                            className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 transition-all hover:bg-emerald-500/20"
                           >
                             <CheckCircle className="size-3" />
                             Reinstate
                           </button>
                         ) : (
                           <button
-                            onClick={() => {
-                              if (window.confirm(`Block "${tenant.name}"? Their dashboard and API access stop immediately.`)) {
-                                setStatus.mutate({ id: tenant.id, action: 'suspend' })
-                              }
+                            onClick={async () => {
+                              const result = await confirm({
+                                title: `Block ${tenant.name}?`,
+                                description: 'Their dashboard and API access stop immediately. Reinstating gives it back.',
+                                level: 2,
+                                destructive: true,
+                                confirmLabel: 'Block workspace',
+                              })
+                              if (result) setStatus.mutate({ id: tenant.id, action: 'suspend', reason: result.reason })
                             }}
-                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-400 transition-all hover:bg-rose-500/20"
+                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20"
                           >
                             <XCircle className="size-3" />
                             Block
                           </button>
                         )}
                         <button
-                          onClick={() => {
-                            const typed = window.prompt(
-                              `Remove "${tenant.name}"?
-
-Their access stops now, and in 30 days every screen, advert, playlist and file in this workspace is deleted permanently. It can be restored at any point before then.
-
-Type the workspace name to confirm:`,
-                            )
-                            if (typed !== null && typed.trim() === tenant.name) {
-                              setRemoved.mutate({ id: tenant.id, action: 'remove' })
-                            } else if (typed !== null) {
-                              setMessage('')
-                              setError('That is not the workspace name — nothing was removed.')
-                            }
+                          onClick={async () => {
+                            const result = await confirm({
+                              title: `Remove ${tenant.name}?`,
+                              description: 'Their access stops now, and in 30 days every screen, advert, playlist and file in this workspace is deleted permanently. It can be restored at any point before then.',
+                              level: 3,
+                              confirmText: tenant.name,
+                              destructive: true,
+                              confirmLabel: 'Remove workspace',
+                            })
+                            if (result) setRemoved.mutate({ id: tenant.id, action: 'remove', reason: result.reason })
                           }}
                           disabled={setRemoved.isPending}
                           title="Remove this workspace and delete everything in it after 30 days"
-                          className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
+                          className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
                         >
                           <Trash2 className="size-3" />
                           Remove
@@ -436,8 +439,8 @@ function QuotaDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onCancel}>
       <div className="w-full max-w-md space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-2xl border border-violet-500/20 bg-violet-500/10">
-            <Gauge className="size-5 text-violet-400" />
+          <div className="grid size-10 place-items-center rounded-2xl border border-border bg-accent">
+            <Gauge className="size-5 text-foreground" />
           </div>
           <div>
             <h2 className="font-bold text-foreground">Edit limits</h2>
@@ -450,7 +453,7 @@ function QuotaDialog({
           <select
             value={planId}
             onChange={(e) => choosePackage(e.target.value === '' ? '' : Number(e.target.value))}
-            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-violet-500/50"
+            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           >
             <option value="">No package</option>
             {packages.filter((p) => p.is_active || p.id === tenant.plan_id).map((p) => (
@@ -465,7 +468,7 @@ function QuotaDialog({
           </span>
           <input
             type="number" min={0} value={screens} onChange={(e) => setScreens(Number(e.target.value) || 0)}
-            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-violet-500/50"
+            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           />
           <p className="mt-1 text-xs text-muted-foreground">
             Currently using {tenant.screens_count}. For no limit at all, use Limits &amp; features.
@@ -478,7 +481,7 @@ function QuotaDialog({
           </span>
           <input
             type="number" min={0} value={ads} onChange={(e) => setAds(Number(e.target.value) || 0)}
-            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-cyan-500/50"
+            className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           />
           <p className="mt-1 text-xs text-muted-foreground">Currently using {tenant.ad_slots_used}.</p>
         </label>
@@ -487,7 +490,7 @@ function QuotaDialog({
           <button
             onClick={() => onSave({ ...(planId === '' ? {} : { plan_id: planId }), max_screens: screens, max_ad_slots: ads })}
             disabled={saving}
-            className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-semibold text-white transition-all hover:bg-violet-500 disabled:opacity-50"
+            className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save limits'}
           </button>

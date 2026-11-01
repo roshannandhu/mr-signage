@@ -7,23 +7,27 @@ import { useQuery } from '@tanstack/react-query'
 import { adminApi, api } from '@/lib/api'
 import { isSuperAdmin } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { ThemeToggle } from '@/components/dashboard/theme-toggle'
+import { ConfirmProvider } from '@/components/admin/kit/confirm-dialog'
 import {
-  ShieldCheck, Users, Film, LogOut, ChevronRight, LayoutDashboard,
-  Package, Receipt, Rocket, QrCode, Menu, X, Activity, HardDrive
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  ShieldCheck, Users, Film, LogOut, LayoutDashboard, Package, Receipt, Rocket, QrCode, Menu, X,
+  Activity, HardDrive, PanelLeftClose, PanelLeftOpen, ChevronRight,
 } from 'lucide-react'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; badge?: number }
 
-// Grouped like a real console: a flat "Overview" first, then sections an operator actually
-// thinks in -- who they're selling to, what's for sale, and what's running in the field.
-// One list before this read as a single undifferentiated stack of nine links.
+// Grouped the way an operator thinks: who they sell to, what is for sale, what is running
+// in the field, and the platform itself.
 const navSections: { label: string; items: NavItem[] }[] = [
   { label: '', items: [{ href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true }] },
   {
-    label: 'Tenants',
+    label: 'Customers',
     items: [
-      { href: '/admin/approvals', label: 'Approvals Queue', icon: ShieldCheck },
-      { href: '/admin/tenants', label: 'All Tenants', icon: Users },
+      { href: '/admin/approvals', label: 'Approvals', icon: ShieldCheck },
+      { href: '/admin/tenants', label: 'Tenants', icon: Users },
     ],
   },
   {
@@ -36,217 +40,285 @@ const navSections: { label: string; items: NavItem[] }[] = [
   {
     label: 'Fleet',
     items: [
-      { href: '/admin/storage', label: 'Storage', icon: HardDrive },
+      { href: '/admin/fleet', label: 'TV Fleet', icon: Activity },
       { href: '/admin/releases', label: 'App Releases', icon: Rocket },
-      { href: '/admin/fleet', label: 'Fleet Versions', icon: Activity },
-      { href: '/admin/provisioning', label: 'Zero-Touch Provisioning', icon: QrCode },
+      { href: '/admin/provisioning', label: 'Provisioning', icon: QrCode },
     ],
   },
-  { label: 'Content', items: [{ href: '/admin/demo-video', label: 'Demo Video', icon: Film }] },
+  {
+    label: 'Platform',
+    items: [
+      { href: '/admin/storage', label: 'Storage', icon: HardDrive },
+      { href: '/admin/demo-video', label: 'Demo Video', icon: Film },
+    ],
+  },
 ]
+
+const allItems = navSections.flatMap((section) => section.items.map((item) => ({ ...item, section: section.label })))
+
+function isActive(item: NavItem, pathname: string) {
+  return item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`)
+}
+
+/** Where we are, as Section / Page / Details, from the nav itself so the two cannot drift. */
+function breadcrumbsFor(pathname: string) {
+  const item = allItems.filter((candidate) => isActive(candidate, pathname)).sort((a, b) => b.href.length - a.href.length)[0]
+  if (!item) return ['Admin']
+  const crumbs = item.section ? [item.section, item.label] : [item.label]
+  if (pathname !== item.href) crumbs.push('Details')
+  return crumbs
+}
+
+const RAIL_KEY = 'admin-rail-collapsed'
+
+function readCollapsed(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(RAIL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(RAIL_KEY, value ? '1' : '0')
+  } catch {
+    // A per-viewer convenience; losing it just means the rail opens expanded next time.
+  }
+}
+
+/** "Local" or "Production", so nobody suspends a real tenant thinking they are on a test copy. */
+function EnvironmentBadge({ enabled }: { enabled: boolean }) {
+  const health = useQuery({ queryKey: ['admin', 'platform-health'], queryFn: adminApi.platformHealth, enabled, staleTime: 5 * 60_000 })
+  if (!health.data) return null
+  const host = (health.data.host ?? '').toLowerCase()
+  const local = health.data.backend === 'sqlite' || ['localhost', '127.0.0.1', '::1'].includes(host)
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase ${
+        local ? 'border-border text-muted-foreground' : 'border-red-500/40 text-red-700 dark:text-red-400'
+      }`}
+      title={local ? 'Connected to a local database' : 'Connected to the production database'}
+    >
+      <span className={`size-1.5 rounded-full ${local ? 'bg-muted-foreground' : 'bg-red-500'}`} aria-hidden="true" />
+      {local ? 'Local' : 'Production'}
+    </span>
+  )
+}
+
+function Brand({ compact }: { compact: boolean }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-[11px] font-bold tracking-tight text-background">
+        MR
+      </div>
+      {!compact && (
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-sm font-semibold text-foreground">MR Signage</p>
+          <p className="truncate text-[11px] text-muted-foreground">Control Center</p>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { token, user, hydrated, clearSession } = useAuthStore()
   const router = useRouter()
   const pathname = usePathname()
-  // The server's answer, not the browser's memory of it.
-  //
-  // This guard used to read `user` alone, which is whatever was written to localStorage at
-  // the last sign-in. A platform operator whose cached copy predated the role column -- or
-  // who was promoted to super_admin during a live session -- therefore failed the check and
-  // was redirected to /dashboard/screens, a tenant workspace they do not belong in, while
-  // the API served /api/admin/* to them perfectly well. The dashboard layout already
-  // resolved this the right way (`meQuery.data?.role || user?.role`); the two guards simply
-  // disagreed, and the one guarding /admin was the stale one.
-  // Off-canvas nav for phones. Closed on every navigation, or the drawer stays over the
-  // page the operator just asked for.
+
+  // Off-canvas nav for phones, closed on every navigation -- reset during render on the route
+  // change, not in an effect that fires after the new page has painted under the drawer.
   const [navOpen, setNavOpen] = useState(false)
-  // Reset on the route CHANGE, during render, rather than in an effect that fires after
-  // the new page has already painted with the drawer still over it.
   const [navPath, setNavPath] = useState(pathname)
   if (navPath !== pathname) {
     setNavPath(pathname)
     setNavOpen(false)
   }
+  const [collapsed, setCollapsed] = useState(readCollapsed)
 
+  // The server's answer, not the browser's memory of it: a cached user that predates a
+  // promotion would otherwise bounce a legitimate operator out of /admin.
   const meQuery = useQuery({ queryKey: ['me'], queryFn: api.me, enabled: hydrated && Boolean(token) })
   const account = meQuery.data ?? user
-  // Undefined until the first answer arrives, so the redirect below waits rather than
-  // bouncing a legitimate operator out on a cache miss.
+  // Undefined until the first answer arrives, so the redirect waits rather than bouncing a
+  // legitimate operator out on a cache miss.
   const resolved = meQuery.isSuccess || !meQuery.isFetching
   const isAdmin = resolved && isSuperAdmin(account)
 
-  // Shares its cache with the Billing page and the custom-requests panel (same queryKey), so
-  // the badge costs nothing extra once either has been visited, and the other way round.
+  // Shares its cache with the Billing page and the custom-requests panel (same queryKey).
   const requestsQuery = useQuery({
     queryKey: ['admin', 'custom-requests'], queryFn: adminApi.listCustomRequests,
     enabled: isAdmin, refetchInterval: 15000,
   })
   const requestedCount = (requestsQuery.data ?? []).filter((r) => r.status === 'requested').length
-  const navSectionsWithBadges = navSections.map((section) => ({
-    ...section,
-    items: section.items.map((item) =>
-      item.href === '/admin/billing' && requestedCount > 0 ? { ...item, badge: requestedCount } : item,
-    ),
-  }))
 
   useEffect(() => {
     if (!hydrated) return
     if (!token) { router.replace('/login'); return }
     if (!resolved) return
     if (!isSuperAdmin(account)) {
-      if (account?.organization_status === 'pending_approval') {
-        router.replace('/dashboard/pending')
-      } else {
-        router.replace('/dashboard/screens')
-      }
-      return
+      router.replace(account?.organization_status === 'pending_approval' ? '/dashboard/pending' : '/dashboard/screens')
     }
   }, [hydrated, token, account, resolved, router])
 
+  // On <body> as well as the wrapper: dialogs, menus and toasts render in portals outside
+  // the wrapper and would otherwise take the tenant theme.
+  useEffect(() => {
+    document.body.classList.add('admin-console')
+    return () => document.body.classList.remove('admin-console')
+  }, [])
+
   if (!hydrated || !token || !resolved || !isSuperAdmin(account)) {
-    return <div className="dark admin-console bg-background min-h-screen" />
+    return <div className="admin-console min-h-screen bg-background" />
   }
 
   const logout = () => { clearSession(); router.replace('/login') }
+  const toggleCollapsed = () => setCollapsed((value) => { writeCollapsed(!value); return !value })
+  const crumbs = breadcrumbsFor(pathname)
+  // The rail only collapses on desktop; the phone drawer always shows labels.
+  const compact = collapsed && !navOpen
 
   return (
-    // `dark admin-console`: the console palette is scoped here (see globals.css) so admin
-    // is always a dark control plane whatever the site theme says, and every page below
-    // re-skins without being touched. `dark` is required alongside it because the dark
-    // variant is defined as `&:is(.dark *)` -- without it the `dark:` utilities already
-    // written into these pages would follow the tenant theme and fight the console.
-    <div className="dark admin-console min-h-screen bg-background lg:flex">
-      {/* Phone header. The sidebar below is 256px wide and was rendered at every width,
-          which left about 110px of usable content on a 375px screen. */}
-      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-border bg-card px-4 py-3 lg:hidden">
-        <button
-          onClick={() => setNavOpen(true)}
-          className="grid size-9 place-items-center rounded-xl text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Open admin navigation"
+    <ConfirmProvider>
+      <div className="admin-console min-h-screen bg-background text-foreground lg:flex">
+        {navOpen && (
+          <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setNavOpen(false)} aria-hidden="true" />
+        )}
+
+        {/* A drawer under lg, a fixed column above it. The closed offset is scoped to
+            max-lg so nothing at lg+ competes with it for the same property. */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-64 shrink-0 flex-col border-r border-border bg-background transition-[transform,width] duration-200 lg:sticky lg:top-0 lg:z-auto lg:h-screen ${
+            navOpen ? '' : 'max-lg:-translate-x-full'
+          } ${compact ? 'lg:w-16' : 'lg:w-60'}`}
+          aria-label="Admin navigation"
         >
-          <Menu className="size-5" />
-        </button>
-        <div className="flex items-center gap-2">
-          <div className="grid size-7 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-purple-700">
-            <ShieldCheck className="size-3.5 text-white" />
+          <div className={`flex h-14 items-center border-b border-border ${compact ? 'justify-center px-2' : 'justify-between px-4'}`}>
+            <Brand compact={compact} />
+            <button
+              onClick={() => setNavOpen(false)}
+              className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden"
+              aria-label="Close admin navigation"
+            >
+              <X className="size-4" />
+            </button>
           </div>
-          <div>
-            <p className="text-sm font-bold text-foreground">MR Admin</p>
-            <p className="text-[10px] text-violet-400 font-medium leading-none">(Midhun-Roshan)</p>
+
+          <nav className="flex-1 space-y-5 overflow-y-auto px-2 py-4">
+            {navSections.map((section) => (
+              <div key={section.label || 'top'} className="space-y-0.5">
+                {section.label && !compact && (
+                  <p className="px-3 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                    {section.label}
+                  </p>
+                )}
+                {section.items.map((item) => {
+                  const active = isActive(item, pathname)
+                  const Icon = item.icon
+                  const badge = item.href === '/admin/billing' && requestedCount > 0 ? requestedCount : 0
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={compact ? item.label : undefined}
+                      aria-current={active ? 'page' : undefined}
+                      className={`relative flex items-center gap-3 rounded-lg py-2 text-sm transition-colors ${
+                        compact ? 'justify-center px-2' : 'px-3'
+                      } ${
+                        active
+                          ? 'bg-accent font-medium text-foreground'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                      }`}
+                    >
+                      {active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-foreground" aria-hidden="true" />}
+                      <Icon className="size-4 shrink-0" />
+                      {!compact && <span className="truncate">{item.label}</span>}
+                      {badge > 0 && (
+                        <span
+                          className={`grid min-w-5 place-items-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-black ${
+                            compact ? 'absolute -top-0.5 -right-0.5 h-4 min-w-4' : 'ml-auto h-5'
+                          }`}
+                          aria-label={`${badge} new`}
+                        >
+                          {badge}
+                        </span>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            ))}
+          </nav>
+
+          <div className="hidden border-t border-border p-2 lg:block">
+            <button
+              onClick={toggleCollapsed}
+              className={`flex w-full items-center gap-3 rounded-lg py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground ${
+                compact ? 'justify-center px-2' : 'px-3'
+              }`}
+              aria-label={compact ? 'Expand navigation' : 'Collapse navigation'}
+            >
+              {compact ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+              {!compact && 'Collapse'}
+            </button>
           </div>
+        </aside>
+
+        {/* min-w-0 so a wide table scrolls itself instead of pushing the page sideways. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 sm:px-6">
+            <button
+              onClick={() => setNavOpen(true)}
+              className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden"
+              aria-label="Open admin navigation"
+            >
+              <Menu className="size-5" />
+            </button>
+
+            <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+              <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+                {crumbs.map((crumb, index) => (
+                  <li key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1.5">
+                    {index > 0 && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                    <span
+                      className={`truncate ${index === crumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground max-sm:hidden'}`}
+                      aria-current={index === crumbs.length - 1 ? 'page' : undefined}
+                    >
+                      {crumb}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+
+            <EnvironmentBadge enabled={isAdmin} />
+            <ThemeToggle />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="grid size-9 place-items-center rounded-full bg-foreground text-xs font-semibold text-background outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="Account"
+              >
+                {(account?.full_name || account?.username || '?').slice(0, 1).toUpperCase()}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuLabel>
+                  <p className="truncate text-sm font-medium text-foreground">{account?.full_name || account?.username}</p>
+                  <p className="truncate text-xs text-muted-foreground">{account?.email}</p>
+                  <p className="mt-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Platform administrator</p>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={logout}>
+                  <LogOut />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </header>
+
+          <main className="min-w-0 flex-1">{children}</main>
         </div>
-      </header>
-
-      {/* Scrim. Clicking away is how a drawer is dismissed on a phone. */}
-      {navOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
-          onClick={() => setNavOpen(false)}
-          aria-hidden="true"
-        />
-      )}
-
-      {/* Sidebar: a drawer under lg, a fixed column above it. */}
-      <aside
-        // max-lg: on the closed state, and NO lg:translate-x-0 to fight it.
-        //
-        // The pair `-translate-x-full` + `lg:translate-x-0` looked right and did not work:
-        // both target the same property, so which one won came down to their order in
-        // Tailwind's generated sheet rather than to the viewport. Below lg the drawer
-        // resolved to translate:0% and sat on top of the page at x=0 -- a 256px panel
-        // covering the content on every tablet and small laptop, with elementFromPoint over
-        // the page returning a nav link.
-        //
-        // Scoping the offset to max-lg means it simply does not exist at lg and above,
-        // so there is nothing left to conflict with.
-        className={`fixed inset-y-0 left-0 z-50 w-64 shrink-0 border-r border-border flex flex-col bg-card transition-transform lg:static lg:z-auto ${
-          navOpen ? '' : 'max-lg:-translate-x-full'
-        }`}
-      >
-        <button
-          onClick={() => setNavOpen(false)}
-          className="absolute top-4 right-3 grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
-          aria-label="Close admin navigation"
-        >
-          <X className="size-4" />
-        </button>
-        {/* Logo */}
-        <div className="p-5 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="size-8 rounded-xl bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center">
-              <ShieldCheck className="size-4 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-foreground">MR Admin</p>
-              <p className="text-[10px] text-violet-400 font-medium">(Midhun-Roshan) • Platform</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Nav, grouped into sections -- an operator's eye finds "Billing" under
-            "Commercial" far faster than scanning nine links in one flat stack. */}
-        <nav className="flex-1 space-y-4 overflow-y-auto p-3">
-          {navSectionsWithBadges.map((section) => (
-            <div key={section.label || 'top'} className="space-y-0.5">
-              {section.label && (
-                <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                  {section.label}
-                </p>
-              )}
-              {section.items.map((item) => {
-                const active = item.exact ? pathname === item.href : pathname.startsWith(item.href)
-                const Icon = item.icon
-                return (
-                  // Link, not <a>. A raw anchor made every click a full document reload: the
-                  // React Query cache was thrown away and refetched, the auth guard re-ran and
-                  // flashed its empty div, and the whole admin area felt broken on a slow
-                  // connection. The dashboard layout has always used Link; this one did not.
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all ${
-                      active
-                        ? 'border border-violet-500/20 bg-violet-500/15 font-semibold text-violet-700 dark:text-violet-300'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-                    }`}
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
-                    {item.badge ? (
-                      <span className="ml-auto grid size-5 shrink-0 place-items-center rounded-full bg-amber-500/90 text-[10px] font-bold text-white">
-                        {item.badge}
-                      </span>
-                    ) : (
-                      active && <ChevronRight className="ml-auto size-3 shrink-0 text-violet-400" />
-                    )}
-                  </Link>
-                )
-              })}
-            </div>
-          ))}
-        </nav>
-
-        {/* Divider — tenant dashboard link */}
-        <div className="p-3 border-t border-border space-y-1">
-          <button
-            onClick={logout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs text-muted-foreground hover:text-rose-400 hover:bg-rose-500/5 transition-all"
-          >
-            <LogOut className="size-3.5" />
-            Sign Out
-          </button>
-          <div className="px-3 pt-2">
-            <p className="text-[10px] text-muted-foreground font-mono truncate">{user?.email || user?.username}</p>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main content. min-w-0 so a wide table inside scrolls itself instead of stretching
-          the flex row and pushing the page sideways. */}
-      <main className="min-w-0 flex-1 overflow-auto">
-        {children}
-      </main>
-    </div>
+      </div>
+    </ConfirmProvider>
   )
 }

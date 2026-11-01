@@ -25,18 +25,18 @@ export default function AdminError({
   return (
     <div className="grid min-h-[60vh] place-items-center p-6">
       <div className="max-w-md text-center">
-        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-rose-500/10 text-rose-400">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-red-500/10 text-red-700 dark:text-red-400">
           <AlertTriangle className="size-6" />
         </span>
-        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-white">
+        <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground">
           This admin view could not load
         </h1>
-        <p className="mt-2 text-sm leading-6 text-white/50">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
           Nothing was changed. Retry the view, or pick another section from the menu.
         </p>
         <button
           onClick={unstable_retry}
-          className="mt-6 inline-flex items-center gap-2 rounded-xl border border-violet-500/20 bg-violet-500/15 px-4 py-2.5 text-sm font-semibold text-violet-300 transition-all hover:bg-violet-500/25"
+          className="mt-6 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <RotateCcw className="size-4" />
           Retry view

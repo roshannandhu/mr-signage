@@ -99,7 +99,7 @@ export function GrantLimitsDialog({
             type="checkbox"
             checked={unlimited}
             onChange={(e) => setUnlimited(e.target.checked)}
-            className="size-3.5 accent-violet-500"
+            className="size-3.5 accent-foreground"
           />
           Unlimited
         </label>
@@ -130,12 +130,12 @@ export function GrantLimitsDialog({
                   type="checkbox"
                   checked={Boolean(features[feature.key])}
                   onChange={(e) => setFeatures({ ...features, [feature.key]: e.target.checked })}
-                  className="size-4 accent-violet-500"
+                  className="size-4 accent-foreground"
                 />
                 {feature.label}
                 {!feature.enforced && (
                   <span
-                    className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80"
+                    className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80"
                     title="Sold as a commitment, not enforced by the software"
                   >
                     Not enforced
@@ -146,7 +146,7 @@ export function GrantLimitsDialog({
           </div>
         </div>
 
-        {error && <p className="mt-4 rounded-lg bg-rose-500/10 p-2.5 text-xs text-rose-400">{error}</p>}
+        {error && <p className="mt-4 rounded-lg bg-rose-500/10 p-2.5 text-xs text-rose-700 dark:text-rose-400">{error}</p>}
 
         <div className="mt-5 flex justify-end gap-2">
           <button
@@ -158,7 +158,7 @@ export function GrantLimitsDialog({
           <button
             onClick={() => { setError(''); save.mutate() }}
             disabled={save.isPending}
-            className="rounded-lg bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50"
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
           >
             {save.isPending ? 'Saving…' : 'Save'}
           </button>

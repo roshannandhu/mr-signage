@@ -78,8 +78,15 @@ def run() -> None:
     client = TestClient(app)
     admin = {"Authorization": f"Bearer {create_access_token({'sub': 'root'})}"}
 
+    # --- the public health check no longer exposes it -----------------------------------------
+    public = client.get("/api/health").json()
+    check("legacy_screens_without_secret" not in public and "host" not in public and "warning" not in public,
+          f"the unauthenticated health check should not carry operator details: {sorted(public)}")
+    check(client.get("/api/admin/platform-health").status_code == 401,
+          "the detailed health report must require a sign-in")
+
     # --- legacy open: the count is reported ---------------------------------------------------
-    health = client.get("/api/health").json()
+    health = client.get("/api/admin/platform-health", headers=admin).json()
     check(health.get("legacy_screens_without_secret") == 2,
           f"health should count the 2 live claimed screens with no secret: {health.get('legacy_screens_without_secret')}")
     check("2 screen(s) still hold no device secret" in (health.get("warning") or ""),
@@ -92,7 +99,7 @@ def run() -> None:
     # --- legacy closed: nothing to report ------------------------------------------------------
     os.environ["ALLOW_LEGACY_DEVICE_AUTH"] = "false"
     try:
-        health = client.get("/api/health").json()
+        health = client.get("/api/admin/platform-health", headers=admin).json()
         check(health.get("legacy_screens_without_secret") is None, "a closed legacy path should report no count")
         check("ALLOW_LEGACY_DEVICE_AUTH" not in (health.get("warning") or ""), "a closed legacy path should not warn")
         fleet = client.get("/api/admin/fleet", headers=admin).json()

@@ -1,14 +1,18 @@
 import json
 import logging
-from datetime import timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 
 from .. import models, rollout, schemas
-from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
+from ..services import audit
+from ..services.admin_metrics import screen_is_online
+# require_super_admin, not require_tenant_roles("super_admin"): the latter also applies the
+# operator's OWN workspace's billing read-only rule, so a lapsed subscription on the
+# platform's house account would have stopped releases being published.
+from ..tenancy import TenantScope, get_tenant_scope, require_super_admin
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +40,8 @@ def list_releases(scope: TenantScope = Depends(get_tenant_scope)):
 @router.post("/", response_model=schemas.AppReleaseResponse, status_code=201)
 def create_release(
     data: schemas.AppReleaseCreate,
-    scope: TenantScope = Depends(require_tenant_roles("super_admin")),
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
 ):
     release = models.AppRelease(
         version_code=data.version_code,
@@ -47,6 +52,12 @@ def create_release(
         rollout_state=data.rollout_state,
     )
     scope.db.add(release)
+    audit.record(
+        scope.db, actor=scope.user, action="release.create", request=request,
+        target_type="release", target_id=data.version_code,
+        after={"version_name": data.version_name, "rollout_state": data.rollout_state,
+               "apk_url": data.apk_url, "mandatory": data.mandatory},
+    )
     try:
         scope.db.commit()
     except IntegrityError:
@@ -71,7 +82,8 @@ def create_release(
 def promote_release(
     version_code: int,
     data: schemas.AppReleasePatch,
-    scope: TenantScope = Depends(require_tenant_roles("super_admin")),
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
 ):
     """Move a build along the rollout ring: draft -> canary -> released.
 
@@ -95,6 +107,11 @@ def promote_release(
         )
     previous = release.rollout_state
     release.rollout_state = data.rollout_state
+    audit.record(
+        scope.db, actor=scope.user, action="release.rollout", request=request,
+        target_type="release", target_id=version_code,
+        before={"rollout_state": previous}, after={"rollout_state": data.rollout_state},
+    )
     scope.db.commit()
     scope.db.refresh(release)
     logger.info(
@@ -127,8 +144,9 @@ class ScreenUpdateResult(BaseModel):
 @router.post("/screens/{screen_id}/update", response_model=ScreenUpdateResult)
 async def update_screen_now(
     screen_id: int,
+    request: Request,
     data: ScreenUpdateRequest | None = None,
-    scope: TenantScope = Depends(require_tenant_roles("super_admin")),
+    scope: TenantScope = Depends(require_super_admin),
 ):
     """Make one TV look for its update now instead of on its own schedule.
 
@@ -165,10 +183,17 @@ async def update_screen_now(
             raise HTTPException(status_code=422, detail=f"No release with version_code {version_code}")
         if not release.sha256:
             raise HTTPException(status_code=422, detail="That release has no sha256 and cannot be installed")
+    before = {"target_version_code": screen.target_version_code,
+              "update_failure_count": screen.update_failure_count}
     # Also resets the failure count, so a screen that had given up on a build (rolled back
     # after repeated failures) is allowed to try again when a person asks it to.
     rollout.repin(screen, version_code)
     screen.assignment_updated_at = models.utcnow()
+    audit.record(
+        db, actor=scope.user, action="screen.update_now", request=request,
+        target_org_id=screen.organization_id, target_type="screen", target_id=screen.id,
+        before=before, after={"target_version_code": screen.target_version_code},
+    )
     db.commit()
     db.refresh(screen)
 
@@ -188,9 +213,7 @@ async def update_screen_now(
     except Exception as exc:  # noqa: BLE001 - the queued command still delivers it
         logger.warning("Could not push sync_now to screen %s: %s", screen.id, exc)
 
-    online = screen.last_seen is not None and (
-        models.utcnow() - screen.last_seen
-    ) <= timedelta(seconds=150)
+    online = screen_is_online(screen.last_seen)
     logger.info(
         "Update requested for screen %s (pin=%s, offering %s) by %s",
         screen.id, screen.target_version_code, offered.version_code, scope.user.username,

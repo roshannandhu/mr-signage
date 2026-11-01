@@ -266,7 +266,9 @@ def test_admin_can_delete_a_removed_workspace_now():
     original_delete, original_sweep = media_storage.delete, purge_module.delete_prefix
     media_storage.delete = _deleted_nothing
     purge_module.delete_prefix = lambda prefix: {"deleted": 0, "failed": 0, "error": None}
-    scope = SimpleNamespace(user=SimpleNamespace(organization_id=None, username="root"))
+    # id and acting_organization_id: the delete writes an audit row naming its actor.
+    scope = SimpleNamespace(user=SimpleNamespace(id=1, organization_id=None, username="root"),
+                            acting_organization_id=None)
 
     db = database.SessionLocal()
     try:
@@ -276,7 +278,7 @@ def test_admin_can_delete_a_removed_workspace_now():
 
         def refused(name, status):
             try:
-                admin.delete_tenant_permanently(org_id, name, scope, db)
+                admin.delete_tenant_permanently(org_id, name, request=None, scope=scope, db=db)
             except HTTPException as exc:
                 assert exc.status_code == status, exc.detail
             else:
@@ -288,7 +290,7 @@ def test_admin_can_delete_a_removed_workspace_now():
         refused("Gone Today", 400)  # wrong name
         assert _survivors(db, org_id), "a refused delete removed rows"
 
-        report = admin.delete_tenant_permanently(org_id, "Gone Today Co", scope, db)
+        report = admin.delete_tenant_permanently(org_id, "Gone Today Co", request=None, scope=scope, db=db)
         assert report["rows"]["organizations"] == 1
         assert _survivors(db, org_id) == {}, "rows survived the permanent delete"
         assert db.query(models.Organization).filter(models.Organization.id == org_id).count() == 0

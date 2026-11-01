@@ -6,6 +6,7 @@ import { CheckCircle, Clock, ShieldCheck, XCircle } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import type { TenantSummary } from '@/lib/types'
 import { Feedback, PageHeader, formatBytes } from '@/components/admin/admin-ui'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 
 /**
  * The approvals queue: which companies get in, and on what package.
@@ -16,6 +17,7 @@ import { Feedback, PageHeader, formatBytes } from '@/components/admin/admin-ui'
  */
 export default function AdminApprovalsPage() {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [selectedPackage, setSelectedPackage] = useState<Record<number, number | ''>>({})
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -54,10 +56,16 @@ export default function AdminApprovalsPage() {
   const pending = pendingQuery.data ?? []
   const packages = (packagesQuery.data ?? []).filter((p) => p.is_active)
 
-  const handleReject = (tenant: TenantSummary) => {
-    const reason = window.prompt(`Why is "${tenant.name}" being rejected? The owner sees this.`)
-    if (reason === null) return
-    reject.mutate({ id: tenant.id, reason: reason.trim() || 'Application could not be approved at this time.' })
+  const handleReject = async (tenant: TenantSummary) => {
+    const result = await confirm({
+      title: `Reject ${tenant.name}?`,
+      description: 'The owner sees the reason you give, and it is saved to the audit log.',
+      level: 2,
+      destructive: true,
+      confirmLabel: 'Reject',
+    })
+    if (!result) return
+    reject.mutate({ id: tenant.id, reason: result.reason || 'Application could not be approved at this time.' })
   }
 
   return (
@@ -67,7 +75,7 @@ export default function AdminApprovalsPage() {
       <Feedback ok={message} error={error} />
 
       {packages.length === 0 && !packagesQuery.isLoading && (
-        <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-300">
+        <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
           <Clock className="size-4 shrink-0" />
           No active packages yet. Approving without one leaves the workspace unlimited — create packages first.
         </div>
@@ -75,7 +83,7 @@ export default function AdminApprovalsPage() {
 
       <section className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <ShieldCheck className="size-4 text-amber-400" />
+          <ShieldCheck className="size-4 text-amber-700 dark:text-amber-400" />
           {pending.length} awaiting review
         </div>
 
@@ -92,7 +100,7 @@ export default function AdminApprovalsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-semibold">{tenant.name}</p>
-                    <p className="font-mono text-xs text-emerald-400">{tenant.owner_email ?? 'No owner email'}</p>
+                    <p className="font-mono text-xs text-emerald-700 dark:text-emerald-400">{tenant.owner_email ?? 'No owner email'}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {tenant.owner_name ?? 'Unknown owner'} · registered{' '}
                       {tenant.created_at ? new Date(tenant.created_at).toLocaleDateString() : '—'}
@@ -123,7 +131,7 @@ export default function AdminApprovalsPage() {
                     <button
                       onClick={() => approve.mutate({ id: tenant.id, planId: selectedPackage[tenant.id] ?? '' })}
                       disabled={approve.isPending}
-                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
                     >
                       <CheckCircle className="size-3" />
                       Approve
@@ -131,7 +139,7 @@ export default function AdminApprovalsPage() {
                     <button
                       onClick={() => handleReject(tenant)}
                       disabled={reject.isPending}
-                      className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
+                      className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
                     >
                       <XCircle className="size-3" />
                       Reject

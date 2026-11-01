@@ -66,12 +66,12 @@ export default function AdminDemoVideoPage() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://… or /uploads/demo/…"
-              className="min-w-0 flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-violet-500/50"
+              className="min-w-0 flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
             />
             <button
               onClick={() => save.mutate(url.trim())}
               disabled={save.isPending || !url.trim()}
-              className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white transition-all hover:bg-violet-500 disabled:opacity-50"
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
             >
               <Save className="size-4" />
               {save.isPending ? 'Saving…' : 'Save'}
@@ -104,7 +104,7 @@ export default function AdminDemoVideoPage() {
               href={data.url}
               target="_blank"
               rel="noreferrer"
-              className="flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300"
+              className="flex items-center gap-1.5 text-xs text-foreground hover:text-foreground"
             >
               <ExternalLink className="size-3.5" />
               Open current reel
