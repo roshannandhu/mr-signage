@@ -3,8 +3,18 @@
 **Repo:** `E:\IMP projects\OLRAC SIGNAGE`
 **Branch:** `phase-2-fixes`
 **Goal:** finish the Super Admin console redesign ("Control Center") that Claude Sonnet 5
-started this session. Phase A and the first slice of Phase B are done, committed, and
-verified. Everything else below is **unbuilt** — this file is the complete spec for it.
+started this session. Phase A, the first slice of Phase B, and four backend-only pieces
+of Phase B's remainder (Mission Control's two endpoints, global search, the shared audit
+list, and Phase E's B8 job heartbeats) are done, committed, and verified. **None of these
+four have a frontend yet** — that's real, valuable, unclaimed work. Everything else below
+is **unbuilt**. This file is the complete spec for all of it.
+
+**Commits so far, newest first** (`git log --oneline` on `phase-2-fixes` to confirm):
+`c30d130` cron heartbeats, `fb9f6fd` shared audit list, `6c689df` global search,
+`85d0538` Mission Control overview + inbox-counts, `cdd2ca2` this file's first version,
+`a5353fd` Phase A + read-only act-as. **Check this list is still current before trusting
+anything else in this section — it was accurate as of the commit that added these words,
+not necessarily as of when you're reading them.**
 
 **Start a brand-new chat with Antigravity and give it this file first, before anything
 else.** It has zero memory of this session. Tell it: "Read ADMIN_CONSOLE_GOAL.md in this
@@ -183,6 +193,47 @@ suspended/rejected/removed tenant's dashboard websocket staying open, the demo-v
 upload going to ephemeral disk with no size cap, and the public `/api/health` leaking the
 DB host/env var names.
 
+### Four more backend pieces built after Phase A, in `backend/routers/admin_overview.py`
+**Backend-only — none of these have frontend UI yet. That is real work still to do, not
+a sign something is half-finished.** Each was individually mutation-tested (see each
+commit message for exactly how) and registered in `tests/conftest.py`.
+
+- **`GET /api/admin/overview?range=7d|30d|90d`** (commit `85d0538`) — Mission Control's
+  data: tenant counts/signups, screens online/offline/offline>24h, % on latest release,
+  open alerts by severity, plays online vs offline by day, revenue by day (`"captured"`
+  payments only), renewals due in 14 days + value, storage total, pending
+  approvals/custom requests, last 10 audit events. Cached in process memory 30s
+  (`admin_overview._cache` — call `admin_overview.forget_overview_cache()` in any test
+  that needs a cold read). Query count is flat regardless of tenant count (18 queries,
+  proven by `test_admin_overview.py`'s query-counting test — **use that same pattern for
+  any future endpoint that aggregates across tenants**). **Still needed:** the actual
+  Mission Control frontend page (§4.1 below) — this endpoint is ready for it to call.
+- **`GET /api/admin/inbox-counts`** (same commit) — pending approvals, new custom
+  requests, critical alerts, failed payments in 7 days. **Still needed:** the
+  notifications bell UI (§4.13).
+- **`GET /api/admin/search?q=`** (commit `6c689df`) — tenants/users/screens/payments/
+  releases, top 5 each, `% _` escaped. **Still needed:** the Cmd/Ctrl-K palette UI
+  (§4.12) — build it on Base UI's `Dialog` + `Autocomplete` (already installed), call
+  this endpoint debounced.
+- **`GET /api/admin/audit`** (commit `fb9f6fd`) — filters `org_id`/`action`/
+  `actor_user_id`/`since`/`until`, paged (`limit`/`offset`) with `X-Total-Count`. One
+  endpoint behind *both* Tenant 360's planned Activity tab (pass `org_id`) and the
+  standalone Audit Log page (§4.14, pass nothing) — **do not build a second one**.
+  **Still needed:** both of those frontend surfaces.
+- **Cron job heartbeats** (commit `c30d130`) — `backend/worker.py`'s `_with_heartbeat()`
+  wraps all 8 `cron_jobs`, writing `cron_last_run:<name>` to Redis after every run
+  (when, duration, success/error). Already surfaced in `GET /api/admin/platform-health`'s
+  `cron_jobs` field (extended `_health_details()` in `main.py`, not a new endpoint).
+  **Still needed:** the Platform Health page itself (§4.16) to actually show it.
+
+A note on `_day_series()` in `admin_overview.py`: it buckets by **calendar day in the
+database's own timezone** (`func.date(column)`), not a rolling 24h window. Fine for
+Postgres (pinned to UTC, see the memory note on `backend/database.py`'s
+`connect_args["options"] = "-c timezone=utc"`), fine for SQLite in tests. If you add a
+day-bucketed query anywhere else, reuse this helper rather than writing a new bucketing
+expression — it's already been through the UTC-pinning gotcha this project hit once
+before.
+
 ---
 
 ## 3. What's left — full remaining scope, phase by phase
@@ -195,27 +246,10 @@ doesn't have (which files, which patterns to reuse, what to watch for).
 
 ### Phase B remainder (plan doc §4.1, §4.2, §4.3, §4.4, §4.12, §4.13 — B6)
 
-**B6. `GET /api/admin/overview?range=7d|30d|90d`** (backend, `backend/routers/admin.py`
-or split into a new `backend/routers/admin_overview.py` if `admin.py` is getting
-unwieldy — it's already 2000+ lines). Must be O(1)-ish: a fixed small number of
-aggregate queries regardless of data size, cached in Redis for 30s (see how
-`backend/services/storage_service.py`'s `_CACHE_SECONDS` pattern caches the bucket
-listing — copy that shape). Returns: tenants by status + signups over time, screens
-online/offline/offline>24h (use `admin_metrics.screen_is_online`), % on latest released
-version (reuse the `/admin/fleet` logic in `admin.py` — don't duplicate, consider
-extracting a shared helper), open alerts by severity (`models.Alert`), plays over time
-online/offline (from `models.PlayLogHourlyRollup` — already has an `offline_plays`
-column), money collected over time (`models.PlatformPayment`, now indexed on `paid_at`),
-renewals due in 14 days (`models.Subscription.current_period_end`), storage total
-(reuse `admin_metrics`/`storage_service`), pending approvals + custom requests count,
-last 10 `AdminAuditEvent` rows. **Write `test_admin_overview.py` with the query-budget
-pattern from `test_admin_query_budget.py` before you consider this done** — this is the
-single highest-risk-of-regression endpoint in the whole plan if done naively.
-
-**`GET /api/admin/inbox-counts`** — small, same file. Powers the notifications bell
-(§4.13). Pending approvals + new custom requests + critical alerts + failed payments in
-7 days + attention-queue items (attention queue itself is Phase F — until it exists,
-just the first four).
+**B6. `GET /api/admin/overview?range=7d|30d|90d` and `GET /api/admin/inbox-counts` are
+DONE** (commit `85d0538`, `backend/routers/admin_overview.py`) — see "Four more backend
+pieces" above for exactly what they return and the query-budget test pattern they
+already established. Don't rebuild these.
 
 **Frontend Mission Control** (§4.1): replace `frontend/src/app/admin/page.tsx` (currently
 107 lines, builds everything from the slow tenant list). Use `recharts` (already a
@@ -240,21 +274,24 @@ health-score column (new, simple weighted formula — spec in plan doc §4.2), a
 **Tenant 360** (§4.3): `frontend/src/app/admin/tenants/[id]/page.tsx` needs the
 Billing/Plan&Limits/Branding/Security/Activity/Notes tabs added (currently has
 Screens/Content/Team only, plus the Phase-A-added read-only "View" entry point — keep
-that). Activity tab = a filtered view of `AdminAuditEvent` for that org — build the
-backend list route first (`GET /api/admin/tenants/{id}/activity` or fold into a general
-`GET /api/admin/audit?org_id=`, see Phase E's Audit Log page — **build the audit list
-endpoint once, shared by both**).
+that). Activity tab = `GET /api/admin/audit?org_id={id}` — **the endpoint is DONE**
+(commit `fb9f6fd`), this is a frontend-only task now: a paged table + a details drawer
+for `before_json`/`after_json`.
 
 **Review Center** (§4.4): `frontend/src/app/admin/approvals/page.tsx` (currently 148
 lines, reject flow already uses `ConfirmDialog` from Phase A). Needs: custom requests
 folded in (move `frontend/src/components/admin/custom-requests-panel.tsx` here from
-Billing), a details drawer, duplicate-tenant hints, a History tab (reuse the audit list
-endpoint above), bulk approve.
+Billing), a details drawer, duplicate-tenant hints, a History tab (`GET
+/api/admin/audit` filtered to `action` starting `tenant.approve`/`tenant.reject` — the
+endpoint doesn't support an action *prefix* filter yet, only an exact match; add one if
+you need it, or filter client-side on the small page of results), bulk approve.
 
-**Global search / command palette** (§4.12): new `GET /api/admin/search?q=` — **one**
-`UNION ALL` query (tenants/users/screens/payments/releases, top 5 each). Frontend: Base
-UI's `Dialog` + `Autocomplete` (both already installed via `@base-ui/react` — do **not**
-add `cmdk`, the plan doc explicitly rules it out since Base UI already covers it).
+**Global search / command palette** (§4.12): **the backend is DONE** —
+`GET /api/admin/search?q=` (commit `6c689df`), five small queries rather than a literal
+`UNION ALL` (see "Four more backend pieces" above for why). What's left is purely
+frontend: Base UI's `Dialog` + `Autocomplete` (both already installed via
+`@base-ui/react` — do **not** add `cmdk`, the plan doc explicitly rules it out since
+Base UI already covers it), wired to this endpoint with a ~200ms debounce.
 
 ### Phase C (plan doc §4.5, §4.6) — Financial Command Center, Feature Control Studio
 - `backend/routers/admin.py` already has `/payments` (unpaginated — paginate it the same
@@ -304,18 +341,23 @@ add `cmdk`, the plan doc explicitly rules it out since Base UI already covers it
   invalidated on deploy — this matters, don't skip it). "Sign out everywhere" = bump
   `token_version`. Optional `SystemSetting` "super admins must use Google" — check it in
   `login_for_access_token` before accepting a password for a `super_admin` user.
-- **B8, job heartbeats**: each arq cron in `backend/worker.py` writes
-  `cron_last_run:<name>` (timestamp + duration) to Redis on completion — a few lines per
-  job, not a redesign.
-- Audit Log page: list + filter UI over `AdminAuditEvent`, reusing the list endpoint
-  built for Tenant 360's Activity tab (see Phase B above — build it once).
-- Security Center: admin list + last login (from B5), sign-in activity, act-as activity
-  (from `AdminAuditEvent` where `action = 'act_as.write'`), kiosk unlock activity
-  (`models.KioskUnlockEvent`, already exists from the earlier kiosk-lock feature), the
-  maintenance PIN card (move from Fleet page, mask by default, audit every reveal).
-- Platform Health page: extend `_health_details()` (section 2 above) with the B8 job
-  heartbeats and expose it on a dedicated page — the data's mostly already there from
-  Phase A, this is mainly a frontend page plus the B8 heartbeat data.
+- **B8, job heartbeats: DONE** (commit `c30d130`) — see "Four more backend pieces"
+  above. Nothing left here but the Platform Health page consuming it.
+- Audit Log page: list + filter UI — **the endpoint is DONE**
+  (`GET /api/admin/audit`, commit `fb9f6fd`, see "Four more backend pieces" above and
+  the Phase B section's Tenant 360 note). Purely a frontend page now.
+- Security Center: admin list + last login (from B5, still unbuilt), sign-in activity
+  (from B5), act-as activity (`GET /api/admin/audit?action=act_as.write` — the filter
+  already supports this exactly, nothing new needed), kiosk unlock activity
+  (`models.KioskUnlockEvent`, already exists from the earlier kiosk-lock feature, no
+  admin list endpoint for it yet — small addition), the maintenance PIN card (move from
+  Fleet page, mask by default, audit every reveal).
+- Platform Health page: **the data is DONE** — `GET /api/admin/platform-health` already
+  returns a `cron_jobs` object (commit `c30d130`) alongside everything Phase A put
+  there (DB/Redis/storage/email status, legacy-auth count, migration error). This is a
+  frontend-only page now: render what the endpoint already returns, nothing new to add
+  to `_health_details()` unless the plan doc's spec calls for something this doesn't
+  cover yet.
 - System Settings: move contact-email + SMTP test (already built, currently on the
   Billing page) here, add audit-log retention and attention-queue-threshold settings
   (`SystemSetting` key/value pattern, already used elsewhere — copy it).
