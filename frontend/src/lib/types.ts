@@ -229,7 +229,13 @@ export interface BillingSummary {
   plan: Plan
   subscription: Subscription
   screens_used: number
+  max_screens: number | null
+  ad_slots_used: number
+  max_ad_slots: number | null
+  clients_used: number
+  max_clients: number | null
   storage_used_bytes: number
+  storage_quota_bytes: number
   is_read_only: boolean
 }
 

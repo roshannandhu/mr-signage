@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, CreditCard, HardDrive, MonitorPlay } from 'lucide-react'
+import { AlertTriangle, Check, Contact, CreditCard, HardDrive, Megaphone, MonitorPlay } from 'lucide-react'
 import { toast } from 'sonner'
 import { ErrorState } from '@/components/dashboard/error-state'
 import { PageHeader } from '@/components/dashboard/page-header'
@@ -77,12 +77,18 @@ export default function BillingPage() {
   if (summaryQuery.isLoading || plansQuery.isLoading || !summaryQuery.data) return <div className="space-y-6"><Skeleton className="h-28" /><Skeleton className="h-72" /></div>
 
   const summary = summaryQuery.data
-  // A limit of "unlimited" is null for screens and 0 for storage; a usage bar against
-  // either is meaningless, so there is nothing to fill.
-  const unlimitedScreens = summary.plan.max_screens == null
-  const unlimitedStorage = !summary.plan.max_storage_bytes
-  const storagePercent = unlimitedStorage ? 0 : percent(summary.storage_used_bytes, summary.plan.max_storage_bytes)
-  const screenPercent = unlimitedScreens ? 0 : percent(summary.screens_used, summary.plan.max_screens ?? 0)
+  // The limit actually enforced for this tenant -- an admin's per-tenant override if one is
+  // set, else the plan's own number -- never summary.plan.*, which an override can diverge
+  // from. Unlimited is null for screens/ad slots/clients and 0 for storage; a usage bar
+  // against either is meaningless, so there is nothing to fill.
+  const unlimitedScreens = summary.max_screens == null
+  const unlimitedAdSlots = summary.max_ad_slots == null
+  const unlimitedClients = summary.max_clients == null
+  const unlimitedStorage = !summary.storage_quota_bytes
+  const storagePercent = unlimitedStorage ? 0 : percent(summary.storage_used_bytes, summary.storage_quota_bytes)
+  const screenPercent = unlimitedScreens ? 0 : percent(summary.screens_used, summary.max_screens ?? 0)
+  const adSlotPercent = unlimitedAdSlots ? 0 : percent(summary.ad_slots_used, summary.max_ad_slots ?? 0)
+  const clientPercent = unlimitedClients ? 0 : percent(summary.clients_used, summary.max_clients ?? 0)
   const statusTone: 'danger' | 'warning' | 'secondary' = summary.is_read_only ? 'danger' : summary.subscription.status === 'grace' ? 'warning' : 'secondary'
 
   return <div className="space-y-8">
@@ -92,7 +98,12 @@ export default function BillingPage() {
 
     <Card className="border-0 ring-1 ring-hairline"><CardContent className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_1.4fr]">
       <div><div className="flex items-center gap-3"><span className="grid size-11 place-items-center rounded-xl bg-primary/10 text-primary"><CreditCard className="size-5" /></span><div><p className="text-sm text-muted-foreground">Current plan</p><div className="flex items-center gap-2"><h2 className="text-xl font-semibold">{summary.plan.name}</h2><Badge variant={statusTone}>{summary.is_read_only ? 'Read only' : summary.subscription.status}</Badge></div></div></div>{summary.subscription.current_period_end && <p className="mt-4 text-xs text-muted-foreground">Current period ends {new Date(summary.subscription.current_period_end).toLocaleDateString()}</p>}</div>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Usage icon={MonitorPlay} label="Screens" value={unlimitedScreens ? `${summary.screens_used} · no limit` : `${summary.screens_used} of ${summary.plan.max_screens}`} percent={screenPercent} /><Usage icon={HardDrive} label="Storage" value={unlimitedStorage ? `${bytes(summary.storage_used_bytes)} · no limit` : `${bytes(summary.storage_used_bytes)} of ${bytes(summary.plan.max_storage_bytes)}`} percent={storagePercent} /></div>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <Usage icon={MonitorPlay} label="Screens" value={unlimitedScreens ? `${summary.screens_used} · no limit` : `${summary.screens_used} of ${summary.max_screens}`} percent={screenPercent} />
+        <Usage icon={HardDrive} label="Storage" value={unlimitedStorage ? `${bytes(summary.storage_used_bytes)} · no limit` : `${bytes(summary.storage_used_bytes)} of ${bytes(summary.storage_quota_bytes)}`} percent={storagePercent} />
+        <Usage icon={Megaphone} label="Ad slots" value={unlimitedAdSlots ? `${summary.ad_slots_used} · no limit` : `${summary.ad_slots_used} of ${summary.max_ad_slots}`} percent={adSlotPercent} />
+        <Usage icon={Contact} label="Clients" value={unlimitedClients ? `${summary.clients_used} · no limit` : `${summary.clients_used} of ${summary.max_clients}`} percent={clientPercent} />
+      </div>
     </CardContent></Card>
 
     <section aria-labelledby="available-plans"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 id="available-plans" className="font-semibold">Available plans</h2><p className="mt-1 text-sm text-muted-foreground">Limits increase as soon as a verified payment webhook arrives.</p></div><div className="flex rounded-xl bg-muted p-1"><Button size="sm" variant={period === 'monthly' ? 'default' : 'ghost'} onClick={() => setPeriod('monthly')}>Monthly</Button><Button size="sm" variant={period === 'yearly' ? 'default' : 'ghost'} onClick={() => setPeriod('yearly')}>Yearly</Button></div></div>

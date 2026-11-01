@@ -85,6 +85,8 @@ ISOLATED_SCRIPTS = {
     "test_invoice_brand_signoff.py",
     # Online/offline play counts reach campaign, media, booking-report and admin surfaces.
     "test_offline_play_reporting.py",
+    # The tenant billing summary reports the limit actually enforced -- override, not plan.
+    "test_billing_summary_limits.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -309,6 +311,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_custom_request_contact.py",
     "test_invoice_brand_signoff.py",
     "test_offline_play_reporting.py",
+    "test_billing_summary_limits.py",
 }
 
 

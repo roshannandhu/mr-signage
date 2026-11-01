@@ -117,11 +117,26 @@ def billing_summary(scope: TenantScope = Depends(get_tenant_scope)):
     screens_used = scope.query(models.Screen).filter(
         models.Screen.status != "waiting_pairing"
     ).count()
+    # Same "effective end, not sold end" counting the quota is enforced against and the
+    # admin console reports (routers/admin.py:_summarise) -- counting the raw column would
+    # show a tenant room that create_placement has already refused them.
+    ad_slots_used = sum(
+        1
+        for placement in scope.query(models.AdPlacement)
+        if placement.effective_ends_at >= models.utcnow()
+    )
+    clients_used = scope.query(models.Client).count()
     return schemas.BillingSummaryResponse(
         plan=serialize_plan(plan),
         subscription=serialize_subscription(subscription),
         screens_used=screens_used,
+        max_screens=organization.effective_max_screens,
+        ad_slots_used=ad_slots_used,
+        max_ad_slots=organization.effective_max_ad_slots,
+        clients_used=clients_used,
+        max_clients=organization.effective_max_clients,
         storage_used_bytes=storage_used,
+        storage_quota_bytes=organization.storage_quota_bytes,
         is_read_only=scope.is_read_only(),
     )
 

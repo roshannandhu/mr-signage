@@ -881,7 +881,18 @@ class BillingSummaryResponse(BaseModel):
     plan: PlanResponse
     subscription: SubscriptionResponse
     screens_used: int
+    # The limit actually enforced for this tenant -- the override if one is set, else the
+    # plan's own number -- not plan.max_screens/max_ad_slots/max_clients, which an admin's
+    # per-tenant override can diverge from. None means unlimited.
+    max_screens: Optional[int] = None
+    ad_slots_used: int = 0
+    max_ad_slots: Optional[int] = None
+    clients_used: int = 0
+    max_clients: Optional[int] = None
     storage_used_bytes: int
+    # organization.storage_quota_bytes, not plan.max_storage_bytes: an admin's direct
+    # storage override writes this column without touching the plan. 0 means unlimited.
+    storage_quota_bytes: int = 0
     is_read_only: bool
 
 
