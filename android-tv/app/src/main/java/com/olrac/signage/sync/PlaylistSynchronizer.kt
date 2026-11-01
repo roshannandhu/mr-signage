@@ -160,6 +160,16 @@ class PlaylistSynchronizer(context: Context) {
                 // reads its playlist from the local database, not from this response.
                 preferences.edit().putString(KEY_SERVICE_STATE, syncData.service_state).apply()
 
+                // Same reasoning as service_state above: stored so the waiting/idle screen
+                // (PlayerScreen, which reads its playlist from the database, not this
+                // response) can show it, and so it updates on its own if the tenant changes
+                // their brand without the TV being restarted.
+                preferences.edit()
+                    .putString(KEY_BRAND_NAME, syncData.brand_name)
+                    .putString(KEY_BRAND_LOGO_URL, syncData.brand_logo_url)
+                    .putString(KEY_BRAND_COLOR, syncData.brand_color)
+                    .apply()
+
                 // pending_commands carries every command still within its hold time, for a
                 // screen that queued more than one while offline; pending_command is the
                 // first of those, kept so this still works against an older server that has
@@ -483,6 +493,29 @@ class PlaylistSynchronizer(context: Context) {
             context.applicationContext
                 .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
                 .getString(KEY_SERVICE_STATE, null)
+
+        private const val KEY_BRAND_NAME = "brand_name"
+        private const val KEY_BRAND_LOGO_URL = "brand_logo_url"
+        private const val KEY_BRAND_COLOR = "brand_color"
+
+        /**
+         * The tenant's own brand, for the waiting/idle screen once this TV has paired.
+         *
+         * Null fields fall back to "MR Signage" and plain black, same as the dashboard
+         * header and every report -- the platform's own mark belongs on the sign-in screen
+         * only, which never reaches this far.
+         */
+        data class Branding(val name: String?, val logoUrl: String?, val color: String?)
+
+        fun branding(context: Context): Branding {
+            val prefs = context.applicationContext
+                .getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            return Branding(
+                name = prefs.getString(KEY_BRAND_NAME, null),
+                logoUrl = prefs.getString(KEY_BRAND_LOGO_URL, null),
+                color = prefs.getString(KEY_BRAND_COLOR, null),
+            )
+        }
 
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_PLAYLIST_UPDATED_AT = "playlist_updated_at"

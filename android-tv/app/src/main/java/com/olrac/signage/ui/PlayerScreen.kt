@@ -83,19 +83,36 @@ fun PlayerScreen(viewModel: PlayerViewModel = viewModel()) {
         // a media outage it is a lie that costs hours: the screen said nothing was booked
         // while four paid campaigns sat on it, so the fault was hunted in the bookings.
         val unreachable = remember(playlist) { PlaylistSynchronizer.unreachableItemCount(context) }
+        // The tenant's own brand once this TV has paired -- "MR Signage" belongs on the
+        // sign-in screen, which a paired TV never shows again.
+        val branding = remember(playlist) { PlaylistSynchronizer.branding(context) }
+        val background = remember(branding.color) {
+            branding.color?.let { hex -> runCatching { Color(AndroidColor.parseColor(hex)) }.getOrNull() } ?: Color.Black
+        }
         Box(
-            modifier = Modifier.fillMaxSize().background(Color.Black),
+            modifier = Modifier.fillMaxSize().background(background),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = if (unreachable > 0) {
-                    "MR Signage\n$unreachable advert${if (unreachable == 1) "" else "s"} assigned " +
-                        "but could not be downloaded.\nThe server is not serving media."
-                } else {
-                    "MR Signage\nWaiting for assigned content"
-                },
-                color = Color.White
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (branding.logoUrl != null) {
+                    AsyncImage(
+                        model = branding.logoUrl,
+                        contentDescription = null,
+                        modifier = Modifier.size(72.dp).padding(bottom = 16.dp),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                Text(
+                    text = if (unreachable > 0) {
+                        "${branding.name ?: "MR Signage"}\n$unreachable advert${if (unreachable == 1) "" else "s"} assigned " +
+                            "but could not be downloaded.\nThe server is not serving media."
+                    } else {
+                        "${branding.name ?: "MR Signage"}\nWaiting for assigned content"
+                    },
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
         return
     }

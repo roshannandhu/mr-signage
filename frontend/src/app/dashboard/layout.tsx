@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
@@ -96,6 +97,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // rather than a set of admin-only copies. Bouncing them would make the feature
   // impossible -- the redirect would fire the instant they arrived.
   const isSuperAdmin = roleIsSuperAdmin(meQuery.data ?? user) && !acting
+  // A platform operator not inside any workspace has none of their own to brand; the fetch
+  // waits for that the same way meQuery already does, rather than firing (and 403ing) early.
+  const brandingQuery = useQuery({
+    queryKey: ['branding'],
+    queryFn: api.getBranding,
+    enabled: hydrated && Boolean(token) && !isSuperAdmin,
+  })
 
   useEffect(() => {
     if (hydrated && !token) {
@@ -172,12 +180,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <header className="border-hairline bg-card sticky top-0 z-40 border-b">
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-2 px-4 sm:px-6 lg:px-8">
           <Link href="/dashboard/screens" className="mr-4 flex shrink-0 items-center gap-2.5">
-            <span className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg">
-              <RadioTower className="size-[18px]" aria-hidden="true" />
-            </span>
+            {brandingQuery.data?.logo_url ? (
+              <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded-lg bg-muted">
+                <Image
+                  src={brandingQuery.data.logo_url}
+                  alt=""
+                  width={32}
+                  height={32}
+                  unoptimized
+                  className="size-full object-contain"
+                />
+              </span>
+            ) : (
+              <span className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg">
+                <RadioTower className="size-[18px]" aria-hidden="true" />
+              </span>
+            )}
             <div className="hidden sm:flex sm:flex-col sm:leading-tight">
-              <span className="text-foreground text-[16px] font-bold tracking-tight">MR Signage</span>
-              <span className="text-muted-foreground text-[10px] font-medium tracking-wide">(Midhun-Roshan)</span>
+              {/* Falls back to "MR Signage" (effective_name already resolves brand_name ||
+                  org.name server-side, but the query has not answered on first paint). A
+                  tenant with its own brand set sees it here, same as on their reports and
+                  invoices; the login page keeps the platform's own mark, unconditionally. */}
+              <span className="text-foreground text-[16px] font-bold tracking-tight">
+                {brandingQuery.data?.effective_name || 'MR Signage'}
+              </span>
+              <span className="text-muted-foreground text-[10px] font-medium tracking-wide">
+                {brandingQuery.data?.brand_name ? 'MR Signage' : '(Midhun-Roshan)'}
+              </span>
             </div>
           </Link>
 

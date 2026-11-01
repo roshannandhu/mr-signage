@@ -4,7 +4,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, FileVideo, LogIn, MonitorPlay, Users } from 'lucide-react'
+import { ArrowLeft, FileVideo, LogIn, MonitorPlay, Palette, Users } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
 import {
@@ -76,6 +76,16 @@ export default function AdminTenantDetailPage({ params }: { params: Promise<{ id
             {/* The tabs below only READ this workspace. This is how an operator actually
                 works inside it -- booking an advert, repairing a playlist -- using the
                 tenant's own screens rather than admin-only copies of them. */}
+            <button
+              onClick={() => {
+                enterWorkspace({ id: tenant.id, name: tenant.name })
+                router.push('/dashboard/branding')
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-muted px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-accent"
+            >
+              <Palette className="size-4" />
+              Edit branding
+            </button>
             <button
               onClick={() => {
                 enterWorkspace({ id: tenant.id, name: tenant.name })

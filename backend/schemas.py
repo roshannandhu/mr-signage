@@ -850,6 +850,13 @@ class SyncResponse(BaseModel):
     service_state: Optional[str] = None
     screen_id: Optional[int] = None
     organization_id: Optional[int] = None
+    # The tenant's own brand, shown on the waiting/idle screen once a TV has paired. Raw
+    # values, not the brand-or-workspace-name fallback the dashboard header and reports
+    # use: a tenant who has never set one gets the platform's own "MR Signage" mark on the
+    # TV rather than an internal workspace name never meant for a screen on a wall.
+    brand_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_color: Optional[str] = None
 
 
 class PlanResponse(BaseModel):

@@ -180,7 +180,13 @@ data class SyncResponse(
     // The server answers 200 and swaps the content rather than refusing, because a refusal
     // does not stop anything here -- 401/403 are treated as transient below and the player
     // keeps looping whatever it already cached.
-    val service_state: String? = null
+    val service_state: String? = null,
+    // The tenant's own brand, for the waiting/idle screen once this TV has paired. Null
+    // falls back to "MR Signage" -- the platform's own mark belongs on the sign-in screen,
+    // which a paired TV never shows again.
+    val brand_name: String? = null,
+    val brand_logo_url: String? = null,
+    val brand_color: String? = null
 )
 
 data class AppVersionDto(

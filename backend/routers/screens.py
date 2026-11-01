@@ -1847,6 +1847,9 @@ async def sync_tv(
             screen_id=screen.id,
             organization_id=screen.organization_id,
             service_state=block_reason,
+            brand_name=screen.organization.brand_name if screen.organization else None,
+            brand_logo_url=resolve_media_url(screen.organization.logo_url) if screen.organization else None,
+            brand_color=screen.organization.brand_color if screen.organization else None,
         )
 
     playlist_id = resolve_screen_playlist(screen, db)
@@ -1952,6 +1955,9 @@ async def sync_tv(
         pending_commands=pending_commands,
         screen_id=screen.id,
         organization_id=screen.organization_id,
+        brand_name=screen.organization.brand_name if screen.organization else None,
+        brand_logo_url=resolve_media_url(screen.organization.logo_url) if screen.organization else None,
+        brand_color=screen.organization.brand_color if screen.organization else None,
     )
 
 
