@@ -267,6 +267,88 @@ def forget_overview_cache() -> None:
     _cache.clear()
 
 
+class SearchHit(BaseModel):
+    type: str
+    id: int | str
+    label: str
+    sublabel: Optional[str] = None
+    href: str
+
+
+class SearchOut(BaseModel):
+    query: str
+    results: List[SearchHit]
+
+
+def _like(q: str) -> str:
+    """A substring ILIKE pattern with the caller's own % and _ taken literally."""
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+@router.get("/search", response_model=SearchOut)
+def search(q: str = "", scope: TenantScope = Depends(require_super_admin)):
+    """Top 5 of each kind. Several small indexed queries, not one cross-table UNION ALL --
+    the types below have different column counts and types (int ids vs string order ids),
+    and SQLAlchemy Core can express a type-safe UNION ALL across them, but hand-rolling one
+    that behaves identically on SQLite (tests) and Postgres (everywhere else) was worse odds
+    under time pressure than five obviously-correct, independently cheap queries."""
+    db = scope.db
+    query = (q or "").strip()
+    if len(query) < 2:
+        return SearchOut(query=query, results=[])
+    pattern = _like(query)
+    hits: List[SearchHit] = []
+
+    for org in (
+        db.query(models.Organization)
+        .filter(models.Organization.deleted_at.is_(None))
+        .filter(models.Organization.name.ilike(pattern, escape="\\") | models.Organization.slug.ilike(pattern, escape="\\"))
+        .order_by(models.Organization.name).limit(5).all()
+    ):
+        hits.append(SearchHit(type="tenant", id=org.id, label=org.name, sublabel=org.slug,
+                              href=f"/admin/tenants/{org.id}"))
+
+    for user in (
+        db.query(models.User)
+        .filter(models.User.email.ilike(pattern, escape="\\") | models.User.username.ilike(pattern, escape="\\"))
+        .order_by(models.User.username).limit(5).all()
+    ):
+        hits.append(SearchHit(type="user", id=user.id, label=user.email or user.username,
+                              sublabel=f"org {user.organization_id}" if user.organization_id else None,
+                              href=f"/admin/tenants/{user.organization_id}" if user.organization_id else "/admin/tenants"))
+
+    for screen in (
+        db.query(models.Screen)
+        .filter(models.Screen.deleted_at.is_(None))
+        .filter(models.Screen.name.ilike(pattern, escape="\\") | models.Screen.device_id.ilike(pattern, escape="\\"))
+        .order_by(models.Screen.name).limit(5).all()
+    ):
+        hits.append(SearchHit(type="screen", id=screen.id, label=screen.name or screen.device_id,
+                              sublabel=screen.device_id,
+                              href=f"/admin/tenants/{screen.organization_id}" if screen.organization_id else "/admin/fleet"))
+
+    for payment in (
+        db.query(models.PlatformPayment)
+        .filter(models.PlatformPayment.provider_order_id.ilike(pattern, escape="\\")
+                | models.PlatformPayment.provider_payment_id.ilike(pattern, escape="\\"))
+        .order_by(models.PlatformPayment.paid_at.desc()).limit(5).all()
+    ):
+        hits.append(SearchHit(type="payment", id=payment.id,
+                              label=payment.provider_order_id or payment.provider_payment_id or f"payment {payment.id}",
+                              sublabel=f"{payment.amount_paise / 100:.2f} {payment.currency}",
+                              href=f"/admin/billing?payment={payment.id}"))
+
+    for release in (
+        db.query(models.AppRelease)
+        .filter(models.AppRelease.version_name.ilike(pattern, escape="\\"))
+        .order_by(models.AppRelease.version_code.desc()).limit(5).all()
+    ):
+        hits.append(SearchHit(type="release", id=release.version_code, label=release.version_name,
+                              sublabel=release.rollout_state, href="/admin/releases"))
+
+    return SearchOut(query=query, results=hits)
+
+
 @router.get("/inbox-counts", response_model=InboxCountsOut)
 def get_inbox_counts(scope: TenantScope = Depends(require_super_admin)):
     db = scope.db

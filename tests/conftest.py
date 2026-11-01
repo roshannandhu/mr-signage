@@ -110,6 +110,8 @@ ISOLATED_SCRIPTS = {
     "test_act_as_read_only.py",
     # Mission Control: numbers correct, cache works, query count flat regardless of tenant count.
     "test_admin_overview.py",
+    # Every type matched, literal % escaped, short queries return nothing, non-admin refused.
+    "test_admin_search.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -349,6 +351,8 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_act_as_read_only.py",
     # Mission Control: numbers correct, cache works, query count flat regardless of tenant count.
     "test_admin_overview.py",
+    # Every type matched, literal % escaped, short queries return nothing, non-admin refused.
+    "test_admin_search.py",
 }
 
 
