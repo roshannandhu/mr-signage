@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -723,10 +724,29 @@ async def _health_details(db: Session) -> dict:
         # None once legacy device auth is off. Otherwise how many screens would be stranded by
         # switching it off; the switch is safe when this is 0.
         "legacy_screens_without_secret": legacy_remaining,
+        # Each cron's own last-run heartbeat (backend/worker.py's _with_heartbeat), so a
+        # silently dead job is visible here instead of surfacing days later as a symptom
+        # (the play-log table growing unbounded, say). Empty before the worker's first
+        # pass, or if Redis itself is down -- both already covered by the warnings above.
+        "cron_jobs": await _cron_heartbeats(),
         # Loud on purpose: these are the states where everything looks fine and either
         # every write is discarded on the next deploy, or nothing is being processed.
         "warning": "; ".join(warnings) or None,
     }
+
+
+async def _cron_heartbeats() -> dict:
+    from .worker import HEARTBEAT_PREFIX, HEARTBEAT_TTL_SECONDS
+
+    jobs: dict = {}
+    try:
+        redis = database.get_redis()
+        for name in HEARTBEAT_TTL_SECONDS:
+            raw = await redis.get(f"{HEARTBEAT_PREFIX}{name}")
+            jobs[name] = json.loads(raw) if raw else None
+    except Exception as exc:  # noqa: BLE001 - heartbeat visibility, not a dependency
+        logger.warning("Could not read cron heartbeats: %s", exc)
+    return jobs
 
 
 # What anyone may read: enough for Render's health check and the tenant storage banner.

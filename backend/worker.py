@@ -1135,29 +1135,92 @@ async def purge_removed_tenants(ctx):
         db.close()
 
 
+HEARTBEAT_PREFIX = "cron_last_run:"
+# How long a heartbeat is trusted before Platform Health calls a job overdue -- a little
+# more than the job's own period, not exact, since crons don't all land on the same clock
+# tick. Read by backend/routers/admin_overview.py-adjacent health code (Phase E); kept
+# here, next to the schedule it describes, so the two cannot drift apart silently.
+HEARTBEAT_TTL_SECONDS = {
+    "recover_stuck_processing": 15 * 60,
+    "aggregate_play_logs": 45 * 60,
+    "reconcile_alerts": 5 * 60,
+    "prune_play_logs": 3 * 60 * 60,
+    "prune_screenshots": 36 * 60 * 60,
+    "prune_finished_bookings": 36 * 60 * 60,
+    "prune_play_log_rollups": 36 * 60 * 60,
+    "purge_removed_tenants": 36 * 60 * 60,
+}
+
+
+def _with_heartbeat(name: str, fn):
+    """Wrap a cron job so Platform Health can show "last ran Nm ago" per job.
+
+    Production runs the worker inside the web service, so a silently dead cron is
+    otherwise invisible -- nothing else would notice until its absence became a symptom
+    (the play-log table growing unbounded, say) days later. Wrapped at the cron_jobs list,
+    not inside each function, so the 8 job bodies above are untouched.
+
+    Best-effort and never fatal: a heartbeat write failing must not stop the job itself,
+    the same principle _publish_alert already applies to its own Redis write.
+    """
+    import time as _time
+
+    async def runner(ctx):
+        started = _time.monotonic()
+        error: str | None = None
+        try:
+            return await fn(ctx)
+        except Exception as exc:
+            error = str(exc)
+            raise
+        finally:
+            redis = ctx.get("redis") if isinstance(ctx, dict) else None
+            if redis is not None:
+                duration_ms = int((_time.monotonic() - started) * 1000)
+                payload = json.dumps({
+                    "at": datetime_now_iso(), "duration_ms": duration_ms,
+                    "ok": error is None, "error": error,
+                })
+                try:
+                    await redis.set(f"{HEARTBEAT_PREFIX}{name}", payload,
+                                    ex=HEARTBEAT_TTL_SECONDS.get(name, 24 * 60 * 60))
+                except Exception as heartbeat_exc:  # noqa: BLE001 - a cache write, not the job
+                    print(f"Heartbeat write failed for {name}: {heartbeat_exc}")
+
+    runner.__name__ = fn.__name__
+    return runner
+
+
+def datetime_now_iso() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
+
+
 class WorkerSettings:
     functions = [process_media]
     cron_jobs = [
-        cron(recover_stuck_processing, minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
-        cron(aggregate_play_logs, minute={0, 15, 30, 45}),
+        cron(_with_heartbeat("recover_stuck_processing", recover_stuck_processing),
+             minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55}),
+        cron(_with_heartbeat("aggregate_play_logs", aggregate_play_logs), minute={0, 15, 30, 45}),
         # Every minute: an operator should hear about a dead screen in about the
         # time it takes to notice one in the room.
-        cron(reconcile_alerts, minute=set(range(60))),
+        cron(_with_heartbeat("reconcile_alerts", reconcile_alerts), minute=set(range(60))),
         # Hourly, not nightly. The table grows at ~316MB/day for a hundred screens
         # (measured, not estimated), so a once-a-day prune lets it peak at retention plus
         # a whole extra day of rows just before it fires -- which overruns a small database
         # even with retention set to its 1-day floor. Each run is a chunked, bounded
         # delete, so running it 24x more often costs little and caps the peak at an hour.
-        cron(prune_play_logs, minute={0}),
-        cron(prune_screenshots, hour=3, minute=30),
+        cron(_with_heartbeat("prune_play_logs", prune_play_logs), minute={0}),
+        cron(_with_heartbeat("prune_screenshots", prune_screenshots), hour=3, minute=30),
         # After the screenshot prune, in the same quiet window.
-        cron(prune_finished_bookings, hour=3, minute=45),
+        cron(_with_heartbeat("prune_finished_bookings", prune_finished_bookings), hour=3, minute=45),
         # Once a day is plenty: rollups accrue at ~36k rows/day, not 864k, and the
         # retention window is over a year. Off the hour to stay clear of the raw prune.
-        cron(prune_play_log_rollups, hour=4, minute=0),
+        cron(_with_heartbeat("prune_play_log_rollups", prune_play_log_rollups), hour=4, minute=0),
         # Last in the quiet window, and only once a day: the 30-day window means being a
         # few hours late costs nothing, while being wrong is unrecoverable.
-        cron(purge_removed_tenants, hour=4, minute=30),
+        cron(_with_heartbeat("purge_removed_tenants", purge_removed_tenants), hour=4, minute=30),
     ]
     redis_settings = REDIS_SETTINGS
 

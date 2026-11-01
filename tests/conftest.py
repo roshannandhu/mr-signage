@@ -114,6 +114,8 @@ ISOLATED_SCRIPTS = {
     "test_admin_search.py",
     # The shared audit list behind Tenant 360 Activity and the Audit Log page: filters, paging.
     "test_admin_audit_list.py",
+    # Cron heartbeat wrapper: job result/exception pass through, heartbeat written, Redis failure non-fatal.
+    "test_cron_heartbeats.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -357,6 +359,8 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_admin_search.py",
     # The shared audit list behind Tenant 360 Activity and the Audit Log page: filters, paging.
     "test_admin_audit_list.py",
+    # Cron heartbeat wrapper: job result/exception pass through, heartbeat written, Redis failure non-fatal.
+    "test_cron_heartbeats.py",
 }
 
 
