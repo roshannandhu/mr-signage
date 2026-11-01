@@ -67,6 +67,16 @@ if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
 connect_args = {}
 if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
+else:
+    # Every timestamp column here is UtcDateTime and every value stored in it is already
+    # UTC -- but date_trunc('hour', ...), used to bucket play logs into hourly rollups,
+    # truncates in the SESSION's timezone, not the column's. A server whose OS timezone is
+    # not UTC (this machine's local Postgres defaults to Asia/Calcutta) buckets a play into
+    # an hour whose UTC instant can land on the PREVIOUS UTC calendar day -- so "today"'s
+    # plays silently read as yesterday's for roughly the first 90 minutes of the local day.
+    # Forced per connection, not left to postgresql.conf, so this is correct regardless of
+    # what the server it is pointed at happens to be configured with.
+    connect_args["options"] = "-c timezone=utc"
 
 # pool_pre_ping is not optional against a managed Postgres.
 #
