@@ -15,10 +15,10 @@ per worker rather than sharing one answer, which is a fine trade at this read vo
 """
 import logging
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func
 
@@ -265,6 +265,69 @@ def get_overview(
 def forget_overview_cache() -> None:
     """For tests: a fresh db fixture must not see a previous test's cached numbers."""
     _cache.clear()
+
+
+class AuditEventOut(BaseModel):
+    id: int
+    occurred_at: Optional[str] = None
+    actor_user_id: Optional[int] = None
+    actor_username: Optional[str] = None
+    acting_org_id: Optional[int] = None
+    target_org_id: Optional[int] = None
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    action: str
+    reason: Optional[str] = None
+    before_json: Optional[str] = None
+    after_json: Optional[str] = None
+    ip: Optional[str] = None
+    batch_id: Optional[str] = None
+
+
+AUDIT_TOTAL_COUNT_HEADER = "X-Total-Count"
+
+
+@router.get("/audit", response_model=List[AuditEventOut])
+def list_audit_events(
+    response: Response,
+    org_id: Optional[int] = None,
+    action: Optional[str] = None,
+    actor_user_id: Optional[int] = None,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    scope: TenantScope = Depends(require_super_admin),
+):
+    """The shared audit list -- Tenant 360's Activity tab passes org_id; the standalone
+    Audit Log page passes none. One endpoint, not two, so the two views can never disagree
+    about what an action is called or how it's formatted."""
+    event = models.AdminAuditEvent
+    query = scope.db.query(event)
+    if org_id is not None:
+        query = query.filter(event.target_org_id == org_id)
+    if action:
+        query = query.filter(event.action == action)
+    if actor_user_id is not None:
+        query = query.filter(event.actor_user_id == actor_user_id)
+    if since is not None:
+        query = query.filter(event.occurred_at >= since)
+    if until is not None:
+        query = query.filter(event.occurred_at <= until)
+
+    response.headers[AUDIT_TOTAL_COUNT_HEADER] = str(query.count())
+    rows = query.order_by(event.id.desc()).offset(offset).limit(limit).all()
+    return [
+        AuditEventOut(
+            id=e.id, occurred_at=e.occurred_at.isoformat() if e.occurred_at else None,
+            actor_user_id=e.actor_user_id, actor_username=e.actor_username,
+            acting_org_id=e.acting_org_id, target_org_id=e.target_org_id,
+            target_type=e.target_type, target_id=e.target_id, action=e.action,
+            reason=e.reason, before_json=e.before_json, after_json=e.after_json,
+            ip=e.ip, batch_id=e.batch_id,
+        )
+        for e in rows
+    ]
 
 
 class SearchHit(BaseModel):
