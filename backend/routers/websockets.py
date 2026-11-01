@@ -145,14 +145,24 @@ def trigger_screen_sync(
 async def dashboard_websocket(
     websocket: WebSocket,
     token: str = Query(...),
+    act_as: str | None = Query(default=None),
 ):
-    """Live fleet events for one dashboard user."""
+    """Live fleet events for one dashboard user.
+
+    A browser WebSocket cannot send the X-Act-As-Org header the HTTP API uses, so a super
+    admin who entered a tenant's workspace passes the same organisation id as a query
+    parameter instead. Without this the socket always subscribed to the operator's OWN
+    organisation's channel, so alert toasts and the live playlist/screen updates never
+    arrived while acting inside a customer's workspace -- exactly when an operator most
+    needs to see what is happening there.
+    """
     from ..routers.auth import get_current_user_ws
+    from ..tenancy import resolve_acting_organization
 
     db = database.SessionLocal()
     try:
         user = await get_current_user_ws(token, db)
-        organization_id = user.organization_id
+        organization_id = resolve_acting_organization(user, act_as, db) or user.organization_id
         username = user.username
     except HTTPException as e:
         await websocket.close(code=1008, reason=e.detail)

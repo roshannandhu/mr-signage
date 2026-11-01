@@ -3,7 +3,7 @@
 import logging
 import os
 import time
-from typing import Optional, Tuple, Dict
+from typing import Optional, Dict, List
 from sqlalchemy.orm import Session
 
 from .base import BaseService
@@ -12,11 +12,38 @@ from .. import models, schemas, database, rollout
 
 logger = logging.getLogger(__name__)
 
-_IN_MEMORY_COMMANDS: Dict[str, Tuple[str, float]] = {}
+# How long a command waits for an offline TV before it is dropped rather than delivered
+# late. "Offline" here means not currently syncing -- a screen with no network for a week
+# should not suddenly open an app or re-check for an update it has long since missed the
+# point of; it should still sign out if it was genuinely removed, which is why that one
+# gets by far the longest hold.
+_COMMAND_HOLD_SECONDS: Dict[str, int] = {
+    "bring_to_front": 24 * 3600,
+    "request_screenshot": 24 * 3600,
+    "check_update": 7 * 24 * 3600,
+    "deregister": 30 * 24 * 3600,
+}
+_DEFAULT_HOLD_SECONDS = 300
+_MAX_HOLD_SECONDS = max(_COMMAND_HOLD_SECONDS.values())
+
+# device_id -> {command: expiry unix timestamp}. Consulted only when Redis itself is
+# unreachable -- this process's own memory does not help a screen whose sync lands on a
+# different API instance, but it is what every other best-effort path here already falls
+# back to rather than failing a TV's request outright.
+_IN_MEMORY_COMMANDS: Dict[str, Dict[str, float]] = {}
+
+# HGETALL then DEL as one round trip: a plain pair of calls would hand the hash's contents
+# to one sync and then let a command queued a moment later be deleted by that same sync's
+# cleanup instead of surviving to the next one.
+_POP_SCRIPT = """
+local vals = redis.call('HGETALL', KEYS[1])
+redis.call('DEL', KEYS[1])
+return vals
+"""
 
 
-def _command_key(device_id: str) -> str:
-    return f"screen_cmd:{device_id}"
+def _commands_key(device_id: str) -> str:
+    return f"pending_commands:{device_id}"
 
 
 def player_sync_interval_seconds() -> int:
@@ -81,13 +108,27 @@ def current_app_version(
     )
 
 
-async def queue_device_command(device_id: str, command: str, ttl_seconds: int = 300) -> bool:
-    """Queue a one-shot remote command for a screen with in-memory and Redis persistence."""
+async def queue_device_command(device_id: str, command: str, ttl_seconds: Optional[int] = None) -> bool:
+    """Queue a remote command for a screen, to be delivered on its next sync or heartbeat
+    even if it is offline right now.
+
+    One slot per command type, not one slot per screen: queuing "check_update" must not
+    discard an already-queued "deregister", or a screen an operator just removed stays
+    paired because an unrelated update check landed on top of it. A second call for the
+    SAME command just refreshes its hold -- there is nothing to merge.
+    """
     if not device_id:
         return False
-    _IN_MEMORY_COMMANDS[device_id] = (command, time.time() + ttl_seconds)
+    hold = ttl_seconds if ttl_seconds is not None else _COMMAND_HOLD_SECONDS.get(command, _DEFAULT_HOLD_SECONDS)
+    expiry = time.time() + hold
     try:
-        await database.get_redis().setex(_command_key(device_id), ttl_seconds, command)
+        redis = database.get_redis()
+        await redis.hset(_commands_key(device_id), command, str(expiry))
+        # The hash's own TTL is only a backstop against an orphaned key for a screen that
+        # never comes back -- correctness comes from the per-command expiry checked in
+        # pop_device_commands, not from this. Reset to the longest possible hold on every
+        # write so an earlier, shorter-held command already in the hash is not cut off.
+        await redis.expire(_commands_key(device_id), _MAX_HOLD_SECONDS)
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -96,30 +137,48 @@ async def queue_device_command(device_id: str, command: str, ttl_seconds: int = 
             device_id,
             exc,
         )
+        _IN_MEMORY_COMMANDS.setdefault(device_id, {})[command] = expiry
         return True
 
 
-async def pop_device_command(device_id: str) -> Optional[str]:
-    """Take the pending command for this device, consuming it."""
-    if not device_id:
-        return None
-    now = time.time()
-    in_memory_val = None
-    in_memory = _IN_MEMORY_COMMANDS.pop(device_id, None)
-    if in_memory and in_memory[1] > now:
-        in_memory_val = in_memory[0]
+async def pop_device_commands(device_id: str) -> List[str]:
+    """Take every pending command for this device that has not exceeded its hold time,
+    consuming all of them.
 
-    redis_val = None
+    Redis first; the in-memory fallback is consulted only when Redis itself failed to
+    queue a command in the first place (it does not see commands queued by another API
+    process, so it is never preferred).
+    """
+    if not device_id:
+        return []
+    now = time.time()
+    commands: List[str] = []
+    seen: set[str] = set()
+
     try:
         redis = database.get_redis()
-        value = await redis.get(_command_key(device_id))
-        if value is not None:
-            await redis.delete(_command_key(device_id))
-            redis_val = value.decode("utf-8") if isinstance(value, bytes) else str(value)
+        raw = await redis.eval(_POP_SCRIPT, 1, _commands_key(device_id))
+        pairs = [v.decode("utf-8") if isinstance(v, bytes) else str(v) for v in (raw or [])]
+        for command, expiry_raw in zip(pairs[0::2], pairs[1::2]):
+            seen.add(command)
+            if float(expiry_raw) > now:
+                commands.append(command)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not read pending command from Redis for device %s: %s", device_id, exc)
+        logger.warning("Could not read pending commands from Redis for device %s: %s", device_id, exc)
 
-    return in_memory_val or redis_val
+    in_memory = _IN_MEMORY_COMMANDS.pop(device_id, None)
+    if in_memory:
+        for command, expiry in in_memory.items():
+            if command not in seen and expiry > now:
+                commands.append(command)
+
+    return commands
+
+
+async def pop_device_command(device_id: str) -> Optional[str]:
+    """Back-compat single-command accessor for any caller not yet updated to the list."""
+    commands = await pop_device_commands(device_id)
+    return commands[0] if commands else None
 
 
 class ScreenTelemetryService(BaseService):
@@ -132,8 +191,8 @@ class ScreenTelemetryService(BaseService):
     def get_app_version(self, target_version_code: Optional[int] = None) -> schemas.AppVersionResponse:
         return current_app_version(self.db, target_version_code)
 
-    async def queue_command(self, device_id: str, command: str, ttl: int = 300) -> bool:
+    async def queue_command(self, device_id: str, command: str, ttl: Optional[int] = None) -> bool:
         return await queue_device_command(device_id, command, ttl)
 
-    async def pop_command(self, device_id: str) -> Optional[str]:
-        return await pop_device_command(device_id)
+    async def pop_commands(self, device_id: str) -> List[str]:
+        return await pop_device_commands(device_id)

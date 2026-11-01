@@ -23,6 +23,7 @@ from .screen_telemetry_service import (
     current_app_version,
     queue_device_command,
     pop_device_command,
+    pop_device_commands,
     player_sync_interval_seconds,
     screen_offline_after_seconds,
 )
@@ -68,6 +69,7 @@ __all__ = [
     "current_app_version",
     "queue_device_command",
     "pop_device_command",
+    "pop_device_commands",
     "player_sync_interval_seconds",
     "screen_offline_after_seconds",
     "ScreenPairingService",

@@ -67,7 +67,7 @@ from ..services import (
     player_sync_interval_seconds,
     screen_offline_after_seconds,
     queue_device_command,
-    pop_device_command,
+    pop_device_commands,
     park_device_secret,
     collect_device_secret,
     legacy_device_auth_allowed,
@@ -1528,7 +1528,7 @@ async def remove_screen(
     # which for an operator who just cut a customer off is exactly the wrong behaviour.
     # Best-effort: the 404 on the next sync is the guarantee, this is the speed.
     if device_id:
-        await queue_device_command(device_id, "deregister", ttl_seconds=3600)
+        await queue_device_command(device_id, "deregister")
         try:
             from .websockets import broadcast_ws_event
             payload = {"type": "deregister", "command": "deregister"}
@@ -1648,7 +1648,7 @@ async def heartbeat(
     # Presence cache. Best-effort on purpose: a Redis outage must never fail a TV's
     # heartbeat. last_seen is already committed above, so get_screens can fall back to
     # it. Reliability of the fleet outranks accuracy of the presence cache.
-    pending_command = await pop_device_command(db_screen.device_id)
+    pending_commands = await pop_device_commands(db_screen.device_id)
     try:
         ttl = screen_offline_after_seconds()
         await database.get_redis().setex(f"screen_presence:{db_screen.id}", ttl, "online")
@@ -1656,12 +1656,13 @@ async def heartbeat(
         logger.warning("Redis presence write failed for screen %s: %s", db_screen.id, exc)
 
     return {
-        "status": "ok", 
+        "status": "ok",
         "screen_status": db_screen.status,
         "server_time_ms": int(models.utcnow().timestamp() * 1000),
         "screen_id": db_screen.id,
         "organization_id": db_screen.organization_id,
-        "pending_command": pending_command,
+        "pending_command": pending_commands[0] if pending_commands else None,
+        "pending_commands": pending_commands,
     }
 
 
@@ -1779,7 +1780,8 @@ async def sync_tv(
 ):
     screen = verify_device_auth(device_id, credentials, db)
 
-    pending_command = await pop_device_command(device_id)
+    pending_commands = await pop_device_commands(device_id)
+    pending_command = pending_commands[0] if pending_commands else None
 
     # Not cleared to advertise: answer with the demo reel and the reason, and nothing of the
     # tenant's own. Deliberately ahead of the 204 short-circuit below -- a screen that was
@@ -1841,6 +1843,7 @@ async def sync_tv(
             sync_interval_seconds=15,
             operating_mode="always",
             pending_command=pending_command,
+            pending_commands=pending_commands,
             screen_id=screen.id,
             organization_id=screen.organization_id,
             service_state=block_reason,
@@ -1892,7 +1895,7 @@ async def sync_tv(
         marker = newest_release
 
     marker = as_aware_utc(marker)
-    if since and marker <= as_aware_utc(since) and not pending_command:
+    if since and marker <= as_aware_utc(since) and not pending_commands:
         return Response(
             status_code=204,
             headers={"X-Sync-Interval-Seconds": str(player_sync_interval_seconds())},
@@ -1946,6 +1949,7 @@ async def sync_tv(
         app_version=current_app_version(db, screen.target_version_code or (screen.group.target_version_code if screen.group else None)),
         sync_interval_seconds=player_sync_interval_seconds(),
         pending_command=pending_command,
+        pending_commands=pending_commands,
         screen_id=screen.id,
         organization_id=screen.organization_id,
     )
@@ -2082,10 +2086,11 @@ async def bring_to_front(
         raise HTTPException(status_code=404, detail="Screen not found")
 
     # Two delivery paths, on purpose: the publish reaches a screen holding a websocket
-    # right now, and the queued command is picked up at the next sync or heartbeat by one
-    # that is not. queue_device_command owns the SETEX -- this used to write the same key
-    # itself a few lines below, so the two could disagree about the TTL.
-    queued = await queue_device_command(screen.device_id, "bring_to_front", 300) if screen.device_id else False
+    # right now, and the queued command is picked up at the next sync or heartbeat --
+    # including after being offline -- by one that is not. queue_device_command owns the
+    # hold time -- this used to write the same key itself a few lines below, so the two
+    # could disagree about it.
+    queued = await queue_device_command(screen.device_id, "bring_to_front") if screen.device_id else False
 
     published = False
     try:

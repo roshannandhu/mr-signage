@@ -31,6 +31,14 @@ async def request_screenshot(
     if not screen:
         raise HTTPException(status_code=404, detail="Screen not found")
 
+    # Queued as well as published: the publish only reaches a screen holding a websocket
+    # right now, so a screen that is briefly offline (or just slow to reconnect) never
+    # got a screenshot at all -- the request vanished the moment it missed the live push.
+    if screen.device_id:
+        from ..services import queue_device_command
+
+        await queue_device_command(screen.device_id, "request_screenshot")
+
     try:
         redis = database.get_redis()
         await redis.publish(f"screen:{screen.device_id}", json.dumps({"type": "request_screenshot"}))

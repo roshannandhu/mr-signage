@@ -87,6 +87,12 @@ ISOLATED_SCRIPTS = {
     "test_offline_play_reporting.py",
     # The tenant billing summary reports the limit actually enforced -- override, not plan.
     "test_billing_summary_limits.py",
+    # Two distinct commands queue for an offline screen; each is held for its own hold time.
+    "test_pending_commands_queue.py",
+    # An opened alert emails owners/editors once, only on a plan with remote_control.
+    "test_alert_email_notification.py",
+    # The dashboard socket follows the acted-as workspace, not the operator's own org.
+    "test_dashboard_ws_act_as.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -312,6 +318,9 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_invoice_brand_signoff.py",
     "test_offline_play_reporting.py",
     "test_billing_summary_limits.py",
+    "test_pending_commands_queue.py",
+    "test_alert_email_notification.py",
+    "test_dashboard_ws_act_as.py",
 }
 
 

@@ -81,6 +81,14 @@ class PlaybackService : Service() {
         if (intent?.getBooleanExtra(EXTRA_LAUNCH_PLAYER, false) == true) launchPlayer()
         if (intent?.getBooleanExtra(EXTRA_AFTER_BOOT, false) == true) keepPlayerInFrontAfterStart()
         if (intent?.action == ACTION_SYNC_NOW) immediateSyncSignals.trySend(Unit)
+        // START_STICKY's own restart, after the system killed this service under memory
+        // pressure, redelivers here with a null intent -- none of the explicit extras above
+        // are set. The player activity is usually gone with it (same process), so without
+        // this the service came back invisibly and the screen stayed on whatever it last
+        // showed, most often the launcher. Reused rather than a plain launchPlayer(): the
+        // launcher can still finish loading after this and land on top of the player once,
+        // exactly the race keepPlayerInFrontAfterStart already exists to lose.
+        if (intent == null) keepPlayerInFrontAfterStart()
         if (isUserUnlocked()) {
             runCatching { scheduleWorkers(this) }
                 .onFailure { Log.w(TAG, "Deferring worker scheduling until WorkManager is ready", it) }

@@ -469,6 +469,69 @@ def alert_event_payload(event: str, alert) -> str:
     })
 
 
+def _alert_email_recipients(db, org_id: int) -> list[str]:
+    """Owners and editors with an email address -- the roles that can act on the fleet.
+
+    Not viewers: an alert asks someone to go fix a screen or extend a campaign, which a
+    viewer cannot do, so mailing them would just be noise they cannot act on.
+    """
+    return [
+        email for (email,) in db.query(models.User.email).filter(
+            models.User.organization_id == org_id,
+            models.User.role.in_(("owner", "editor")),
+            models.User.email.isnot(None),
+            models.User.email != "",
+        ).all()
+    ]
+
+
+def notify_alert_opened(db, org, alert) -> None:
+    """Email everyone who can act on this alert, once.
+
+    Gated on the same `remote_control` flag that sells queued remote commands -- "Remote
+    control & alerts" is one feature from a buyer's point of view, not two, and a tenant on
+    a plan without it gets the dashboard toast but not an inbox full of mail.
+
+    Called from the one place an alert is raised (below), so the arq reconciler and the
+    in-process health monitor -- which both route through reconcile_org_alerts -- get this
+    for free rather than needing their own copy that could drift from each other.
+
+    Best-effort throughout: a down SMTP server, or one bad address among several
+    recipients, must not fail the sweep that is raising the alert itself.
+    """
+    from . import alerting, billing, mailer
+
+    if "email" in (alert.notified or []):
+        return
+    if alert.severity not in (alerting.CRITICAL, alerting.WARNING):
+        return
+    if org is None or org.plan is None or not billing.plan_features(org.plan).get("remote_control"):
+        return
+    if not mailer.is_configured():
+        return
+    recipients = _alert_email_recipients(db, org.id)
+    if not recipients:
+        return
+
+    subject = f"[{alert.severity.upper()}] {alert.title}"
+    body = (
+        f"{alert.title}\n\n"
+        f"{alert.detail or ''}\n\n"
+        f"Workspace: {org.name}\n"
+        f"Raised: {alert.raised_at:%d %b %Y, %H:%M} UTC\n"
+    )
+    sent_any = False
+    for email in recipients:
+        try:
+            mailer.send(to=email, subject=subject, body=body)
+            sent_any = True
+        except Exception as exc:  # noqa: BLE001 - one bad address must not block the rest
+            logger.warning("Alert email to %s failed: %s", email, exc)
+    if sent_any:
+        alert.notified = [*(alert.notified or []), "email"]
+        db.commit()
+
+
 def reconcile_org_alerts(db, org_id: int, now) -> tuple[list, list]:
     """Raise an alert for each condition that is newly true in one organisation, and resolve
     the ones that have stopped being true. Returns (raised, resolved) for the caller to publish.
@@ -562,6 +625,10 @@ def reconcile_org_alerts(db, org_id: int, now) -> tuple[list, list]:
             continue
         db.refresh(alert)
         raised.append(alert)
+        try:
+            notify_alert_opened(db, db.get(models.Organization, org_id), alert)
+        except Exception as exc:  # noqa: BLE001 - a notification failure must not drop the alert
+            logger.warning("Alert-opened email hook failed for alert %s: %s", alert.id, exc)
 
     resolved = []
     for key, alert in open_alerts.items():

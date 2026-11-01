@@ -160,6 +160,9 @@ data class SyncResponse(
     // they are there is that the screen has no network.
     val master_pin: String? = null,
     val pending_command: String? = null,
+    // Every command still within its hold time, for a screen that was offline when more
+    // than one was queued. pending_command alone can only ever carry the first.
+    val pending_commands: List<String>? = null,
     val screen_id: Int? = null,
     val organization_id: Int? = null,
     // Screen operating hours. The backend has always sent these -- schemas.py even
@@ -236,7 +239,8 @@ data class HeartbeatResponse(
     val server_time_ms: Long?,
     val screen_id: Int?,
     val organization_id: Int?,
-    val pending_command: String? = null
+    val pending_command: String? = null,
+    val pending_commands: List<String>? = null
 )
 
 data class GoogleOAuthUrlResponse(

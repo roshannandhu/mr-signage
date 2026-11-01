@@ -177,7 +177,7 @@ async def update_screen_now(
     offered = current_app_version(
         db, screen.target_version_code or (screen.group.target_version_code if screen.group else None)
     )
-    await queue_device_command(screen.device_id, "check_update", 600)
+    await queue_device_command(screen.device_id, "check_update")
     try:
         from .websockets import broadcast_in_memory
 

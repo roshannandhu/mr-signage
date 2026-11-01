@@ -98,12 +98,19 @@ object HeartbeatReporter {
                 body.organization_id?.let { edit.putInt("organization_id", it) }
                 edit.apply()
 
-                body.pending_command?.let { cmd ->
+                // See PlaylistSynchronizer for why both fields are merged: pending_commands
+                // carries every command still within its hold time, pending_command is the
+                // first of those for an older server that has not been upgraded.
+                val commands = com.olrac.signage.sync.PendingCommands.merge(body.pending_command, body.pending_commands)
+                for (cmd in commands) {
                     if (cmd == "check_update") {
                         // The heartbeat carries no update offer, so fetch the full sync that
                         // does, now rather than at the next minute.
                         com.olrac.signage.sync.UpdateManager.requestUpdateCheck(appContext)
                         com.olrac.signage.service.PlaybackService.requestImmediateSync(appContext)
+                    }
+                    if (cmd == "request_screenshot") {
+                        com.olrac.signage.telemetry.ScreenshotManager.requestScreenshot()
                     }
                     if ((cmd == "bring_to_front" || cmd == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
                         android.util.Log.i("HeartbeatReporter", "Received $cmd command from server; bringing app to front")

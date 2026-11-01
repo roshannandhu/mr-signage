@@ -21,6 +21,11 @@ import { useAuthStore } from '@/lib/store'
  */
 export function useFleetAlerts() {
   const token = useAuthStore((state) => state.token)
+  // A browser WebSocket cannot carry the X-Act-As-Org header the HTTP API uses, so the
+  // workspace a platform operator stepped into goes on the URL instead. Without it the
+  // socket subscribed to the operator's own organisation's channel, and alert toasts plus
+  // live screen/playlist updates never arrived while acting inside a tenant's workspace.
+  const actingId = useAuthStore((state) => state.acting?.id ?? null)
   const queryClient = useQueryClient()
   // Held in a ref so reconnect scheduling survives re-renders without restarting the
   // backoff, and so the cleanup below always closes the socket it actually opened.
@@ -37,7 +42,8 @@ export function useFleetAlerts() {
       if (closedByUsRef.current) return
       let socket: WebSocket
       try {
-        socket = new WebSocket(`${WS_BASE}/ws/dashboard/ws?token=${encodeURIComponent(token)}`)
+        const actAsParam = actingId ? `&act_as=${actingId}` : ''
+        socket = new WebSocket(`${WS_BASE}/ws/dashboard/ws?token=${encodeURIComponent(token)}${actAsParam}`)
       } catch {
         // A malformed URL should not take the dashboard down; polling still works.
         return
@@ -101,5 +107,5 @@ export function useFleetAlerts() {
       socketRef.current?.close()
       socketRef.current = null
     }
-  }, [token, queryClient])
+  }, [token, actingId, queryClient])
 }

@@ -160,7 +160,12 @@ class PlaylistSynchronizer(context: Context) {
                 // reads its playlist from the local database, not from this response.
                 preferences.edit().putString(KEY_SERVICE_STATE, syncData.service_state).apply()
 
-                syncData.pending_command?.let { cmd ->
+                // pending_commands carries every command still within its hold time, for a
+                // screen that queued more than one while offline; pending_command is the
+                // first of those, kept so this still works against an older server that has
+                // not been upgraded. Deduplicated because both name the same thing there.
+                val commands = PendingCommands.merge(syncData.pending_command, syncData.pending_commands)
+                for (cmd in commands) {
                     if (cmd == "deregister") {
                         com.olrac.signage.boot.PlayerLauncher.handleUnpairedOrDeleted(appContext)
                         return@withContext SyncOutcome(
@@ -174,6 +179,9 @@ class PlaylistSynchronizer(context: Context) {
                         // Processed before app_version below, so the offer in this same
                         // body is acted on immediately rather than waiting out a backoff.
                         UpdateManager.requestUpdateCheck(appContext)
+                    }
+                    if (cmd == "request_screenshot") {
+                        com.olrac.signage.telemetry.ScreenshotManager.requestScreenshot()
                     }
                     if ((cmd == "bring_to_front" || cmd == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
                         android.util.Log.i("PlaylistSynchronizer", "Received $cmd command from sync; bringing app to front")

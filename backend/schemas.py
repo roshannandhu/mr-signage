@@ -836,7 +836,12 @@ class SyncResponse(BaseModel):
     # the whole point of the offline cache.
     operating_mode: OperatingMode = "always"
     operating_hours: Optional[dict[str, list[str]]] = None
+    # The first queued command, for a player build that predates pending_commands below.
     pending_command: Optional[str] = None
+    # Every command still within its hold time -- an offline screen can have more than
+    # one waiting (a check_update queued yesterday and a bring_to_front just now), and
+    # pending_command alone could only ever deliver the first.
+    pending_commands: list[str] = Field(default_factory=list)
     # Why this screen is being served the demo reel instead of its workspace's adverts:
     # "pending_approval", "suspended", "rejected" or "expired". None on a normal sync.
     # The player shows a designed notice for it rather than a raw error -- a venue owner is
