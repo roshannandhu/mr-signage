@@ -9,6 +9,8 @@ import { isSuperAdmin } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
 import { ThemeToggle } from '@/components/dashboard/theme-toggle'
 import { ConfirmProvider } from '@/components/admin/kit/confirm-dialog'
+import { CommandPalette, CommandPaletteTrigger } from '@/components/admin/command-palette'
+import { AdminNotificationsBell } from '@/components/admin/admin-notifications-bell'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -136,6 +138,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setNavOpen(false)
   }
   const [collapsed, setCollapsed] = useState(readCollapsed)
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Global keyboard shortcut: Cmd+K / Ctrl+K opens the command palette.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setSearchOpen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // The server's answer, not the browser's memory of it: a cached user that predates a
   // promotion would otherwise bounce a legitimate operator out of /admin.
@@ -292,6 +307,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </ol>
             </nav>
 
+            <CommandPaletteTrigger onClick={() => setSearchOpen(true)} />
+            <AdminNotificationsBell />
             <EnvironmentBadge enabled={isAdmin} />
             <ThemeToggle />
             <DropdownMenu>
@@ -319,6 +336,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <main className="min-w-0 flex-1">{children}</main>
         </div>
       </div>
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </ConfirmProvider>
   )
 }

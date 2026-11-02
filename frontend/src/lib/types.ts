@@ -885,3 +885,17 @@ export interface InboxCounts {
   critical_alerts: number
   failed_payments_7d: number
 }
+
+export interface SearchHit {
+  type: 'tenant' | 'user' | 'screen' | 'payment' | 'release' | string
+  id: number | string
+  label: string
+  sublabel: string | null
+  href: string
+}
+
+export interface SearchOut {
+  query: string
+  results: SearchHit[]
+}
+
