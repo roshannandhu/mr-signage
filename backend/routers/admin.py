@@ -152,10 +152,14 @@ class TenantSummaryOut(BaseModel):
 
 class TenantScreenOut(BaseModel):
     id: int
+    device_id: Optional[str] = None
     name: Optional[str] = None
     status: str
+    is_online: bool = False
     last_seen: Optional[str] = None
     location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     model: Optional[str] = None
     app_version: Optional[str] = None
     playback_state: str = "idle"
@@ -165,8 +169,10 @@ class TenantContentOut(BaseModel):
     id: int
     name: Optional[str] = None
     type: Optional[str] = None
+    mime_type: Optional[str] = None
     status: str
     file_size_bytes: int = 0
+    duration_seconds: Optional[int] = None
     uploaded_at: Optional[str] = None
     thumbnail: Optional[str] = None
 
@@ -178,6 +184,7 @@ class TenantUserOut(BaseModel):
     full_name: Optional[str] = None
     role: str
     is_active: bool
+    created_at: Optional[str] = None
 
 
 class ApprovalRequest(BaseModel):
@@ -681,6 +688,8 @@ def get_tenant_screens(
     db: Session = Depends(database.get_db),
 ):
     _get_org(db, org_id)
+    from ..services.admin_metrics import screen_is_online
+    now = models.utcnow()
     screens = (
         db.query(models.Screen)
         .filter(models.Screen.organization_id == org_id)
@@ -690,10 +699,14 @@ def get_tenant_screens(
     return [
         TenantScreenOut(
             id=s.id,
+            device_id=s.device_id,
             name=s.name,
             status=s.status or "offline",
+            is_online=screen_is_online(s.last_seen, now),
             last_seen=_iso(s.last_seen),
             location=s.location,
+            latitude=s.latitude,
+            longitude=s.longitude,
             model=s.model,
             app_version=s.app_version,
             playback_state=s.playback_state or "idle",
@@ -721,8 +734,10 @@ def get_tenant_content(
             id=c.id,
             name=c.name,
             type=c.type,
+            mime_type=c.mime_type,
             status=c.status,
             file_size_bytes=c.file_size_bytes or 0,
+            duration_seconds=c.duration_seconds,
             uploaded_at=_iso(c.uploaded_at),
             thumbnail=resolve_media_url(c.thumbnail),
         )
@@ -751,6 +766,7 @@ def get_tenant_users(
             full_name=u.full_name,
             role=u.role,
             is_active=u.is_active,
+            created_at=_iso(u.created_at),
         )
         for u in users
     ]

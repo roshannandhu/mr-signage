@@ -1,105 +1,234 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CalendarPlus, CalendarX, CheckCircle, Clock, Film, Gauge, MonitorPlay, RefreshCw, RotateCcw,
-  Sliders, Trash2, Users, XCircle,
+  CalendarPlus,
+  CalendarX,
+  CheckCircle,
+  Clock,
+  Download,
+  Eye,
+  Film,
+  Gauge,
+  LogIn,
+  MonitorPlay,
+  MoreHorizontal,
+  RefreshCw,
+  RotateCcw,
+  Sliders,
+  Trash2,
+  XCircle,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import type { TenantSummary } from '@/lib/types'
 import { GrantLimitsDialog } from '@/components/admin/grant-limits-dialog'
 import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 import {
-  Feedback, PageHeader, QuotaBar, StatCard, StatusPill, formatBytes,
+  AdminDataTable,
+  type DataTableColumn,
+  type ColumnSortState,
+} from '@/components/admin/kit/admin-data-table'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
+import {
+  Feedback,
+  PageHeader,
+  QuotaBar,
+  StatCard,
+  StatusPill,
+  formatBytes,
 } from '@/components/admin/admin-ui'
+import { useAuthStore } from '@/lib/store'
+import { computeTenantHealth } from '@/lib/tenant-health'
 
-/**
- * Every workspace, with the controls to police it.
- *
- * Two things this page previously got wrong, both now handled by going through adminApi:
- * it called the API with a bare fetch() and a hand-built auth header (so an expired
- * session showed an empty table rather than redirecting to login), and its stat cards
- * built Tailwind classes by interpolation (`bg-${color}-500/10`), which Tailwind v4 cannot
- * see -- so none of them were styled.
- */
 const formatWindowEnd = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'no end date'
+  value
+    ? new Date(value).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'no end date'
 
-/**
- * The paid window, in the two words an operator needs at a glance.
- *
- * Reads `subscription_state`, never `subscription_status`: the stored column says "active"
- * regardless of the calendar, which is precisely how a period that had run out went on
- * granting full access.
- */
 function PlanWindow({ tenant }: { tenant: TenantSummary }) {
   const state = tenant.subscription_state
   if (!state) return <span className="text-xs text-muted-foreground">—</span>
 
   const tone =
-    state === 'expired' ? 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-400'
-      : state === 'grace' ? 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+    state === 'expired'
+      ? 'border-rose-500/20 bg-rose-500/10 text-rose-700 dark:text-rose-400'
+      : state === 'grace'
+        ? 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
         : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
   const label = state === 'expired' ? 'Ended' : state === 'grace' ? 'Grace' : 'Running'
 
   return (
-    <div className="space-y-1">
-      <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] ${tone}`}>{label}</span>
+    <div className="space-y-0.5">
+      <span className={`inline-block rounded-md border px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+        {label}
+      </span>
       <p className="text-[11px] text-muted-foreground">
-        {tenant.current_period_end ? `to ${formatWindowEnd(tenant.current_period_end)}` : 'no end date set'}
+        {tenant.current_period_end ? `to ${formatWindowEnd(tenant.current_period_end)}` : 'no end date'}
       </p>
     </div>
   )
 }
 
-/**
- * What this tenant's package actually grants, as initials.
- *
- * The console could show an operator a workspace's screens, ad slots and storage but never
- * its features -- the one part of a package that cannot be read off the numbers, and the
- * part they are most often asked to change for a single customer.
- */
-function Features({ tenant }: { tenant: TenantSummary }) {
-  const on = Object.entries(tenant.feature_flags ?? {}).filter(([, enabled]) => enabled)
-  if (on.length === 0) return <span className="text-xs text-muted-foreground">None</span>
+function HealthBadge({ tenant }: { tenant: TenantSummary }) {
+  const health = computeTenantHealth(tenant)
+  const toneClasses = {
+    emerald: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    amber: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    rose: 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400',
+  }[health.tone]
+
   return (
-    <div className="flex flex-wrap gap-1">
-      {on.map(([key]) => (
+    <div
+      title={health.reasons.join(' • ')}
+      className="inline-flex cursor-help items-center gap-1.5"
+    >
+      <span
+        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs font-semibold ${toneClasses}`}
+      >
         <span
-          key={key}
-          title={key.replace(/_/g, ' ')}
-          className="rounded border border-border bg-accent px-1.5 py-0.5 text-[10px] uppercase text-foreground"
-        >
-          {key.split('_').map((word) => word[0]).join('')}
-        </span>
-      ))}
+          className={`size-1.5 rounded-full ${
+            health.tone === 'emerald'
+              ? 'bg-emerald-500'
+              : health.tone === 'amber'
+                ? 'bg-amber-500'
+                : 'bg-rose-500'
+          }`}
+        />
+        {health.score}
+      </span>
     </div>
   )
 }
 
+function exportTenantsToCsv(tenants: TenantSummary[]) {
+  const headers = [
+    'ID',
+    'Name',
+    'Slug',
+    'Owner Email',
+    'Status',
+    'Plan Name',
+    'Subscription State',
+    'Screens Online',
+    'Screens Total',
+    'Ad Slots Used',
+    'Ad Slots Max',
+    'Storage Used (B)',
+    'Created At',
+  ]
+  const rows = tenants.map((t) => [
+    t.id,
+    `"${(t.name || '').replace(/"/g, '""')}"`,
+    t.slug,
+    t.owner_email || '',
+    t.status,
+    t.plan_name || '',
+    t.subscription_state || '',
+    t.online_screens_count,
+    t.screens_count,
+    t.ad_slots_used,
+    t.max_ad_slots,
+    t.storage_used_bytes,
+    t.created_at || '',
+  ])
+
+  const csvContent =
+    'data:text/csv;charset=utf-8,' +
+    [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
+  const encodedUri = encodeURI(csvContent)
+  const link = document.createElement('a')
+  link.setAttribute('href', encodedUri)
+  link.setAttribute('download', `mr_signage_tenants_${new Date().toISOString().slice(0, 10)}.csv`)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
 export default function AdminTenantsPage() {
+  const router = useRouter()
   const queryClient = useQueryClient()
   const confirm = useConfirm()
+  const enterWorkspace = useAuthStore((s) => s.enterWorkspace)
+
+  // Query state for server pagination
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [planFilter, setPlanFilter] = useState<string>('all')
+  const [sorting, setSorting] = useState<ColumnSortState | null>({ key: 'created', direction: 'desc' })
+
+  // Modal states
   const [quotaFor, setQuotaFor] = useState<TenantSummary | null>(null)
   const [grantFor, setGrantFor] = useState<TenantSummary | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  const { data: tenants = [], isLoading, isFetching } = useQuery({
-    queryKey: ['admin', 'tenants'],
+  // Backend sort param mapping
+  const backendSort = useMemo((): 'created_desc' | 'created_asc' | 'name_asc' | 'name_desc' => {
+    if (!sorting) return 'created_desc'
+    if (sorting.key === 'name') {
+      return sorting.direction === 'asc' ? 'name_asc' : 'name_desc'
+    }
+    return sorting.direction === 'asc' ? 'created_asc' : 'created_desc'
+  }, [sorting])
+
+  // Paged query
+  const {
+    data: pagedData,
+    isLoading,
+    isFetching,
+    refetch,
+  } = useQuery({
+    queryKey: ['admin', 'tenants', page, pageSize, search, statusFilter, planFilter, backendSort],
+    queryFn: () =>
+      adminApi.listTenantsPaged({
+        status: statusFilter === 'all' ? undefined : statusFilter,
+        q: search.trim() || undefined,
+        plan_id: planFilter === 'all' ? undefined : Number(planFilter),
+        sort: backendSort,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      }),
+  })
+
+  // Packages list for quota modal & filters
+  const { data: packages = [] } = useQuery({
+    queryKey: ['admin', 'packages'],
+    queryFn: adminApi.listPackages,
+  })
+
+  // Full list for top metric totals
+  const { data: allTenants = [] } = useQuery({
+    queryKey: ['admin', 'tenants', 'all'],
     queryFn: () => adminApi.listTenants(),
   })
-  const { data: packages = [] } = useQuery({ queryKey: ['admin', 'packages'], queryFn: adminApi.listPackages })
+
+  const tenants = pagedData?.items || []
+  const total = pagedData?.total || 0
 
   const done = (text: string) => {
     setError('')
     setMessage(text)
     queryClient.invalidateQueries({ queryKey: ['admin', 'tenants'] })
   }
-  const failed = (e: Error) => { setMessage(''); setError(e.message) }
+  const failed = (e: Error) => {
+    setMessage('')
+    setError(e.message)
+  }
 
   const setStatus = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'suspend' | 'reinstate'; reason?: string }) =>
@@ -109,27 +238,33 @@ export default function AdminTenantsPage() {
   })
 
   const setPlanWindow = useMutation({
-    mutationFn: ({ id, body, reason }: { id: number; body: { extend_days?: number; status?: 'active' | 'expired' }; reason?: string }) =>
-      adminApi.updateSubscription(id, body, reason),
-    onSuccess: (tenant) => done(
-      tenant.subscription_state === 'expired'
-        ? `${tenant.name}'s plan has been ended. Their screens now show the demo reel.`
-        : `${tenant.name}'s plan runs until ${formatWindowEnd(tenant.current_period_end)}.`,
-    ),
+    mutationFn: ({
+      id,
+      body,
+      reason,
+    }: {
+      id: number
+      body: { extend_days?: number; status?: 'active' | 'expired' }
+      reason?: string
+    }) => adminApi.updateSubscription(id, body, reason),
+    onSuccess: (tenant) =>
+      done(
+        tenant.subscription_state === 'expired'
+          ? `${tenant.name}'s plan has been ended. Their screens now show the demo reel.`
+          : `${tenant.name}'s plan runs until ${formatWindowEnd(tenant.current_period_end)}.`,
+      ),
     onError: failed,
   })
 
-  // Removal is reversible for 30 days, so the confirmation asks for the workspace name
-  // rather than a click: everything in it is destroyed at the end of that window, and this
-  // is the last point at which reading the name carefully still helps.
   const setRemoved = useMutation({
     mutationFn: ({ id, action, reason }: { id: number; action: 'remove' | 'restore'; reason?: string }) =>
       action === 'remove' ? adminApi.removeTenant(id, reason) : adminApi.restoreTenant(id),
-    onSuccess: (tenant) => done(
-      tenant.deleted_at
-        ? `${tenant.name} has been removed. Everything in it is deleted for good on ${formatWindowEnd(tenant.purge_at)}.`
-        : `${tenant.name} has been restored.`,
-    ),
+    onSuccess: (tenant) =>
+      done(
+        tenant.deleted_at
+          ? `${tenant.name} has been removed. Everything in it is deleted for good on ${formatWindowEnd(tenant.purge_at)}.`
+          : `${tenant.name} has been restored.`,
+      ),
     onError: failed,
   })
 
@@ -141,36 +276,336 @@ export default function AdminTenantsPage() {
   })
 
   const saveQuota = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: { plan_id?: number; max_screens: number; max_ad_slots: number } }) =>
-      adminApi.updateQuota(id, body),
-    onSuccess: (tenant) => { setQuotaFor(null); done(`Limits updated for ${tenant.name}.`) },
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: number
+      body: { plan_id?: number; max_screens: number; max_ad_slots: number }
+    }) => adminApi.updateQuota(id, body),
+    onSuccess: (tenant) => {
+      setQuotaFor(null)
+      done(`Limits updated for ${tenant.name}.`)
+    },
     onError: failed,
   })
 
-  const filtered = tenants.filter((t) => {
-    const q = search.trim().toLowerCase()
-    if (!q) return true
-    return [t.name, t.slug, t.owner_email ?? ''].some((v) => v.toLowerCase().includes(q))
-  })
+  const totals = useMemo(() => {
+    return {
+      active: allTenants.filter((t) => t.status === 'active' && !t.deleted_at).length,
+      pending: allTenants.filter((t) => t.status === 'pending_approval').length,
+      screens: allTenants.reduce((s, t) => s + t.screens_count, 0),
+      online: allTenants.reduce((s, t) => s + t.online_screens_count, 0),
+      ads: allTenants.reduce((s, t) => s + t.ad_slots_used, 0),
+    }
+  }, [allTenants])
 
-  const totals = {
-    active: tenants.filter((t) => t.status === 'active' && !t.deleted_at).length,
-    pending: tenants.filter((t) => t.status === 'pending_approval').length,
-    screens: tenants.reduce((s, t) => s + t.screens_count, 0),
-    online: tenants.reduce((s, t) => s + t.online_screens_count, 0),
-    ads: tenants.reduce((s, t) => s + t.ad_slots_used, 0),
-  }
+  const handleActAs = useCallback(
+    (tenant: TenantSummary, readOnly: boolean) => {
+      enterWorkspace({ id: tenant.id, name: tenant.name, readOnly })
+      router.push('/dashboard')
+    },
+    [enterWorkspace, router],
+  )
+
+  const columns: DataTableColumn<TenantSummary>[] = useMemo(
+    () => [
+      {
+        id: 'workspace',
+        header: 'Workspace',
+        sortable: true,
+        sortKey: 'name',
+        cell: ({ row }) => (
+          <div className="space-y-0.5">
+            <Link
+              href={`/admin/tenants/${row.id}`}
+              className="font-semibold text-foreground hover:underline"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.name}
+            </Link>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-mono">{row.slug}</span>
+              {row.owner_email && (
+                <>
+                  <span>•</span>
+                  <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                    {row.owner_email}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        width: 'w-28',
+        cell: ({ row }) =>
+          row.deleted_at ? (
+            <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
+              Removed
+            </span>
+          ) : (
+            <StatusPill status={row.status} />
+          ),
+      },
+      {
+        id: 'plan',
+        header: 'Package & Window',
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <span className="text-xs font-medium text-foreground">
+              {row.plan_name ?? 'Custom / Bespoke'}
+            </span>
+            <PlanWindow tenant={row} />
+          </div>
+        ),
+      },
+      {
+        id: 'health',
+        header: 'Health',
+        width: 'w-20',
+        align: 'center',
+        cell: ({ row }) => <HealthBadge tenant={row} />,
+      },
+      {
+        id: 'screens',
+        header: 'Screens',
+        width: 'w-32',
+        hideOnMobile: true,
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <QuotaBar used={row.screens_count} max={row.max_screens} />
+            <p className="text-[10px] text-muted-foreground">
+              {row.online_screens_count} of {row.screens_count} online
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: 'ads',
+        header: 'Ad Slots',
+        width: 'w-28',
+        hideOnMobile: true,
+        cell: ({ row }) => <QuotaBar used={row.ad_slots_used} max={row.max_ad_slots} />,
+      },
+      {
+        id: 'storage',
+        header: 'Storage',
+        width: 'w-32',
+        hideOnMobile: true,
+        cell: ({ row }) => (
+          <div className="text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">{formatBytes(row.storage_used_bytes)}</p>
+            <p className="text-[11px]">
+              {row.storage_quota_bytes ? `of ${formatBytes(row.storage_quota_bytes)}` : 'Unlimited'}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        align: 'right',
+        width: 'w-12',
+        cell: ({ row: tenant }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="grid size-8 place-items-center rounded-lg border border-border bg-background hover:bg-muted text-foreground transition-colors"
+                aria-label={`Actions for ${tenant.name}`}
+              >
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => router.push(`/admin/tenants/${tenant.id}`)}>
+                  <Eye className="size-4" />
+                  <span>Tenant 360</span>
+                </DropdownMenuItem>
+
+                {!tenant.deleted_at && (
+                  <>
+                    <DropdownMenuItem onClick={() => handleActAs(tenant, false)}>
+                      <LogIn className="size-4" />
+                      <span>Enter workspace</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleActAs(tenant, true)}>
+                      <Eye className="size-4" />
+                      <span>View (read-only)</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setGrantFor(tenant)
+                        setMessage('')
+                        setError('')
+                      }}
+                    >
+                      <Sliders className="size-4 text-fuchsia-500" />
+                      <span>Grant limits & features</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        setQuotaFor(tenant)
+                        setMessage('')
+                        setError('')
+                      }}
+                    >
+                      <Gauge className="size-4" />
+                      <span>Edit quota</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => setPlanWindow.mutate({ id: tenant.id, body: { extend_days: 30 } })}
+                    >
+                      <CalendarPlus className="size-4 text-sky-500" />
+                      <span>+30 days extend</span>
+                    </DropdownMenuItem>
+                    {tenant.subscription_state === 'active' && (
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          const result = await confirm({
+                            title: `End ${tenant.name}'s plan now?`,
+                            description:
+                              'Their adverts stop and their screens show the demo reel. Nothing is deleted, and extending the plan puts it all back.',
+                            impact: `${tenant.screens_count} TV${tenant.screens_count === 1 ? '' : 's'} switch to the demo reel.`,
+                            level: 2,
+                            confirmLabel: 'End plan',
+                          })
+                          if (result) {
+                            setPlanWindow.mutate({
+                              id: tenant.id,
+                              body: { status: 'expired' },
+                              reason: result.reason,
+                            })
+                          }
+                        }}
+                      >
+                        <CalendarX className="size-4 text-amber-500" />
+                        <span>End plan</span>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    {tenant.status === 'suspended' ? (
+                      <DropdownMenuItem
+                        onClick={() => setStatus.mutate({ id: tenant.id, action: 'reinstate' })}
+                      >
+                        <CheckCircle className="size-4 text-emerald-500" />
+                        <span>Reinstate workspace</span>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          const result = await confirm({
+                            title: `Block ${tenant.name}?`,
+                            description:
+                              'Their dashboard and API access stop immediately. Reinstating gives it back.',
+                            level: 2,
+                            destructive: true,
+                            confirmLabel: 'Block workspace',
+                          })
+                          if (result) {
+                            setStatus.mutate({ id: tenant.id, action: 'suspend', reason: result.reason })
+                          }
+                        }}
+                      >
+                        <XCircle className="size-4 text-rose-500" />
+                        <span>Block workspace</span>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        const result = await confirm({
+                          title: `Remove ${tenant.name}?`,
+                          description:
+                            'Their access stops now, and in 30 days every screen, advert, playlist and file in this workspace is deleted permanently. It can be restored at any point before then.',
+                          level: 3,
+                          confirmText: tenant.name,
+                          destructive: true,
+                          confirmLabel: 'Remove workspace',
+                        })
+                        if (result) {
+                          setRemoved.mutate({ id: tenant.id, action: 'remove', reason: result.reason })
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-4 text-rose-500" />
+                      <span>Remove workspace</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+
+                {tenant.deleted_at && (
+                  <>
+                    <DropdownMenuItem onClick={() => setRemoved.mutate({ id: tenant.id, action: 'restore' })}>
+                      <RotateCcw className="size-4 text-emerald-500" />
+                      <span>Restore workspace</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        const result = await confirm({
+                          title: `Delete ${tenant.name} permanently?`,
+                          description:
+                            'Every screen, advert, playlist, user and file in this workspace is erased from the database and storage. This cannot be undone.',
+                          level: 3,
+                          confirmText: tenant.name,
+                          destructive: true,
+                          confirmLabel: 'Delete permanently',
+                        })
+                        if (result) {
+                          deleteNow.mutate({ id: tenant.id, name: tenant.name, reason: result.reason })
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-4 text-rose-500" />
+                      <span>Delete permanently now</span>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        ),
+      },
+    ],
+    [
+      confirm,
+      deleteNow,
+      handleActAs,
+      router,
+      setPlanWindow,
+      setRemoved,
+      setStatus,
+    ],
+  )
 
   return (
     <div className="space-y-6 p-6 text-foreground lg:p-8">
-      <PageHeader title="All Tenants" description="Limits, status and usage for every workspace">
-        <button
-          onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'tenants'] })}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground transition-all hover:bg-muted"
-        >
-          <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+      <PageHeader
+        title="Tenant Directory"
+        description="Comprehensive lifecycle controls, health metrics and quota management across all workspaces"
+      >
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportTenantsToCsv(allTenants.length ? allTenants : tenants)}
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground transition-all hover:bg-muted"
+            title="Export CSV of all workspaces"
+          >
+            <Download className="size-3.5" />
+            Export CSV
+          </button>
+          <button
+            onClick={() => {
+              refetch()
+              queryClient.invalidateQueries({ queryKey: ['admin', 'tenants', 'all'] })
+            }}
+            className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground transition-all hover:bg-muted/80"
+          >
+            <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </PageHeader>
 
       <Feedback ok={message} error={error} />
@@ -178,220 +613,12 @@ export default function AdminTenantsPage() {
       {grantFor && (
         <GrantLimitsDialog
           tenant={grantFor}
-          onClose={() => { setGrantFor(null); done(`Limits updated for ${grantFor.name}.`) }}
+          onClose={() => {
+            setGrantFor(null)
+            done(`Limits updated for ${grantFor.name}.`)
+          }}
         />
       )}
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Active workspaces" value={totals.active} icon={CheckCircle} accent="emerald" />
-        <StatCard label="Pending approvals" value={totals.pending} icon={Clock} accent="amber" />
-        <StatCard label="TVs online (of paired)" value={`${totals.online} / ${totals.screens}`} icon={MonitorPlay} accent="violet" />
-        <StatCard label="Active ad placements" value={totals.ads} icon={Film} accent="cyan" />
-      </div>
-
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by workspace, slug or owner email…"
-        className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
-      />
-
-      <section className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <Users className="size-4 text-foreground" />
-          {filtered.length} of {tenants.length} tenants
-        </div>
-
-        {isLoading ? (
-          <p className="p-10 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : (
-          <div className="overflow-x-auto">
-            {/* min-w keeps the nine columns readable and lets the wrapper scroll, rather
-                than squeezing them into 375px until every cell wraps to three lines. */}
-            <table className="w-full min-w-[1100px] text-sm">
-              <thead className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="p-4 pl-5 text-left">Workspace</th>
-                  <th className="p-4 text-left">Owner</th>
-                  <th className="p-4 text-left">Package</th>
-                  <th className="p-4 text-left">Status</th>
-                  <th className="p-4 text-left">Plan window</th>
-                  <th className="p-4 text-left">Features</th>
-                  <th className="p-4 text-left">Screens</th>
-                  <th className="p-4 text-left">Ad slots</th>
-                  <th className="p-4 text-left">Storage</th>
-                  <th className="p-4 pr-5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filtered.map((tenant) => (
-                  <tr key={tenant.id} className="transition-colors hover:bg-muted">
-                    <td className="p-4 pl-5">
-                      <Link href={`/admin/tenants/${tenant.id}`} className="font-semibold text-foreground hover:underline">
-                        {tenant.name}
-                      </Link>
-                      <p className="font-mono text-xs text-muted-foreground">{tenant.slug}</p>
-                    </td>
-                    <td className="p-4 font-mono text-xs text-emerald-700 dark:text-emerald-400">{tenant.owner_email ?? '—'}</td>
-                    <td className="p-4 text-xs text-muted-foreground">{tenant.plan_name ?? '—'}</td>
-                    <td className="p-4">
-                      {tenant.deleted_at ? (
-                        <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] text-rose-700 dark:text-rose-400">
-                          Removed
-                        </span>
-                      ) : (
-                        <StatusPill status={tenant.status} />
-                      )}
-                    </td>
-                    <td className="p-4"><PlanWindow tenant={tenant} /></td>
-                    <td className="p-4"><Features tenant={tenant} /></td>
-                    <td className="w-32 p-4"><QuotaBar used={tenant.screens_count} max={tenant.max_screens} /></td>
-                    <td className="w-32 p-4"><QuotaBar used={tenant.ad_slots_used} max={tenant.max_ad_slots} /></td>
-                    <td className="p-4 text-xs text-muted-foreground">
-                      {/* 0 is the unlimited marker, so rendering it through formatBytes
-                          would read "0 B" — the exact opposite of what it means. */}
-                      {formatBytes(tenant.storage_used_bytes)} /{' '}
-                      {tenant.storage_quota_bytes ? formatBytes(tenant.storage_quota_bytes) : 'No limit'}
-                    </td>
-                    <td className="p-4 pr-5">
-                      <div className="flex items-center justify-end gap-2">
-                        {/* A removed workspace is counting down to being destroyed. Every
-                            other control would be editing something that is about to stop
-                            existing, so only the one that calls it off is offered. */}
-                        {tenant.deleted_at ? (
-                          <>
-                            <span className="text-[11px] text-rose-700 dark:text-rose-400">
-                              Deleted for good on {formatWindowEnd(tenant.purge_at)}
-                            </span>
-                            <button
-                              onClick={() => setRemoved.mutate({ id: tenant.id, action: 'restore' })}
-                              disabled={setRemoved.isPending}
-                              className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 transition-all hover:bg-emerald-500/20 disabled:opacity-50"
-                            >
-                              <RotateCcw className="size-3" />
-                              Restore
-                            </button>
-                            <button
-                              onClick={async () => {
-                                const result = await confirm({
-                                  title: `Delete ${tenant.name} permanently?`,
-                                  description: 'Every screen, advert, playlist, user and file in this workspace is erased from the database and storage. This cannot be undone.',
-                                  level: 3,
-                                  confirmText: tenant.name,
-                                  destructive: true,
-                                  confirmLabel: 'Delete permanently',
-                                })
-                                if (result) deleteNow.mutate({ id: tenant.id, name: tenant.name, reason: result.reason })
-                              }}
-                              disabled={deleteNow.isPending}
-                              title="Erase this workspace from the database now instead of waiting 30 days"
-                              className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
-                            >
-                              <Trash2 className="size-3" />
-                              {deleteNow.isPending ? 'Deleting…' : 'Delete now'}
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                        <button
-                          onClick={() => { setQuotaFor(tenant); setMessage(''); setError('') }}
-                          className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-1.5 text-xs text-foreground transition-all hover:bg-foreground/10"
-                        >
-                          <Gauge className="size-3" />
-                          Limits
-                        </button>
-                        <button
-                          onClick={() => { setGrantFor(tenant); setMessage(''); setError('') }}
-                          title="Set this tenant's screens, ads, clients, storage and features"
-                          className="flex items-center gap-1.5 rounded-lg border border-fuchsia-500/20 bg-fuchsia-500/10 px-3 py-1.5 text-xs text-fuchsia-700 dark:text-fuchsia-400 transition-all hover:bg-fuchsia-500/20"
-                        >
-                          <Sliders className="size-3" />
-                          Grant
-                        </button>
-                        <button
-                          onClick={() => setPlanWindow.mutate({ id: tenant.id, body: { extend_days: 30 } })}
-                          disabled={setPlanWindow.isPending}
-                          title="Add 30 days to this workspace's paid window"
-                          className="flex items-center gap-1.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-1.5 text-xs text-sky-700 dark:text-sky-400 transition-all hover:bg-sky-500/20 disabled:opacity-50"
-                        >
-                          <CalendarPlus className="size-3" />
-                          +30 days
-                        </button>
-                        {tenant.subscription_state === 'active' && (
-                          <button
-                            onClick={async () => {
-                              const result = await confirm({
-                                title: `End ${tenant.name}'s plan now?`,
-                                description: 'Their adverts stop and their screens show the demo reel. Nothing is deleted, and extending the plan puts it all back.',
-                                impact: `${tenant.screens_count} TV${tenant.screens_count === 1 ? '' : 's'} switch to the demo reel.`,
-                                level: 2,
-                                confirmLabel: 'End plan',
-                              })
-                              if (result) setPlanWindow.mutate({ id: tenant.id, body: { status: 'expired' }, reason: result.reason })
-                            }}
-                            disabled={setPlanWindow.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400 transition-all hover:bg-amber-500/20 disabled:opacity-50"
-                          >
-                            <CalendarX className="size-3" />
-                            End plan
-                          </button>
-                        )}
-                        {tenant.status === 'suspended' ? (
-                          <button
-                            onClick={() => setStatus.mutate({ id: tenant.id, action: 'reinstate' })}
-                            className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400 transition-all hover:bg-emerald-500/20"
-                          >
-                            <CheckCircle className="size-3" />
-                            Reinstate
-                          </button>
-                        ) : (
-                          <button
-                            onClick={async () => {
-                              const result = await confirm({
-                                title: `Block ${tenant.name}?`,
-                                description: 'Their dashboard and API access stop immediately. Reinstating gives it back.',
-                                level: 2,
-                                destructive: true,
-                                confirmLabel: 'Block workspace',
-                              })
-                              if (result) setStatus.mutate({ id: tenant.id, action: 'suspend', reason: result.reason })
-                            }}
-                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20"
-                          >
-                            <XCircle className="size-3" />
-                            Block
-                          </button>
-                        )}
-                        <button
-                          onClick={async () => {
-                            const result = await confirm({
-                              title: `Remove ${tenant.name}?`,
-                              description: 'Their access stops now, and in 30 days every screen, advert, playlist and file in this workspace is deleted permanently. It can be restored at any point before then.',
-                              level: 3,
-                              confirmText: tenant.name,
-                              destructive: true,
-                              confirmLabel: 'Remove workspace',
-                            })
-                            if (result) setRemoved.mutate({ id: tenant.id, action: 'remove', reason: result.reason })
-                          }}
-                          disabled={setRemoved.isPending}
-                          title="Remove this workspace and delete everything in it after 30 days"
-                          className="flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/20 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-300 transition-all hover:bg-rose-500/30 disabled:opacity-50"
-                        >
-                          <Trash2 className="size-3" />
-                          Remove
-                        </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
       {quotaFor && (
         <QuotaDialog
@@ -402,42 +629,121 @@ export default function AdminTenantsPage() {
           onSave={(body) => saveQuota.mutate({ id: quotaFor.id, body })}
         />
       )}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Active workspaces" value={totals.active} icon={CheckCircle} accent="emerald" />
+        <StatCard label="Pending approvals" value={totals.pending} icon={Clock} accent="amber" />
+        <StatCard
+          label="TVs online (of paired)"
+          value={`${totals.online} / ${totals.screens}`}
+          icon={MonitorPlay}
+          accent="violet"
+        />
+        <StatCard label="Active ad placements" value={totals.ads} icon={Film} accent="cyan" />
+      </div>
+
+      <AdminDataTable
+        data={tenants}
+        columns={columns}
+        isLoading={isLoading}
+        onRowClick={(row) => router.push(`/admin/tenants/${row.id}`)}
+        search={{
+          value: search,
+          onChange: (val) => {
+            setSearch(val)
+            setPage(1)
+          },
+          placeholder: 'Search workspace name, slug or owner email…',
+        }}
+        sort={sorting}
+        onSortChange={(newSort: ColumnSortState | null) => {
+          setSorting(newSort)
+          setPage(1)
+        }}
+        pagination={{
+          page,
+          pageSize,
+          totalCount: total,
+          onPageChange: setPage,
+          onPageSizeChange: (newSize) => {
+            setPageSize(newSize)
+            setPage(1)
+          },
+          pageSizeOptions: [10, 25, 50, 100],
+        }}
+        filters={
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value)
+                setPage(1)
+              }}
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring"
+            >
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="pending_approval">Pending approval</option>
+              <option value="suspended">Suspended</option>
+            </select>
+
+            <select
+              value={planFilter}
+              onChange={(e) => {
+                setPlanFilter(e.target.value)
+                setPage(1)
+              }}
+              className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-ring"
+            >
+              <option value="all">All packages</option>
+              {packages.map((pkg) => (
+                <option key={pkg.id} value={pkg.id}>
+                  {pkg.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        }
+      />
     </div>
   )
 }
 
 function QuotaDialog({
-  tenant, packages, saving, onCancel, onSave,
+  tenant,
+  packages,
+  saving,
+  onCancel,
+  onSave,
 }: {
   tenant: TenantSummary
-  // max_screens is nullable now: null is a package with NO screen limit, which is a
-  // different thing from 0 (a package granting none) and must not be rendered as one.
   packages: { id: number; name: string; max_screens: number | null; max_ad_slots: number; is_active: boolean }[]
   saving: boolean
   onCancel: () => void
   onSave: (body: { plan_id?: number; max_screens: number; max_ad_slots: number }) => void
 }) {
   const [planId, setPlanId] = useState<number | ''>(tenant.plan_id ?? '')
-  // The OVERRIDE, not the effective limit. Seeding these from the effective value would
-  // make merely opening and saving the dialog pin the tenant to their package's current
-  // number, after which they would no longer follow that package.
   const [screens, setScreens] = useState(tenant.max_screens_override)
   const [ads, setAds] = useState(tenant.max_ad_slots_override)
 
-  // Picking a package pre-fills its limits, but they stay editable: the override is the
-  // point, so one tenant can be raised without moving everyone on that package.
   const choosePackage = (value: number | '') => {
     setPlanId(value)
     const pkg = packages.find((p) => p.id === value)
-    // A package with no screen limit pre-fills 0, which on THIS field means "no override,
-    // follow the package" — so the tenant keeps the package's unlimited rather than being
-    // pinned to a number. Use the Grant dialog to give one tenant their own unlimited.
-    if (pkg) { setScreens(pkg.max_screens ?? 0); setAds(pkg.max_ad_slots) }
+    if (pkg) {
+      setScreens(pkg.max_screens ?? 0)
+      setAds(pkg.max_ad_slots)
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onClick={onCancel}>
-      <div className="w-full max-w-md space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md space-y-5 rounded-3xl border border-border bg-card p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-2xl border border-border bg-accent">
             <Gauge className="size-5 text-foreground" />
@@ -456,9 +762,13 @@ function QuotaDialog({
             className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           >
             <option value="">No package</option>
-            {packages.filter((p) => p.is_active || p.id === tenant.plan_id).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
+            {packages
+              .filter((p) => p.is_active || p.id === tenant.plan_id)
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
           </select>
         </label>
 
@@ -467,11 +777,14 @@ function QuotaDialog({
             Max TV screens <span className="font-normal text-muted-foreground">(0 = follow the package)</span>
           </span>
           <input
-            type="number" min={0} value={screens} onChange={(e) => setScreens(Number(e.target.value) || 0)}
+            type="number"
+            min={0}
+            value={screens}
+            onChange={(e) => setScreens(Number(e.target.value) || 0)}
             className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Currently using {tenant.screens_count}. For no limit at all, use Limits &amp; features.
+            Currently using {tenant.screens_count}. For unlimited, use Grant limits.
           </p>
         </label>
 
@@ -480,7 +793,10 @@ function QuotaDialog({
             Max ad slots <span className="font-normal text-muted-foreground">(0 = follow the package)</span>
           </span>
           <input
-            type="number" min={0} value={ads} onChange={(e) => setAds(Number(e.target.value) || 0)}
+            type="number"
+            min={0}
+            value={ads}
+            onChange={(e) => setAds(Number(e.target.value) || 0)}
             className="w-full rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground outline-none focus:border-ring"
           />
           <p className="mt-1 text-xs text-muted-foreground">Currently using {tenant.ad_slots_used}.</p>
@@ -488,13 +804,22 @@ function QuotaDialog({
 
         <div className="flex gap-3 pt-1">
           <button
-            onClick={() => onSave({ ...(planId === '' ? {} : { plan_id: planId }), max_screens: screens, max_ad_slots: ads })}
+            onClick={() =>
+              onSave({
+                ...(planId === '' ? {} : { plan_id: planId }),
+                max_screens: screens,
+                max_ad_slots: ads,
+              })
+            }
             disabled={saving}
             className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save limits'}
           </button>
-          <button onClick={onCancel} className="rounded-xl border border-border bg-muted px-5 py-2.5 text-sm text-muted-foreground transition-all hover:bg-muted">
+          <button
+            onClick={onCancel}
+            className="rounded-xl border border-border bg-muted px-5 py-2.5 text-sm text-muted-foreground transition-all hover:bg-muted"
+          >
             Cancel
           </button>
         </div>

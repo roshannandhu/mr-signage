@@ -307,7 +307,13 @@ def list_audit_events(
     if org_id is not None:
         query = query.filter(event.target_org_id == org_id)
     if action:
-        query = query.filter(event.action == action)
+        if "," in action:
+            actions = [a.strip() for a in action.split(",") if a.strip()]
+            query = query.filter(event.action.in_(actions))
+        elif "%" in action:
+            query = query.filter(event.action.like(action))
+        else:
+            query = query.filter(event.action == action)
     if actor_user_id is not None:
         query = query.filter(event.actor_user_id == actor_user_id)
     if since is not None:

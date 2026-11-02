@@ -672,10 +672,14 @@ export interface TenantSummary {
 
 export interface TenantScreen {
   id: number
+  device_id?: string | null
   name?: string | null
   status: string
+  is_online?: boolean
   last_seen?: string | null
   location?: string | null
+  latitude?: number | null
+  longitude?: number | null
   model?: string | null
   app_version?: string | null
   playback_state: string
@@ -685,8 +689,10 @@ export interface TenantContent {
   id: number
   name?: string | null
   type?: string | null
+  mime_type?: string | null
   status: string
   file_size_bytes: number
+  duration_seconds?: number | null
   uploaded_at?: string | null
   thumbnail?: string | null
 }
@@ -698,6 +704,7 @@ export interface TenantUser {
   full_name?: string | null
   role: string
   is_active: boolean
+  created_at?: string | null
 }
 
 export interface ScreenUpdateResult {
@@ -832,6 +839,28 @@ export interface StorageSettings {
 export interface DayPoint {
   date: string
   value: number
+}
+
+export interface PagedResult<T> {
+  items: T[]
+  total: number
+}
+
+export interface AuditEvent {
+  id: number
+  occurred_at: string | null
+  actor_user_id: number | null
+  actor_username: string | null
+  acting_org_id: number | null
+  target_org_id: number | null
+  target_type: string | null
+  target_id: string | null
+  action: string
+  reason: string | null
+  before_json: string | null
+  after_json: string | null
+  ip: string | null
+  batch_id: string | null
 }
 
 export interface RecentAuditEvent {

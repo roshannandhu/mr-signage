@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -111,6 +111,14 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
   const response = await authFetch(endpoint, options)
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
+}
+
+async function fetchPagedWithAuth<T>(endpoint: string, options: RequestInit = {}): Promise<PagedResult<T>> {
+  const response = await authFetch(endpoint, options)
+  const totalHeader = response.headers.get('X-Total-Count')
+  const items = (response.status === 204 ? [] : await response.json()) as T[]
+  const total = totalHeader ? parseInt(totalHeader, 10) : items.length
+  return { items, total: isNaN(total) ? items.length : total }
 }
 
 export const api = {
@@ -723,6 +731,44 @@ export const adminApi = {
   platformHealth: () => fetchWithAuth<PlatformHealth>('/admin/platform-health'),
   listTenants: (status?: string) =>
     fetchWithAuth<TenantSummary[]>(`/admin/tenants${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  listTenantsPaged: (params?: {
+    status?: string
+    q?: string
+    plan_id?: number
+    sort?: 'created_desc' | 'created_asc' | 'name_asc' | 'name_desc'
+    limit?: number
+    offset?: number
+  }) => {
+    const search = new URLSearchParams()
+    if (params?.status) search.set('status', params.status)
+    if (params?.q) search.set('q', params.q)
+    if (params?.plan_id != null) search.set('plan_id', String(params.plan_id))
+    if (params?.sort) search.set('sort', params.sort)
+    if (params?.limit != null) search.set('limit', String(params.limit))
+    if (params?.offset != null) search.set('offset', String(params.offset))
+    const qs = search.toString()
+    return fetchPagedWithAuth<TenantSummary>(`/admin/tenants${qs ? `?${qs}` : ''}`)
+  },
+  listAuditEvents: (params?: {
+    org_id?: number
+    action?: string
+    actor_user_id?: number
+    since?: string
+    until?: string
+    limit?: number
+    offset?: number
+  }) => {
+    const search = new URLSearchParams()
+    if (params?.org_id != null) search.set('org_id', String(params.org_id))
+    if (params?.action) search.set('action', params.action)
+    if (params?.actor_user_id != null) search.set('actor_user_id', String(params.actor_user_id))
+    if (params?.since) search.set('since', params.since)
+    if (params?.until) search.set('until', params.until)
+    if (params?.limit != null) search.set('limit', String(params.limit))
+    if (params?.offset != null) search.set('offset', String(params.offset))
+    const qs = search.toString()
+    return fetchPagedWithAuth<AuditEvent>(`/admin/audit${qs ? `?${qs}` : ''}`)
+  },
   getTenant: (id: number) => fetchWithAuth<TenantSummary>(`/admin/tenants/${id}`),
   // Fleet-wide, last 30 days -- not the tenants LIST, which must stay cheap.
   getTenantPlays: (id: number) => fetchWithAuth<{ total_plays: number; online_plays: number; offline_plays: number }>(`/admin/tenants/${id}/plays`),
@@ -847,6 +893,26 @@ export const adminApi = {
     if (filters?.until) params.set('until', filters.until)
     const qs = params.toString()
     return fetchWithAuth<PlatformPayment[]>(`/admin/payments${qs ? `?${qs}` : ''}`)
+  },
+  listPaymentsPaged: (filters?: {
+    organization_id?: number
+    since?: string
+    until?: string
+    kind?: string
+    provider?: string
+    limit?: number
+    offset?: number
+  }) => {
+    const params = new URLSearchParams()
+    if (filters?.organization_id) params.set('organization_id', String(filters.organization_id))
+    if (filters?.since) params.set('since', filters.since)
+    if (filters?.until) params.set('until', filters.until)
+    if (filters?.kind) params.set('kind', filters.kind)
+    if (filters?.provider) params.set('provider', filters.provider)
+    if (filters?.limit != null) params.set('limit', String(filters.limit))
+    if (filters?.offset != null) params.set('offset', String(filters.offset))
+    const qs = params.toString()
+    return fetchPagedWithAuth<PlatformPayment>(`/admin/payments${qs ? `?${qs}` : ''}`)
   },
   getContactEmail: () => fetchWithAuth<{ email: string | null }>('/admin/settings/contact-email'),
   setContactEmail: (email: string) =>
