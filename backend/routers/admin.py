@@ -1962,25 +1962,41 @@ class PlatformPaymentOut(BaseModel):
 
 @router.get("/payments", response_model=List[PlatformPaymentOut])
 def list_platform_payments(
+    response: Response,
     organization_id: Optional[int] = None,
+    kind: Optional[str] = None,
+    provider: Optional[str] = None,
     since: Optional[datetime] = None,
     until: Optional[datetime] = None,
     limit: int = 200,
+    offset: int = Query(default=0, ge=0),
     scope: TenantScope = Depends(require_super_admin),
     db: Session = Depends(database.get_db),
 ):
     """What tenants have paid the platform -- view only. Amounts come from the provider,
-    recorded once by the shared activation path at the moment each purchase was captured."""
+    recorded once by the shared activation path at the moment each purchase was captured.
+
+    Same paging contract as /tenants: the body stays a plain list (so an older caller
+    using just `limit` keeps working unchanged), and X-Total-Count carries the count of
+    everything the filters matched, not just this page."""
     query = db.query(models.PlatformPayment, models.Organization.name).join(
         models.Organization, models.Organization.id == models.PlatformPayment.organization_id
     )
     if organization_id is not None:
         query = query.filter(models.PlatformPayment.organization_id == organization_id)
+    if kind:
+        query = query.filter(models.PlatformPayment.kind == kind)
+    if provider:
+        query = query.filter(models.PlatformPayment.provider == provider)
     if since is not None:
         query = query.filter(models.PlatformPayment.paid_at >= since)
     if until is not None:
         query = query.filter(models.PlatformPayment.paid_at <= until)
-    rows = query.order_by(models.PlatformPayment.paid_at.desc()).limit(min(max(limit, 1), 1000)).all()
+    response.headers[TOTAL_COUNT_HEADER] = str(query.count())
+    rows = (
+        query.order_by(models.PlatformPayment.paid_at.desc())
+        .offset(offset).limit(min(max(limit, 1), 1000)).all()
+    )
     return [
         PlatformPaymentOut(
             id=payment.id, organization_id=payment.organization_id, organization_name=org_name,
