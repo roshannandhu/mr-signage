@@ -1534,6 +1534,122 @@ def delete_plan(
     return {"status": "deleted"}
 
 
+# ------------------------------------------------------------------ features & plan impact
+
+
+class FeatureItemOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    category: str
+    enforced: bool
+
+
+PLATFORM_FEATURES = [
+    FeatureItemOut(key="scheduling", label="Scheduling", description="Per-screen and per-playlist day and time scheduling", category="Content", enforced=True),
+    FeatureItemOut(key="transitions", label="Transitions", description="Cut, fade, wipe and slide animations between playlist items", category="Content", enforced=True),
+    FeatureItemOut(key="ads_counting", label="Ads counting reports", description="Per-advert play logs and proof-of-play analytics", category="Ads & reporting", enforced=True),
+    FeatureItemOut(key="pdf_reports", label="PDF playback reports", description="Downloadable branded proof-of-play certificates for advertisers", category="Ads & reporting", enforced=True),
+    FeatureItemOut(key="payslips", label="Payslips & invoices", description="Client invoicing and booking receipts generation", category="Billing", enforced=True),
+    FeatureItemOut(key="remote_control", label="Remote control & alerts", description="Screen health heartbeats and emergency remote commands", category="Fleet & control", enforced=True),
+    FeatureItemOut(key="kiosk_lock", label="TV kiosk lock", description="Hardware button lockout preventing customer exit on TV panels", category="Fleet & control", enforced=True),
+    FeatureItemOut(key="emergency_alert", label="Emergency broadcast", description="Instant priority override broadcast across all screens", category="Fleet & control", enforced=True),
+    FeatureItemOut(key="priority_support", label="Priority support", description="Direct SLA channel with 1-hour critical response", category="Support", enforced=False),
+]
+
+
+@router.get("/features", response_model=List[FeatureItemOut])
+def list_canonical_features(
+    scope: TenantScope = Depends(require_super_admin),
+):
+    """The canonical list of plan features, categories and descriptions.
+    Replaces hardcoded feature sets in client pages."""
+    return PLATFORM_FEATURES
+
+
+class PlanImpactRequest(BaseModel):
+    max_screens: Optional[int] = None
+    max_ad_slots: Optional[int] = None
+    max_clients: Optional[int] = None
+    max_storage_bytes: Optional[int] = None
+    feature_flags: Optional[dict[str, bool]] = None
+
+
+class PlanImpactResponse(BaseModel):
+    tenants_count: int
+    exceeding_screens: int
+    exceeding_ads: int
+    exceeding_storage: int
+    lost_features: List[str]
+
+
+@router.post("/plans/{plan_id}/impact", response_model=PlanImpactResponse)
+def check_plan_impact(
+    plan_id: int,
+    req: PlanImpactRequest,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Advisory pre-save check: counts how many tenants on this plan would exceed
+    proposed limits or lose features. Pure read, no database writes."""
+    plan = db.query(models.Plan).filter(models.Plan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Package not found")
+
+    orgs = (
+        db.query(models.Organization)
+        .filter(models.Organization.plan_id == plan_id, models.Organization.deleted_at.is_(None))
+        .all()
+    )
+    tenants_count = len(orgs)
+    if tenants_count == 0:
+        return PlanImpactResponse(
+            tenants_count=0,
+            exceeding_screens=0,
+            exceeding_ads=0,
+            exceeding_storage=0,
+            lost_features=[],
+        )
+
+    from ..services.admin_metrics import tenant_usage
+    usage_map = tenant_usage(db, [o.id for o in orgs])
+
+    exceeding_screens = 0
+    exceeding_ads = 0
+    exceeding_storage = 0
+
+    for org in orgs:
+        u = usage_map.get(org.id)
+        if not u:
+            continue
+        if req.max_screens is not None and req.max_screens > 0 and (org.max_screens or 0) == 0:
+            if u.screens > req.max_screens:
+                exceeding_screens += 1
+
+        if req.max_ad_slots is not None and req.max_ad_slots > 0 and (org.max_ad_slots or 0) == 0:
+            if u.ad_slots_used > req.max_ad_slots:
+                exceeding_ads += 1
+
+        if req.max_storage_bytes is not None and req.max_storage_bytes > 0:
+            if u.storage_bytes > req.max_storage_bytes:
+                exceeding_storage += 1
+
+    current_features = plan_features(plan)
+    lost_features = []
+    if req.feature_flags is not None:
+        for feat_key, was_on in current_features.items():
+            if was_on and not req.feature_flags.get(feat_key):
+                lost_features.append(feat_key)
+
+    return PlanImpactResponse(
+        tenants_count=tenants_count,
+        exceeding_screens=exceeding_screens,
+        exceeding_ads=exceeding_ads,
+        exceeding_storage=exceeding_storage,
+        lost_features=lost_features,
+    )
+
+
 # ------------------------------------------------------------------ custom-plan requests
 
 

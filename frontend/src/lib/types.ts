@@ -928,3 +928,27 @@ export interface SearchOut {
   results: SearchHit[]
 }
 
+
+export interface FeatureItem {
+  key: string
+  label: string
+  description: string
+  category: string
+  enforced: boolean
+}
+
+export interface PlanImpactRequest {
+  max_screens?: number
+  max_ad_slots?: number
+  max_clients?: number
+  max_storage_bytes?: number
+  feature_flags?: Record<string, boolean>
+}
+
+export interface PlanImpactResponse {
+  tenants_count: number
+  exceeding_screens: number
+  exceeding_ads: number
+  exceeding_storage: number
+  lost_features: string[]
+}

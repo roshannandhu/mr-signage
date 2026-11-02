@@ -1,6 +1,6 @@
 import { useAuthStore } from './store'
 import type {
-  AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -848,6 +848,13 @@ export const adminApi = {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
     }),
   listPackages: () => fetchWithAuth<Package[]>('/admin/plans'),
+  listFeatures: () => fetchWithAuth<FeatureItem[]>('/admin/features'),
+  checkPlanImpact: (planId: number, body: PlanImpactRequest) =>
+    fetchWithAuth<PlanImpactResponse>(`/admin/plans/${planId}/impact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
   createPackage: (body: PackageWrite) =>
     fetchWithAuth<Package>('/admin/plans', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

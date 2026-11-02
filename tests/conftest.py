@@ -120,6 +120,7 @@ ISOLATED_SCRIPTS = {
     "test_admin_provisioning_qr.py",
     # Admin payments list pagination (offset/limit + X-Total-Count) and kind/provider filters.
     "test_admin_payments_paging.py",
+    "test_plan_impact.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.
@@ -369,6 +370,7 @@ NEEDS_POSTGRES = ISOLATED_SCRIPTS - {
     "test_admin_provisioning_qr.py",
     # Admin payments list pagination (offset/limit + X-Total-Count) and kind/provider filters.
     "test_admin_payments_paging.py",
+    "test_plan_impact.py",
 }
 
 
@@ -486,3 +488,4 @@ def pytest_collection_finish(session):
             f"their own they write to whatever backend/.env points at: {stray}. Set "
             'os.environ["DATABASE_URL"] to a throwaway database at the top of each.'
         )
+

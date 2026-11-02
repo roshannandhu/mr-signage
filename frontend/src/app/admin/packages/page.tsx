@@ -1,22 +1,38 @@
 'use client'
 
-import { useState } from 'react'
-import Link from 'next/link'
+import { useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Package as PackageIcon, Plus, Save, Trash2 } from 'lucide-react'
+import {
+  Check,
+  Edit2,
+  Eye,
+  Layers,
+  Plus,
+  Table as TableIcon,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import type { Package, PackageWrite } from '@/lib/types'
-import { FEATURES, Feedback, LimitInput, PageHeader, UNLIMITED, formatBytes, formatPaise } from '@/components/admin/admin-ui'
+import type { Package, PackageWrite, FeatureItem } from '@/lib/types'
+import {
+  Feedback,
+  LimitInput,
+  PageHeader,
+  UNLIMITED,
+  formatBytes,
+  formatPaise,
+} from '@/components/admin/admin-ui'
 import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 
 const GIB = 1024 ** 3
 
-const blank: PackageWrite = {
+const defaultNewPackage: PackageWrite = {
   name: '',
   slug: '',
-  monthly_price_paise: 0,
-  yearly_price_paise: 0,
-  price_paise: 0,
+  monthly_price_paise: 99900,
+  yearly_price_paise: 999000,
+  price_paise: 99900,
   duration_days: 30,
   max_screens: 10,
   max_clients: 10,
@@ -26,47 +42,69 @@ const blank: PackageWrite = {
   is_active: true,
 }
 
-/**
- * Packages: the named limits, price and features a workspace is sold on.
- *
- * The Plan table has existed since billing was added, with exactly one way to change it --
- * editing a hardcoded tuple in backend/billing.py, which `ensure_billing_catalog` then
- * skips for any slug that already exists. So prices and quotas could not be changed on a
- * live database at all without direct SQL. This is the admin surface for it.
- *
- * A package sells access as a ONE-TIME charge (`price_paise`) for a fixed window
- * (`duration_days`); the storefront reads those, not the legacy monthly/yearly figures.
- */
 export default function AdminPackagesPage() {
   const queryClient = useQueryClient()
   const confirm = useConfirm()
-  const [draft, setDraft] = useState<PackageWrite | null>(null)
-  const [editing, setEditing] = useState<Record<number, Partial<PackageWrite>>>({})
+
+  const [viewMode, setViewMode] = useState<'cards' | 'matrix'>('cards')
+  const [editingPlan, setEditingPlan] = useState<Package | null>(null)
+  const [isCreating, setIsCreating] = useState(false)
+  const [previewPlan, setPreviewPlan] = useState<Package | null>(null)
+  const [planForm, setPlanForm] = useState<PackageWrite>(defaultNewPackage)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  const { data: packages = [], isLoading } = useQuery({
+  // Queries
+  const { data: packages = [] } = useQuery({
     queryKey: ['admin', 'packages'],
     queryFn: adminApi.listPackages,
   })
+
+  const { data: canonicalFeatures = [] } = useQuery({
+    queryKey: ['admin', 'features'],
+    queryFn: adminApi.listFeatures,
+  })
+
+  const { data: allTenants = [] } = useQuery({
+    queryKey: ['admin', 'tenants', 'all'],
+    queryFn: () => adminApi.listTenants(),
+  })
+
+  // Count active tenants per plan
+  const tenantCounts = useMemo(() => {
+    const counts: Record<number, number> = {}
+    for (const t of allTenants) {
+      if (t.plan_id && !t.deleted_at) {
+        counts[t.plan_id] = (counts[t.plan_id] || 0) + 1
+      }
+    }
+    return counts
+  }, [allTenants])
 
   const done = (text: string) => {
     setError('')
     setMessage(text)
     queryClient.invalidateQueries({ queryKey: ['admin', 'packages'] })
   }
-  const failed = (e: Error) => { setMessage(''); setError(e.message) }
+  const failed = (e: Error) => {
+    setMessage('')
+    setError(e.message)
+  }
 
   const create = useMutation({
     mutationFn: (body: PackageWrite) => adminApi.createPackage(body),
-    onSuccess: (pkg) => { setDraft(null); done(`Package "${pkg.name}" created.`) },
+    onSuccess: (pkg) => {
+      setIsCreating(false)
+      done(`Package "${pkg.name}" created.`)
+    },
     onError: failed,
   })
 
   const update = useMutation({
-    mutationFn: ({ id, body }: { id: number; body: Partial<PackageWrite> }) => adminApi.updatePackage(id, body),
+    mutationFn: ({ id, body }: { id: number; body: Partial<PackageWrite> }) =>
+      adminApi.updatePackage(id, body),
     onSuccess: (pkg) => {
-      setEditing((prev) => { const next = { ...prev }; delete next[pkg.id]; return next })
+      setEditingPlan(null)
       done(`Package "${pkg.name}" updated.`)
     },
     onError: failed,
@@ -78,261 +116,617 @@ export default function AdminPackagesPage() {
     onError: failed,
   })
 
-  const fieldOf = (pkg: Package, key: keyof PackageWrite) =>
-    (editing[pkg.id]?.[key] ?? pkg[key as keyof Package]) as never
+  // Handle saving plan edits with impact check
+  const handleSavePlan = async () => {
+    if (isCreating) {
+      create.mutate(planForm)
+      return
+    }
 
-  // A limit as the form shows it. Screens store "no limit" as null; ad slots, clients and
-  // storage store it as 0. The form speaks one language -- UNLIMITED -- and the server
-  // translates it back, so nobody has to know which column means what.
-  type LimitKey = 'max_screens' | 'max_clients' | 'max_ad_slots' | 'max_storage_bytes'
-  const limitOf = (pkg: Package, key: LimitKey): number => {
-    const edited = editing[pkg.id]?.[key]
-    if (edited !== undefined) return edited
-    const stored = pkg[key]
-    return stored == null || (key !== 'max_screens' && stored === 0) ? UNLIMITED : stored
+    if (!editingPlan) return
+
+    // Run impact check before saving modifications
+    try {
+      const impact = await adminApi.checkPlanImpact(editingPlan.id, {
+        max_screens: planForm.max_screens == null ? UNLIMITED : planForm.max_screens,
+        max_ad_slots: planForm.max_ad_slots,
+        max_clients: planForm.max_clients,
+        max_storage_bytes: planForm.max_storage_bytes,
+        feature_flags: planForm.feature_flags,
+      })
+
+      const hasImpact =
+        impact.exceeding_screens > 0 ||
+        impact.exceeding_ads > 0 ||
+        impact.exceeding_storage > 0 ||
+        impact.lost_features.length > 0
+
+      if (hasImpact) {
+        const warnings: string[] = []
+        if (impact.exceeding_screens > 0)
+          warnings.push(`${impact.exceeding_screens} tenant(s) will exceed the new TV limit`)
+        if (impact.exceeding_ads > 0)
+          warnings.push(`${impact.exceeding_ads} tenant(s) will exceed the new ad slots limit`)
+        if (impact.exceeding_storage > 0)
+          warnings.push(`${impact.exceeding_storage} tenant(s) will exceed storage limit`)
+        if (impact.lost_features.length > 0)
+          warnings.push(
+            `Tenants will lose access to: ${impact.lost_features.join(', ')}`,
+          )
+
+        const confirmed = await confirm({
+          title: `Apply package changes to ${editingPlan.name}?`,
+          description: `This package is active on ${impact.tenants_count} workspace(s). Saving will impact live operations:\n\n• ${warnings.join('\n• ')}`,
+          level: 2,
+          confirmLabel: 'Apply changes anyway',
+        })
+
+        if (!confirmed) return
+      }
+
+      update.mutate({ id: editingPlan.id, body: planForm })
+    } catch {
+      // Fallback direct update if impact check encounters an issue
+      update.mutate({ id: editingPlan.id, body: planForm })
+    }
   }
 
-  const edit = (id: number, key: keyof PackageWrite, value: string | number | boolean | Record<string, boolean>) =>
-    setEditing((prev) => ({ ...prev, [id]: { ...prev[id], [key]: value } }))
+  const openEditDrawer = (pkg: Package) => {
+    setIsCreating(false)
+    setEditingPlan(pkg)
+    setPlanForm({
+      name: pkg.name,
+      slug: pkg.slug,
+      monthly_price_paise: pkg.monthly_price_paise,
+      yearly_price_paise: pkg.yearly_price_paise,
+      price_paise: pkg.price_paise,
+      duration_days: pkg.duration_days,
+      max_screens: pkg.max_screens == null ? UNLIMITED : pkg.max_screens,
+      max_clients: pkg.max_clients,
+      max_storage_bytes: pkg.max_storage_bytes,
+      max_ad_slots: pkg.max_ad_slots,
+      feature_flags: pkg.feature_flags || {},
+      is_active: pkg.is_active,
+    })
+  }
 
-  // The working feature map for a row: its unsaved edit if any, else what is stored.
-  const featuresOf = (pkg: Package): Record<string, boolean> =>
-    (editing[pkg.id]?.feature_flags ?? pkg.feature_flags ?? {}) as Record<string, boolean>
+  const openCreateDrawer = () => {
+    setEditingPlan(null)
+    setIsCreating(true)
+    setPlanForm({ ...defaultNewPackage })
+  }
 
-  const toggleFeature = (pkg: Package, key: string, on: boolean) =>
-    edit(pkg.id, 'feature_flags', { ...featuresOf(pkg), [key]: on })
+  // Feature categorization
+  const featureCategories = useMemo(() => {
+    const cats: Record<string, FeatureItem[]> = {}
+    for (const f of canonicalFeatures) {
+      if (!cats[f.category]) cats[f.category] = []
+      cats[f.category].push(f)
+    }
+    return cats
+  }, [canonicalFeatures])
 
   return (
     <div className="space-y-6 p-6 text-foreground lg:p-8">
-      <PageHeader title="Packages" description="Price, access period, limits and features a workspace can be sold on">
-        <button
-          onClick={() => setDraft(draft ? null : blank)}
-          className="flex items-center gap-2 rounded-xl border border-border bg-accent px-4 py-2 text-sm text-foreground transition-all hover:bg-foreground/10"
-        >
-          <Plus className="size-4" />
-          {draft ? 'Cancel' : 'New package'}
-        </button>
+      <PageHeader
+        title="Feature Control Studio"
+        description="Configure commercial packages, hardware quotas, feature tiers and tenant pricing"
+      >
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode(viewMode === 'cards' ? 'matrix' : 'cards')}
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground transition-all hover:bg-muted"
+          >
+            {viewMode === 'cards' ? <TableIcon className="size-4" /> : <Layers className="size-4" />}
+            {viewMode === 'cards' ? 'Compare Matrix' : 'Plan Cards'}
+          </button>
+          <button
+            onClick={openCreateDrawer}
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
+          >
+            <Plus className="size-4" />
+            New Package
+          </button>
+        </div>
       </PageHeader>
-      <p className="-mt-4 text-xs text-muted-foreground">
-        Looking for a tenant&apos;s custom / Business request, payments, or the contact address on their email draft? That moved to{' '}
-        <Link href="/admin/billing" className="text-foreground hover:underline">Billing</Link>.
-      </p>
 
       <Feedback ok={message} error={error} />
 
-      {draft && (
-        <form
-          onSubmit={(e) => { e.preventDefault(); create.mutate(draft) }}
-          className="space-y-4 rounded-2xl border border-border bg-muted/40 p-5"
-        >
-          <h2 className="font-semibold">New package</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Name">
-              <input required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className={inputClass} />
-            </Field>
-            <Field label="Slug" hint="lowercase, cannot change later">
-              <input
-                required pattern="[a-z0-9][a-z0-9-]*" value={draft.slug}
-                onChange={(e) => setDraft({ ...draft, slug: e.target.value.toLowerCase() })}
-                className={`${inputClass} font-mono`}
-              />
-            </Field>
-            <Field label="Price (₹)" hint="one-time, per period">
-              <input
-                type="number" min={0} value={draft.price_paise / 100}
-                onChange={(e) => setDraft({ ...draft, price_paise: Math.round(Number(e.target.value) * 100) })}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Access period (days)">
-              <input
-                type="number" min={1} value={draft.duration_days}
-                onChange={(e) => setDraft({ ...draft, duration_days: Number(e.target.value) })}
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Max screens" hint="0 = none">
-              <LimitInput label="Max screens" value={draft.max_screens} onChange={(v) => setDraft({ ...draft, max_screens: v })} />
-            </Field>
-            <Field label="Max clients">
-              <LimitInput label="Max clients" value={draft.max_clients} onChange={(v) => setDraft({ ...draft, max_clients: v })} />
-            </Field>
-            <Field label="Max ad slots">
-              <LimitInput label="Max ad slots" value={draft.max_ad_slots} onChange={(v) => setDraft({ ...draft, max_ad_slots: v })} />
-            </Field>
-            <Field label="Storage (GB)">
-              <LimitInput label="Storage in GB" scale={GIB} value={draft.max_storage_bytes} onChange={(v) => setDraft({ ...draft, max_storage_bytes: v })} />
-            </Field>
-          </div>
-          <Field label="Features">
-            <div className="flex flex-wrap gap-3 pt-1">
-              {FEATURES.map((f) => (
-                <label key={f.key} className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(draft.feature_flags[f.key])}
-                    onChange={(e) => setDraft({ ...draft, feature_flags: { ...draft.feature_flags, [f.key]: e.target.checked } })}
-                    className="size-4 accent-foreground"
-                  />
-                  {f.label}
-                  {!f.enforced && (
-                    <span
-                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground/80"
-                      title="Sold as a commitment, not enforced by the software"
-                    >
-                      Not enforced
+      {/* PLAN CARDS VIEW */}
+      {viewMode === 'cards' && (
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {packages.map((pkg) => {
+            const count = tenantCounts[pkg.id] || 0
+            return (
+              <div
+                key={pkg.id}
+                className="flex flex-col justify-between overflow-hidden rounded-3xl border border-border bg-card p-6 shadow-sm transition-all hover:shadow-md"
+              >
+                <div className="space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-bold text-foreground">{pkg.name}</h3>
+                        {!pkg.is_active && (
+                          <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase font-semibold text-muted-foreground">
+                            Archived
+                          </span>
+                        )}
+                      </div>
+                      <p className="font-mono text-xs text-muted-foreground">{pkg.slug}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs">
+                      <Users className="size-3 text-muted-foreground" />
+                      <span className="font-semibold text-foreground">{count}</span>
+                      <span className="text-muted-foreground">workspaces</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border bg-muted/20 p-4">
+                    <p className="text-2xl font-bold text-foreground">
+                      {pkg.price_paise > 0 ? formatPaise(pkg.price_paise) : 'Free'}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {' '}
+                        / {pkg.duration_days} days
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Monthly: {formatPaise(pkg.monthly_price_paise)} • Yearly:{' '}
+                      {formatPaise(pkg.yearly_price_paise)}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <span className="font-semibold uppercase tracking-wider text-muted-foreground text-[10px]">
+                      Hardware & Media Quotas
                     </span>
-                  )}
-                </label>
-              ))}
-            </div>
-          </Field>
-          <button
-            type="submit" disabled={create.isPending}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50"
-          >
-            {create.isPending ? 'Creating…' : 'Create package'}
-          </button>
-        </form>
+                    <ul className="space-y-1.5 text-muted-foreground">
+                      <li className="flex justify-between">
+                        <span>TV screens limit:</span>
+                        <span className="font-semibold text-foreground">
+                          {pkg.max_screens == null ? 'Unlimited (∞)' : pkg.max_screens}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Ad placements:</span>
+                        <span className="font-semibold text-foreground">
+                          {pkg.max_ad_slots === 0 ? 'Unlimited (∞)' : pkg.max_ad_slots}
+                        </span>
+                      </li>
+                      <li className="flex justify-between">
+                        <span>Cloud storage quota:</span>
+                        <span className="font-semibold text-foreground">
+                          {pkg.max_storage_bytes === 0 ? 'Unlimited' : formatBytes(pkg.max_storage_bytes)}
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <span className="font-semibold uppercase tracking-wider text-muted-foreground text-[10px]">
+                      Features Included
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {Object.entries(pkg.feature_flags || {})
+                        .filter(([, v]) => v)
+                        .map(([k]) => (
+                          <span
+                            key={k}
+                            className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:text-emerald-300"
+                          >
+                            {k.replace(/_/g, ' ')}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => openEditDrawer(pkg)}
+                      className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-muted"
+                    >
+                      <Edit2 className="size-3.5" />
+                      Edit Package
+                    </button>
+                    <button
+                      onClick={() => setPreviewPlan(pkg)}
+                      className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
+                      title="Preview how customer sees this plan on storefront"
+                    >
+                      <Eye className="size-3.5" />
+                      Preview
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={async () => {
+                      const res = await confirm({
+                        title: `Delete or retire ${pkg.name}?`,
+                        description:
+                          'If workspaces are currently subscribed to this package, it is safely retired (deactivated) so live operations remain intact.',
+                        level: 2,
+                        destructive: true,
+                        confirmLabel: 'Retire package',
+                      })
+                      if (res) remove.mutate(pkg.id)
+                    }}
+                    className="grid size-8 place-items-center rounded-xl border border-border text-muted-foreground hover:border-rose-500/30 hover:bg-rose-500/10 hover:text-rose-600"
+                    title="Retire package"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       )}
 
-      <section className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="flex items-center gap-2 border-b border-border p-4 text-sm font-semibold">
-          <PackageIcon className="size-4 text-foreground" />
-          {packages.length} packages
-        </div>
+      {/* MATRIX VIEW */}
+      {viewMode === 'matrix' && (
+        <section className="overflow-x-auto rounded-3xl border border-border bg-card p-6">
+          <table className="w-full min-w-[700px] text-sm">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="p-3 text-xs font-semibold uppercase text-muted-foreground">
+                  Capability / Feature
+                </th>
+                {packages.map((pkg) => (
+                  <th key={pkg.id} className="p-3 text-center">
+                    <p className="font-bold text-foreground">{pkg.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {pkg.price_paise > 0 ? formatPaise(pkg.price_paise) : 'Free'}
+                    </p>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border text-xs">
+              <tr>
+                <td className="p-3 font-medium text-foreground">Screen Cap</td>
+                {packages.map((pkg) => (
+                  <td key={pkg.id} className="p-3 text-center font-mono">
+                    {pkg.max_screens == null ? '∞' : pkg.max_screens}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-3 font-medium text-foreground">Ad Placements</td>
+                {packages.map((pkg) => (
+                  <td key={pkg.id} className="p-3 text-center font-mono">
+                    {pkg.max_ad_slots === 0 ? '∞' : pkg.max_ad_slots}
+                  </td>
+                ))}
+              </tr>
+              <tr>
+                <td className="p-3 font-medium text-foreground">Storage Limit</td>
+                {packages.map((pkg) => (
+                  <td key={pkg.id} className="p-3 text-center font-mono">
+                    {pkg.max_storage_bytes === 0 ? '∞' : formatBytes(pkg.max_storage_bytes)}
+                  </td>
+                ))}
+              </tr>
 
-        {isLoading ? (
-          <p className="p-10 text-center text-sm text-muted-foreground">Loading…</p>
-        ) : packages.length === 0 ? (
-          <p className="p-10 text-center text-sm text-muted-foreground">No packages yet. Create one to sell workspaces onto it.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-border bg-muted text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="p-4 pl-5 text-left">Package</th>
-                  <th className="p-4 text-left">Price (once)</th>
-                  <th className="p-4 text-left">Days</th>
-                  <th className="p-4 text-left">Screens</th>
-                  <th className="p-4 text-left">Clients</th>
-                  <th className="p-4 text-left">Ad slots</th>
-                  <th className="p-4 text-left">Storage (GB)</th>
-                  <th className="p-4 text-left">Features</th>
-                  <th className="p-4 text-left">Active</th>
-                  <th className="p-4 pr-5 text-right">Actions</th>
+              {canonicalFeatures.map((feat) => (
+                <tr key={feat.key}>
+                  <td className="p-3">
+                    <p className="font-medium text-foreground">{feat.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{feat.description}</p>
+                  </td>
+                  {packages.map((pkg) => {
+                    const hasFeat = Boolean(pkg.feature_flags?.[feat.key])
+                    return (
+                      <td key={pkg.id} className="p-3 text-center">
+                        {hasFeat ? (
+                          <Check className="mx-auto size-4 text-emerald-500" />
+                        ) : (
+                          <X className="mx-auto size-4 text-muted-foreground/30" />
+                        )}
+                      </td>
+                    )
+                  })}
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {packages.map((pkg) => {
-                  const dirty = Boolean(editing[pkg.id])
-                  return (
-                    <tr key={pkg.id} className="transition-colors hover:bg-muted">
-                      <td className="p-4 pl-5">
-                        <input
-                          value={fieldOf(pkg, 'name')}
-                          onChange={(e) => edit(pkg.id, 'name', e.target.value)}
-                          className={`${inputClass} w-36`}
-                        />
-                        <p className="mt-1 font-mono text-xs text-muted-foreground">{pkg.slug}</p>
-                      </td>
-                      <td className="p-4">
-                        <input
-                          type="number" min={0}
-                          value={Number(fieldOf(pkg, 'price_paise')) / 100}
-                          onChange={(e) => edit(pkg.id, 'price_paise', Math.round(Number(e.target.value) * 100))}
-                          className={`${inputClass} w-24`}
-                        />
-                        <p className="mt-1 text-xs text-muted-foreground">{formatPaise(pkg.price_paise)}</p>
-                      </td>
-                      <td className="p-4">
-                        <input type="number" min={1} value={fieldOf(pkg, 'duration_days')} onChange={(e) => edit(pkg.id, 'duration_days', Number(e.target.value))} className={`${inputClass} w-16`} />
-                      </td>
-                      <td className="p-4">
-                        <LimitInput label="Max screens" width="w-20" value={limitOf(pkg, 'max_screens')} onChange={(v) => edit(pkg.id, 'max_screens', v)} />
-                      </td>
-                      <td className="p-4">
-                        <LimitInput label="Max clients" width="w-20" value={limitOf(pkg, 'max_clients')} onChange={(v) => edit(pkg.id, 'max_clients', v)} />
-                      </td>
-                      <td className="p-4">
-                        <LimitInput label="Max ad slots" width="w-20" value={limitOf(pkg, 'max_ad_slots')} onChange={(v) => edit(pkg.id, 'max_ad_slots', v)} />
-                      </td>
-                      <td className="p-4">
-                        <LimitInput label="Storage in GB" scale={GIB} width="w-24" value={limitOf(pkg, 'max_storage_bytes')} onChange={(v) => edit(pkg.id, 'max_storage_bytes', v)} />
-                        <p className="mt-1 text-xs text-muted-foreground">{pkg.max_storage_bytes ? formatBytes(pkg.max_storage_bytes) : 'Unlimited'}</p>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex flex-col gap-1.5">
-                          {FEATURES.map((f) => (
-                            <label key={f.key} className="flex items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* PLAN EDITOR DRAWER */}
+      {(editingPlan || isCreating) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm"
+          onClick={() => {
+            setEditingPlan(null)
+            setIsCreating(false)
+          }}
+        >
+          <div
+            className="h-full w-full max-w-xl space-y-6 overflow-y-auto border-l border-border bg-card p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border pb-4">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">
+                  {isCreating ? 'Create Package' : `Edit ${editingPlan?.name}`}
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {isCreating ? 'New commercial tier' : `Slug: ${editingPlan?.slug}`}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingPlan(null)
+                  setIsCreating(false)
+                }}
+                className="grid size-8 place-items-center rounded-lg border border-border hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+                    Package Name
+                  </span>
+                  <input
+                    type="text"
+                    value={planForm.name}
+                    onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none"
+                    placeholder="e.g. Enterprise Pro"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-muted-foreground">
+                    Slug ID
+                  </span>
+                  <input
+                    type="text"
+                    value={planForm.slug}
+                    disabled={!isCreating}
+                    onChange={(e) => setPlanForm({ ...planForm, slug: e.target.value })}
+                    className="w-full rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none disabled:opacity-60"
+                    placeholder="e.g. enterprise-pro"
+                  />
+                </label>
+              </div>
+
+              {/* Pricing */}
+              <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Pricing (in Paise: ₹1 = 100 paise)
+                </span>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted-foreground">Storefront Price</span>
+                    <input
+                      type="number"
+                      value={planForm.price_paise}
+                      onChange={(e) =>
+                        setPlanForm({ ...planForm, price_paise: Number(e.target.value) || 0 })
+                      }
+                      className="w-full rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-foreground outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted-foreground">Monthly Rate</span>
+                    <input
+                      type="number"
+                      value={planForm.monthly_price_paise}
+                      onChange={(e) =>
+                        setPlanForm({
+                          ...planForm,
+                          monthly_price_paise: Number(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-foreground outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted-foreground">Yearly Rate</span>
+                    <input
+                      type="number"
+                      value={planForm.yearly_price_paise}
+                      onChange={(e) =>
+                        setPlanForm({
+                          ...planForm,
+                          yearly_price_paise: Number(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full rounded-xl border border-border bg-card px-3 py-1.5 text-xs text-foreground outline-none"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Limits */}
+              <div className="rounded-2xl border border-border bg-muted/20 p-4 space-y-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Hardware & Placement Limits (-1 = Unlimited)
+                </span>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <LimitInput
+                    label="Max TV Screens"
+                    value={planForm.max_screens == null ? UNLIMITED : planForm.max_screens}
+                    onChange={(val) => setPlanForm({ ...planForm, max_screens: val })}
+                  />
+                  <LimitInput
+                    label="Max Ad Placements"
+                    value={planForm.max_ad_slots}
+                    onChange={(val) => setPlanForm({ ...planForm, max_ad_slots: val })}
+                  />
+                  <LimitInput
+                    label="Max Advertisers"
+                    value={planForm.max_clients}
+                    onChange={(val) => setPlanForm({ ...planForm, max_clients: val })}
+                  />
+                  <LimitInput
+                    label="Cloud Storage (GiB)"
+                    value={planForm.max_storage_bytes}
+                    scale={GIB}
+                    onChange={(val) => setPlanForm({ ...planForm, max_storage_bytes: val })}
+                  />
+                </div>
+              </div>
+
+              {/* Features by Category */}
+              <div className="space-y-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Feature Flags
+                </span>
+                <div className="space-y-4">
+                  {Object.entries(featureCategories).map(([category, items]) => (
+                    <div key={category} className="rounded-2xl border border-border p-4 space-y-2">
+                      <h4 className="text-xs font-bold text-foreground">{category}</h4>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {items.map((item) => {
+                          const checked = Boolean(planForm.feature_flags?.[item.key])
+                          return (
+                            <label
+                              key={item.key}
+                              className={`flex items-start gap-2.5 rounded-xl border p-2.5 text-xs cursor-pointer transition-colors ${
+                                checked
+                                  ? 'border-emerald-500/30 bg-emerald-500/10'
+                                  : 'border-border bg-card hover:bg-muted/40'
+                              }`}
+                            >
                               <input
                                 type="checkbox"
-                                checked={Boolean(featuresOf(pkg)[f.key])}
-                                onChange={(e) => toggleFeature(pkg, f.key, e.target.checked)}
-                                className="size-3.5 accent-foreground"
+                                checked={checked}
+                                onChange={(e) => {
+                                  setPlanForm({
+                                    ...planForm,
+                                    feature_flags: {
+                                      ...planForm.feature_flags,
+                                      [item.key]: e.target.checked,
+                                    },
+                                  })
+                                }}
+                                className="mt-0.5 size-4 rounded border-border"
                               />
-                              {f.label}
+                              <div>
+                                <p className="font-semibold text-foreground">{item.label}</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {item.description}
+                                </p>
+                              </div>
                             </label>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(fieldOf(pkg, 'is_active'))}
-                          onChange={(e) => edit(pkg.id, 'is_active', e.target.checked)}
-                          className="size-4 accent-foreground"
-                        />
-                      </td>
-                      <td className="p-4 pr-5">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => update.mutate({ id: pkg.id, body: editing[pkg.id] ?? {} })}
-                            disabled={!dirty || update.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-border bg-accent px-3 py-1.5 text-xs text-foreground transition-all hover:bg-foreground/10 disabled:opacity-30"
-                          >
-                            <Save className="size-3" />
-                            Save
-                          </button>
-                          <button
-                            onClick={async () => {
-                              const result = await confirm({
-                                title: `Delete the ${pkg.name} package?`,
-                                description: 'If any workspace is on or subscribed to it, it is retired instead of deleted, and they keep their limits.',
-                                destructive: true,
-                                confirmLabel: 'Delete package',
-                              })
-                              if (result) remove.mutate(pkg.id)
-                            }}
-                            disabled={remove.isPending}
-                            className="flex items-center gap-1.5 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-xs text-rose-700 dark:text-rose-400 transition-all hover:bg-rose-500/20 disabled:opacity-50"
-                          >
-                            <Trash2 className="size-3" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 border-t border-border pt-4">
+              <button
+                onClick={handleSavePlan}
+                disabled={create.isPending || update.isPending}
+                className="flex-1 rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {create.isPending || update.isPending ? 'Saving…' : 'Save Package'}
+              </button>
+              <button
+                onClick={() => {
+                  setEditingPlan(null)
+                  setIsCreating(false)
+                }}
+                className="rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-muted-foreground hover:bg-muted/80"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+
+      {/* STOREFRONT PREVIEW MODAL */}
+      {previewPlan && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewPlan(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-foreground">Customer Storefront Preview</h3>
+              <button
+                onClick={() => setPreviewPlan(null)}
+                className="grid size-7 place-items-center rounded-lg border border-border hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="rounded-2xl border-2 border-primary/40 bg-muted/20 p-5 space-y-4 text-center">
+              <h4 className="text-xl font-bold text-foreground">{previewPlan.name}</h4>
+              <p className="text-3xl font-extrabold text-foreground">
+                {previewPlan.price_paise > 0 ? formatPaise(previewPlan.price_paise) : 'Free'}
+                <span className="text-xs font-normal text-muted-foreground">
+                  {' '}
+                  / {previewPlan.duration_days} days
+                </span>
+              </p>
+
+              <ul className="space-y-2 text-xs text-left border-t border-border pt-3">
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span>
+                    Up to{' '}
+                    <strong>
+                      {previewPlan.max_screens == null ? 'Unlimited' : previewPlan.max_screens}
+                    </strong>{' '}
+                    TV screens
+                  </span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span>
+                    <strong>
+                      {previewPlan.max_ad_slots === 0 ? 'Unlimited' : previewPlan.max_ad_slots}
+                    </strong>{' '}
+                    Advertiser slots
+                  </span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Check className="size-3.5 text-emerald-500" />
+                  <span>
+                    <strong>
+                      {previewPlan.max_storage_bytes === 0
+                        ? 'Unlimited'
+                        : formatBytes(previewPlan.max_storage_bytes)}
+                    </strong>{' '}
+                    Media storage
+                  </span>
+                </li>
+                {Object.entries(previewPlan.feature_flags || {})
+                  .filter(([, v]) => v)
+                  .map(([k]) => (
+                    <li key={k} className="flex items-center gap-2">
+                      <Check className="size-3.5 text-emerald-500" />
+                      <span className="capitalize">{k.replace(/_/g, ' ')} included</span>
+                    </li>
+                  ))}
+              </ul>
+
+              <button className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm">
+                Get Started
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  )
-}
-
-const inputClass =
-  'rounded-lg border border-border bg-muted px-3 py-2 text-sm text-foreground outline-none focus:border-ring'
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">
-        {label} {hint && <span className="font-normal text-muted-foreground">({hint})</span>}
-      </span>
-      {children}
-    </label>
   )
 }
