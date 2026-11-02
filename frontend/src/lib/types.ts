@@ -827,3 +827,61 @@ export interface StorageSettings {
   /** Whether the resulting configuration actually works. The only real question. */
   storage_enabled: boolean
 }
+
+
+export interface DayPoint {
+  date: string
+  value: number
+}
+
+export interface RecentAuditEvent {
+  id: number
+  occurred_at: string | null
+  actor_username: string | null
+  action: string
+  target_org_id: number | null
+  target_type: string | null
+  target_id: string | null
+}
+
+export interface AdminOverview {
+  range: '7d' | '30d' | '90d'
+  generated_at: string
+  cached: boolean
+
+  tenants_active: number
+  tenants_pending: number
+  tenants_suspended: number
+  signups_by_day: DayPoint[]
+
+  screens_total: number
+  screens_online: number
+  screens_offline_24h: number
+  on_latest_version_pct: number | null
+
+  alerts_critical_open: number
+  alerts_warning_open: number
+
+  plays_online_by_day: DayPoint[]
+  plays_offline_by_day: DayPoint[]
+
+  revenue_paise_by_day: DayPoint[]
+  revenue_paise_total: number
+
+  renewals_due_14d_count: number
+  renewals_due_14d_value_paise: number
+
+  storage_used_bytes: number
+
+  pending_approvals: number
+  pending_custom_requests: number
+
+  recent_activity: RecentAuditEvent[]
+}
+
+export interface InboxCounts {
+  pending_approvals: number
+  new_custom_requests: number
+  critical_alerts: number
+  failed_payments_7d: number
+}
