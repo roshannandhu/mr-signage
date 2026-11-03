@@ -137,6 +137,7 @@ export default function AdminAuditPage() {
     {
       id: 'target',
       header: 'Target Resource',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <div className="flex items-center gap-1 text-xs">
           <span className="text-muted-foreground">{row.target_type || '—'}:</span>
@@ -147,6 +148,7 @@ export default function AdminAuditPage() {
     {
       id: 'reason',
       header: 'Audit Reason',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="truncate max-w-[200px] text-xs text-muted-foreground" title={row.reason || ''}>
           {row.reason || '—'}
@@ -156,6 +158,7 @@ export default function AdminAuditPage() {
     {
       id: 'ip',
       header: 'IP Address',
+      hideOnMobile: true,
       cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.ip || '—'}</span>,
     },
     {
@@ -174,12 +177,12 @@ export default function AdminAuditPage() {
   ]
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Immutable Platform Audit Log"
         description="Comprehensive cryptographically-audited history of all operator actions, permission grants, and systemic changes"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={exportCsv}
             className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground shadow-sm hover:bg-muted"

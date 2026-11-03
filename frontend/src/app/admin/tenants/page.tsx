@@ -324,16 +324,17 @@ export default function AdminTenantsPage() {
             >
               {row.name}
             </Link>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-mono">{row.slug}</span>
               {row.owner_email && (
                 <>
                   <span>•</span>
-                  <span className="font-mono text-emerald-700 dark:text-emerald-400">
+                  <span className="font-mono text-emerald-700 dark:text-emerald-400 truncate max-w-[140px] sm:max-w-none">
                     {row.owner_email}
                   </span>
                 </>
               )}
+              <span className="sm:hidden font-medium text-foreground/80">• {row.plan_name ?? 'Custom'}</span>
             </div>
           </div>
         ),
@@ -342,18 +343,25 @@ export default function AdminTenantsPage() {
         id: 'status',
         header: 'Status',
         width: 'w-28',
-        cell: ({ row }) =>
-          row.deleted_at ? (
-            <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
-              Removed
-            </span>
-          ) : (
-            <StatusPill status={row.status} />
-          ),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1.5">
+            {row.deleted_at ? (
+              <span className="inline-block rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:text-rose-400">
+                Removed
+              </span>
+            ) : (
+              <StatusPill status={row.status} />
+            )}
+            <div className="sm:hidden">
+              <HealthBadge tenant={row} />
+            </div>
+          </div>
+        ),
       },
       {
         id: 'plan',
         header: 'Package & Window',
+        hideOnMobile: true,
         cell: ({ row }) => (
           <div className="space-y-1">
             <span className="text-xs font-medium text-foreground">
@@ -368,6 +376,7 @@ export default function AdminTenantsPage() {
         header: 'Health',
         width: 'w-20',
         align: 'center',
+        hideOnMobile: true,
         cell: ({ row }) => <HealthBadge tenant={row} />,
       },
       {
@@ -581,15 +590,15 @@ export default function AdminTenantsPage() {
   )
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Tenant Directory"
         description="Comprehensive lifecycle controls, health metrics and quota management across all workspaces"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => exportTenantsToCsv(allTenants.length ? allTenants : tenants)}
-            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground transition-all hover:bg-muted"
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs sm:text-sm font-medium text-foreground transition-all hover:bg-muted"
             title="Export CSV of all workspaces"
           >
             <Download className="size-3.5" />
@@ -600,7 +609,7 @@ export default function AdminTenantsPage() {
               refetch()
               queryClient.invalidateQueries({ queryKey: ['admin', 'tenants', 'all'] })
             }}
-            className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground transition-all hover:bg-muted/80"
+            className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-2 text-xs sm:text-sm text-muted-foreground transition-all hover:bg-muted/80"
           >
             <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
             Refresh
@@ -608,7 +617,14 @@ export default function AdminTenantsPage() {
         </div>
       </PageHeader>
 
-      <Feedback ok={message} error={error} />
+      <Feedback
+        ok={message}
+        error={error}
+        onDismiss={() => {
+          setMessage('')
+          setError('')
+        }}
+      />
 
       {grantFor && (
         <GrantLimitsDialog
@@ -630,7 +646,7 @@ export default function AdminTenantsPage() {
         />
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Active workspaces" value={totals.active} icon={CheckCircle} accent="emerald" />
         <StatCard label="Pending approvals" value={totals.pending} icon={Clock} accent="amber" />
         <StatCard

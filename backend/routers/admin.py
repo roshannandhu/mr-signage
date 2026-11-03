@@ -11,6 +11,8 @@ Nothing in this module edits a tenant's own content. The drill-in routes are del
 read-only -- an operator needs to see what a workspace contains to support it, not to
 change it.
 """
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -21,6 +23,10 @@ import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Literal, Optional
+from uuid import uuid4
+
+from ..pin_crypto import encrypt_pin, decrypt_pin
+from ..outbox import queue_outbox_event, schedule_immediate_outbox_dispatch
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -585,6 +591,24 @@ async def remote_unlock_screen(
 
     from ..services import queue_device_command
 
+    cmd_id = f"cmd_{uuid4().hex[:12]}"
+    expires_at = models.utcnow() + timedelta(minutes=10)
+
+    cmd_log = models.DeviceCommandLog(
+        id=cmd_id,
+        device_id=screen.device_id,
+        organization_id=organization.id,
+        screen_id=screen.id,
+        command="remote_unlock",
+        params_json=json.dumps({}),
+        status="PENDING",
+        actor_user_id=scope.user.id,
+        actor_username=scope.user.username,
+        created_at=models.utcnow(),
+        expires_at=expires_at,
+    )
+    db.add(cmd_log)
+
     queued = await queue_device_command(screen.device_id, "remote_unlock")
     db.add(models.KioskUnlockEvent(
         organization_id=organization.id,
@@ -594,8 +618,20 @@ async def remote_unlock_screen(
         actor_user_id=scope.user.id,
     ))
     _audit(db, scope, request, "screen.remote_unlock", org=organization,
-           target_type="screen", target_id=screen.id, after={"queued": queued})
+           target_type="screen", target_id=screen.id, after={"queued": queued, "command_id": cmd_id})
+
+    outbox_event = queue_outbox_event(
+        db,
+        channel=f"screen:{screen.device_id}",
+        event_type="device_command",
+        payload={
+            "command_id": cmd_id,
+            "command": "remote_unlock",
+            "expires_at": int(expires_at.timestamp()),
+        },
+    )
     db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
     logger.info(
         "Remote unlock queued for screen %s (org %s) by %s",
         screen.id, organization.id, scope.user.username,
@@ -1938,11 +1974,11 @@ def fleet_overview(
 
 # ------------------------------------------------------------------ screen commands
 
-ALLOWED_SCREEN_COMMANDS = {"check_update", "bring_to_front", "request_screenshot", "remote_unlock"}
+ALLOWED_SCREEN_COMMANDS = {"check_update", "bring_to_front", "remote_unlock"}
 
 
 class ScreenCommandIn(BaseModel):
-    command: str = Field(..., description="One of: check_update, bring_to_front, request_screenshot, remote_unlock")
+    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock")
     ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
     reason: Optional[str] = None
 
@@ -1955,7 +1991,7 @@ class ScreenCommandOut(BaseModel):
 
 class BulkScreenCommandIn(BaseModel):
     screen_ids: List[int] = Field(..., max_length=100)
-    command: str = Field(..., description="One of: check_update, bring_to_front, request_screenshot, remote_unlock")
+    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock")
     ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
     reason: Optional[str] = None
 
@@ -2607,7 +2643,13 @@ def reveal_maintenance_pin(
     from .screens import UNIVERSAL_PIN_KEY
 
     setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == UNIVERSAL_PIN_KEY).first()
-    pin = setting.value if setting else "1234"
+    if not setting or not setting.value:
+        pin = None
+        status = "not_configured"
+    else:
+        decrypted = decrypt_pin(setting.value)
+        pin = decrypted or (setting.value if re.match(r"^\d{4}$", str(setting.value).strip()) else None)
+        status = "configured" if pin else "not_configured"
 
     _audit(
         db,
@@ -2616,10 +2658,70 @@ def reveal_maintenance_pin(
         "security.maintenance_pin.reveal",
         target_type="system_setting",
         target_id=UNIVERSAL_PIN_KEY,
-        after={"action": "revealed", "reason": req.reason},
+        after={"action": "revealed", "reason": req.reason, "status": status},
     )
     db.commit()
-    return {"pin": pin, "revealed_at": _iso(models.utcnow())}
+    return {"pin": pin, "status": status, "revealed_at": _iso(models.utcnow())}
+
+
+@router.post("/security/challenge-response", response_model=schemas.AdminChallengeResponseOut)
+def generate_challenge_response(
+    req: schemas.AdminChallengeResponseIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Generate a single-use dynamic response code for an on-site TV emergency challenge."""
+    from .auth import verify_password, get_secret_key
+
+    # Re-authenticate Super Admin password
+    if not verify_password(req.password, scope.user.hashed_password):
+        raise HTTPException(status_code=401, detail="Invalid password confirmation")
+
+    now = models.utcnow()
+    challenge = (
+        db.query(models.DeviceChallenge)
+        .filter(
+            models.DeviceChallenge.device_id == req.device_id,
+            models.DeviceChallenge.nonce == req.nonce.strip(),
+            models.DeviceChallenge.used == False,
+            models.DeviceChallenge.expires_at > now,
+        )
+        .first()
+    )
+    if not challenge:
+        # Create challenge record if offline TV generated nonce independently
+        msg = f"{req.device_id}:{req.nonce.strip()}".encode("utf-8")
+        digest = hmac.new(get_secret_key().encode("utf-8"), msg, hashlib.sha256).hexdigest()
+        response_code = f"{int(digest[:8], 16) % 1000000:06d}"
+        challenge = models.DeviceChallenge(
+            device_id=req.device_id,
+            nonce=req.nonce.strip(),
+            response_code=response_code,
+            expires_at=now + timedelta(minutes=15),
+            used=False,
+            created_at=now,
+        )
+        db.add(challenge)
+    else:
+        response_code = challenge.response_code
+
+    _audit(
+        db,
+        scope,
+        request,
+        "security.challenge_response.generate",
+        target_type="device",
+        target_id=req.device_id,
+        after={"action": "generated", "reason": req.reason, "nonce": req.nonce},
+    )
+    db.commit()
+
+    return schemas.AdminChallengeResponseOut(
+        device_id=req.device_id,
+        response_code=response_code,
+        expires_at=_iso(challenge.expires_at),
+    )
 
 
 class SecurityPolicyIn(BaseModel):

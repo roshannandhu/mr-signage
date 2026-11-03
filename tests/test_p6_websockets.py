@@ -134,7 +134,7 @@ def setup_db():
     db.close()
     return snapshot
 
-def test_hierarchical_playlist_resolution():
+def check_hierarchical_playlist_resolution():
     org_id, screen, pl_parent, pl_child, pl_screen, pl_emergency = setup_db()
     
     # Issue a device token
@@ -169,7 +169,7 @@ def test_hierarchical_playlist_resolution():
     response = client.get(f"/api/screens/{screen.device_id}/sync", headers={"Authorization": f"Bearer {device_token}"})
     assert response.json()["playlist"]["id"] == pl_emergency.id
     
-def test_websocket_pubsub():
+def check_websocket_pubsub():
     org_id, screen, pl_parent, pl_child, pl_screen, pl_emergency = setup_db()
     
     # Issue a device token
@@ -188,14 +188,19 @@ def test_websocket_pubsub():
         }, headers={"Authorization": f"Bearer {user_token}"})
         assert resp_emerg.status_code == 200
         
-        # We should receive a message on WS
-        data = websocket.receive_text()
-        msg = json.loads(data)
-        assert msg["type"] == "emergency_override"
-        assert msg["playlist_id"] == pl_emergency.id
+        # We should receive the messages on WS (both sync push and emergency_override arrive on org:{id})
+        received = []
+        for _ in range(2):
+            msg = json.loads(websocket.receive_text())
+            received.append(msg)
+            if msg.get("type") == "emergency_override":
+                break
+        emergency_msg = next((m for m in received if m.get("type") == "emergency_override"), None)
+        assert emergency_msg is not None, f"Expected emergency_override in {received}"
+        assert emergency_msg["playlist_id"] == pl_emergency.id
 
 
-def test_dashboard_websocket_is_not_shadowed_by_device_route():
+def check_dashboard_websocket_is_not_shadowed_by_device_route():
     """/api/ws/dashboard/ws must reach the dashboard handler, not the device one.
 
     Both live on the same router and Starlette matches in definition order, so with
@@ -219,7 +224,7 @@ def test_dashboard_websocket_is_not_shadowed_by_device_route():
     assert rejected, "the dashboard socket must refuse an invalid token"
 
 
-def test_polling_still_converges_without_websocket():
+def check_polling_still_converges_without_websocket():
     """Push must never be the only path.
 
     The spec is explicit: if the socket is down the TV must still converge via the
@@ -263,14 +268,14 @@ def _redis_available() -> bool:
 
 
 def run():
-    test_hierarchical_playlist_resolution()
+    check_hierarchical_playlist_resolution()
     print("  hierarchical group resolution + emergency override: OK")
 
-    test_polling_still_converges_without_websocket()
+    check_polling_still_converges_without_websocket()
     print("  emergency reaches device via polling with no socket: OK")
 
     if _redis_available():
-        test_dashboard_websocket_is_not_shadowed_by_device_route()
+        check_dashboard_websocket_is_not_shadowed_by_device_route()
         print("  dashboard websocket route resolves: OK")
     else:
         print("  dashboard websocket route: SKIPPED (Redis not reachable)")
@@ -278,7 +283,7 @@ def run():
     # The push test needs Redis pub/sub. The suite has to stay green with Redis stopped,
     # so report a skip rather than failing on an infrastructure absence.
     if _redis_available():
-        test_websocket_pubsub()
+        check_websocket_pubsub()
         print("  websocket push delivery: OK")
     else:
         print("  websocket push delivery: SKIPPED (Redis not reachable)")

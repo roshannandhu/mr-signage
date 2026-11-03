@@ -48,7 +48,11 @@ test.beforeEach(async ({ page }) => {
       const req = route.request()
       const url = new URL(req.url())
       const targetUrl = `http://127.0.0.1:8011${url.pathname}${url.search}`
-      const response = await page.request.fetch(req, { url: targetUrl })
+      const response = await page.request.fetch(targetUrl, {
+        method: req.method(),
+        headers: req.headers(),
+        data: req.postDataBuffer() || undefined,
+      })
       await route.fulfill({ response })
     } catch {
       await route.abort('failed').catch(() => {})

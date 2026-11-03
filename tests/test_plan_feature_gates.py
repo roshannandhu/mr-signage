@@ -124,7 +124,6 @@ def drive(client, headers, ids, has: dict[str, bool]):
 
     # remote_control
     call("bring_to_front", "remote_control", "post", f"/api/screens/{sid}/bring-to-front")
-    call("request_screenshot", "remote_control", "post", f"/api/screenshots/{sid}/request-screenshot")
 
     # campaign info and listing stay open regardless -- status, not counting
     resp = client.get(f"/api/analytics/campaigns/{cid}", headers=headers)

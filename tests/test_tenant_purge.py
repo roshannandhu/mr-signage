@@ -71,11 +71,7 @@ def _workspace(db, *, name="Doomed Co"):
         content_id=content.id, file_url=f"s3://tenants/Doomed-{org.id}/ad_720.mp4",
         file_size_bytes=512, resolution="720p", width=1280, height=720,
     )
-    shot = models.ScreenshotLog(
-        organization_id=org.id, screen_id=screen.id,
-        file_url=f"s3://tenants/Doomed-{org.id}/screens/{screen.id}/shot.jpg",
-    )
-    db.add_all([item, rendition, shot])
+    db.add_all([item, rendition])
     db.flush()
 
     placement = models.AdPlacement(

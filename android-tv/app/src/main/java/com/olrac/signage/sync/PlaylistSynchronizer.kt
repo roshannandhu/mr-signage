@@ -160,10 +160,8 @@ class PlaylistSynchronizer(context: Context) {
                 // reads its playlist from the local database, not from this response.
                 preferences.edit().putString(KEY_SERVICE_STATE, syncData.service_state).apply()
 
-                // Same reasoning as service_state above: stored so the waiting/idle screen
-                // (PlayerScreen, which reads its playlist from the database, not this
-                // response) can show it, and so it updates on its own if the tenant changes
-                // their brand without the TV being restarted.
+                val previousLock = preferences.getBoolean(KEY_KIOSK_LOCK, true)
+                val newLock = syncData.kiosk_lock ?: true
                 preferences.edit()
                     .putString(KEY_BRAND_NAME, syncData.brand_name)
                     .putString(KEY_BRAND_LOGO_URL, syncData.brand_logo_url)
@@ -171,8 +169,37 @@ class PlaylistSynchronizer(context: Context) {
                     // Missing on an old server means stay locked -- see the field's own
                     // comment on SyncResponseDto for why this is resolved here, not left to
                     // a Kotlin default.
-                    .putBoolean(KEY_KIOSK_LOCK, syncData.kiosk_lock ?: true)
+                    .putBoolean(KEY_KIOSK_LOCK, newLock)
                     .apply()
+
+                if (previousLock != newLock) {
+                    android.util.Log.i("PlaylistSynchronizer", "Kiosk lock state changed: $previousLock -> $newLock")
+                    com.olrac.signage.MainActivity.onKioskLockChanged(appContext, newLock)
+                }
+
+                // Process durable commands first with guaranteed delivery tracking and ACKs
+                flushPendingAcks(appContext)
+                syncData.durable_commands?.forEach { durableCmd ->
+                    val cmdId = durableCmd.command_id
+                    val cmdName = durableCmd.command
+                    if (!isCommandAlreadyExecuted(appContext, cmdId)) {
+                        markCommandExecuted(appContext, cmdId)
+                        android.util.Log.i("PlaylistSynchronizer", "Executing durable command $cmdName (id=$cmdId)")
+                        if (cmdName == "remote_unlock") {
+                            appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
+                            com.olrac.signage.service.PlaybackService.emitCommand(
+                                com.olrac.signage.service.ServiceCommandEvent.RemoteUnlock(cmdId)
+                            )
+                            com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 200L, reason = "remote_unlock")
+                        } else if (cmdName == "check_update") {
+                            UpdateManager.requestUpdateCheck(appContext)
+                        } else if ((cmdName == "bring_to_front" || cmdName == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
+                            com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "sync_command")
+                        }
+                    }
+                    ackCommand(appContext, cmdId, "EXECUTED")
+                }
 
                 // pending_commands carries every command still within its hold time, for a
                 // screen that queued more than one while offline; pending_command is the
@@ -193,9 +220,6 @@ class PlaylistSynchronizer(context: Context) {
                         // Processed before app_version below, so the offer in this same
                         // body is acted on immediately rather than waiting out a backoff.
                         UpdateManager.requestUpdateCheck(appContext)
-                    }
-                    if (cmd == "request_screenshot") {
-                        com.olrac.signage.telemetry.ScreenshotManager.requestScreenshot()
                     }
                     if (cmd == "remote_unlock") {
                         // Flag consumed by MainActivity's own poll, which opens maintenance
@@ -243,15 +267,32 @@ class PlaylistSynchronizer(context: Context) {
                     }
                 }
 
-                // Cached ahead of the empty-playlist return: a screen with nothing scheduled
-                // still has to be serviceable from the remote.
-                // Written every sync including when absent, so clearing the master code in
-                // the console actually takes it off the panels rather than leaving a key that
-                // works for ever on whichever screen happened to cache it.
-                DeviceState(appContext).setMasterPin(syncData.master_pin)
+                // Versioned Credential Synchronization:
+                // Only modify cached credentials when version is strictly newer.
+                // Missing/null fields never accidentally clear credentials unless an explicit CLEAR directive arrives.
+                val newCredsVersion = syncData.credentials_version ?: 0
+                val credsAction = syncData.credentials_action ?: "NONE"
+                val currentCredsVersion = DeviceState(appContext).credentialsVersion
 
-                syncData.maintenance_pin?.takeIf { it.isNotBlank() }?.let {
-                    DeviceState(appContext).setMaintenancePin(it)
+                if (newCredsVersion > currentCredsVersion) {
+                    when (credsAction) {
+                        "SET" -> {
+                            val newPin = syncData.maintenance_pin?.trim()
+                            if (!newPin.isNullOrEmpty() && newPin.matches(Regex("^\\d{4}$"))) {
+                                DeviceState(appContext).setMaintenancePin(newPin)
+                                DeviceState(appContext).setCredentialsVersion(newCredsVersion)
+                                android.util.Log.i("PlaylistSynchronizer", "Updated maintenance PIN to version $newCredsVersion")
+                            }
+                        }
+                        "CLEAR" -> {
+                            DeviceState(appContext).setMaintenancePin(null)
+                            DeviceState(appContext).setCredentialsVersion(newCredsVersion)
+                            android.util.Log.i("PlaylistSynchronizer", "Cleared maintenance PIN via CLEAR directive (version $newCredsVersion)")
+                        }
+                        "NONE" -> {
+                            DeviceState(appContext).setCredentialsVersion(newCredsVersion)
+                        }
+                    }
                 }
 
                 // Persisted for the same reason as the pin, and ahead of the same early
@@ -531,6 +572,81 @@ class PlaylistSynchronizer(context: Context) {
         }
 
         private const val KEY_KIOSK_LOCK = "kiosk_lock"
+        private const val KEY_EXECUTED_COMMANDS = "executed_commands_history"
+        private const val KEY_PENDING_ACKS = "pending_acks_queue"
+
+        fun isCommandAlreadyExecuted(context: Context, commandId: String): Boolean {
+            val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_EXECUTED_COMMANDS, emptySet()) ?: emptySet()
+            return set.contains(commandId)
+        }
+
+        fun markCommandExecuted(context: Context, commandId: String) {
+            val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_EXECUTED_COMMANDS, emptySet())?.toMutableSet() ?: mutableSetOf()
+            if (set.size >= 100) {
+                val toRemove = set.first()
+                set.remove(toRemove)
+            }
+            set.add(commandId)
+            prefs.edit().putStringSet(KEY_EXECUTED_COMMANDS, set).apply()
+        }
+
+        suspend fun ackCommand(context: Context, commandId: String, status: String, error: String? = null) {
+            val deviceId = com.olrac.signage.data.DeviceState(context).deviceId
+            val client = ApiClient.service(context)
+            try {
+                val resp = client.ackCommand(
+                    deviceId,
+                    commandId,
+                    com.olrac.signage.network.DeviceCommandAckRequest(status = status, error = error)
+                )
+                if (!resp.isSuccessful) {
+                    queuePendingAck(context, commandId, status)
+                } else {
+                    removePendingAck(context, commandId)
+                }
+            } catch (e: Exception) {
+                queuePendingAck(context, commandId, status)
+            }
+        }
+
+        private fun queuePendingAck(context: Context, commandId: String, status: String) {
+            val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_PENDING_ACKS, emptySet())?.toMutableSet() ?: mutableSetOf()
+            set.add("$commandId:$status")
+            prefs.edit().putStringSet(KEY_PENDING_ACKS, set).apply()
+        }
+
+        private fun removePendingAck(context: Context, commandId: String) {
+            val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_PENDING_ACKS, emptySet())?.toMutableSet() ?: return
+            val removed = set.removeAll { it.startsWith("$commandId:") }
+            if (removed) prefs.edit().putStringSet(KEY_PENDING_ACKS, set).apply()
+        }
+
+        suspend fun flushPendingAcks(context: Context) {
+            val prefs = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+            val set = prefs.getStringSet(KEY_PENDING_ACKS, emptySet())?.toSet() ?: return
+            if (set.isEmpty()) return
+            val deviceId = com.olrac.signage.data.DeviceState(context).deviceId
+            val client = ApiClient.service(context)
+            for (item in set) {
+                val parts = item.split(":")
+                if (parts.size >= 2) {
+                    val cmdId = parts[0]
+                    val status = parts[1]
+                    try {
+                        val resp = client.ackCommand(
+                            deviceId,
+                            cmdId,
+                            com.olrac.signage.network.DeviceCommandAckRequest(status = status)
+                        )
+                        if (resp.isSuccessful) removePendingAck(context, cmdId)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
 
         /**
          * Whether this tenant's plan sells the TV lock feature, as of the last sync.

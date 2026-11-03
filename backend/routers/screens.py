@@ -1,12 +1,20 @@
 import html
+import hashlib
+import hmac
 import json
 import logging
 import os
 import random
+import re
+import secrets
 import string
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Literal
+from uuid import uuid4
+
+from ..pin_crypto import encrypt_pin, decrypt_pin
+from ..outbox import queue_outbox_event, schedule_immediate_outbox_dispatch
 
 import boto3
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
@@ -57,7 +65,7 @@ def public_base_url(request: Request | None = None) -> str:
         if host and not ("127.0.0.1" in host or "localhost" in host):
             return f"{scheme}://{host}"
 
-    return "https://olrac-signage-32lh.onrender.com"
+    return "https://mr-signage.onrender.com"
 
 
 from ..services import (
@@ -142,23 +150,19 @@ UNIVERSAL_PIN_KEY = "universal_maintenance_pin"
 
 
 def effective_maintenance_pin(db: Session, screen) -> str | None:
-    """The PIN this screen's maintenance prompt actually accepts, feature-gated workspace
-    PIN first.
+    """The PIN this screen's maintenance prompt actually accepts, decrypted from Fernet ciphertext.
 
-    Every screen has its own maintenance_pin: the column is NOT NULL with a random default,
-    deliberately per screen so that one leaked code does not open the whole fleet on its
-    own. An owner may additionally set ONE workspace PIN (Organization.lock_pin) that
-    covers every screen at once -- simpler for a venue with many panels than memorising one
-    code per wall -- unless that particular screen opted back out (Screen.uses_own_pin),
-    for the one panel that needs to stay on its own code. Resolution order matches today's
-    behaviour exactly when no workspace PIN is set, so setting one is the only way anything
-    here changes for an existing tenant.
+    Every screen has its own maintenance_pin encrypted at rest. An owner may additionally
+    set ONE workspace PIN (Organization.lock_pin) that covers every screen at once unless
+    that particular screen opted out (Screen.uses_own_pin).
     """
-    own_pin = (getattr(screen, "maintenance_pin", None) or "").strip() or None
+    own_cipher = getattr(screen, "maintenance_pin", None)
+    own_pin = decrypt_pin(own_cipher) or (own_cipher.strip() if own_cipher and re.match(r"^\d{4}$", str(own_cipher).strip()) else None)
     if getattr(screen, "uses_own_pin", False):
         return own_pin
     organization = getattr(screen, "organization", None)
-    workspace_pin = (getattr(organization, "lock_pin", None) or "").strip() or None
+    ws_cipher = getattr(organization, "lock_pin", None)
+    workspace_pin = decrypt_pin(ws_cipher) or (ws_cipher.strip() if ws_cipher and re.match(r"^\d{4}$", str(ws_cipher).strip()) else None)
     return workspace_pin or own_pin
 
 
@@ -1341,7 +1345,6 @@ async def get_screens(
     if changed:
         scope.db.commit()
 
-    shots = _latest_screenshots(scope, screens)
     # Resolved against the whole group set so a card reports what the player will
     # actually do -- ancestor and dynamic groups included. The bare effective_playlist_id
     # property cannot reach those without spending a query per screen.
@@ -1359,7 +1362,6 @@ async def get_screens(
     return [
         schemas.ScreenResponse.model_validate(screen).model_copy(
             update={
-                "latest_screenshot": shots.get(screen.id),
                 "effective_playlist_id": screen.resolve_playlist_id(groups),
                 # What opens the maintenance door on THIS screen: its own PIN, or the
                 # workspace PIN if one is set and this screen has not opted out of it --
@@ -1390,40 +1392,6 @@ def _is_recent(last_seen) -> bool:
     return (now - last_seen).total_seconds() < screen_offline_after_seconds()
 
 
-def _latest_screenshots(scope: TenantScope, screens) -> dict[int, str]:
-    """Most recent capture per screen, in one query.
-
-    The fleet grid shows a live thumbnail per screen. Fetching that per card is 500 round
-    trips at 500 screens, so the newest row per screen is picked with a window function.
-    """
-    if not screens:
-        return {}
-
-    ranked = (
-        select(
-            models.ScreenshotLog.screen_id.label("screen_id"),
-            models.ScreenshotLog.file_url.label("file_url"),
-            func.row_number()
-            .over(
-                partition_by=models.ScreenshotLog.screen_id,
-                order_by=models.ScreenshotLog.created_at.desc(),
-            )
-            .label("rank"),
-        )
-        .where(models.ScreenshotLog.screen_id.in_([s.id for s in screens]))
-    )
-    # Super admins read across tenants; everyone else must stay inside their own.
-    if scope.user.role != "super_admin":
-        ranked = ranked.where(models.ScreenshotLog.organization_id == scope.organization_id)
-
-    newest = ranked.subquery()
-    rows = scope.db.execute(
-        select(newest.c.screen_id, newest.c.file_url).where(newest.c.rank == 1)
-    ).all()
-
-    return {screen_id: resolve_media_url(file_url) for screen_id, file_url in rows}
-
-
 # Declared before PUT /{screen_id} below: Starlette matches in definition order, and a
 # literal path registered after a parameterised one of the same method is shadowed by it --
 # "lock-pin" would be read as screen_id, exactly the ordering bug the dashboard websocket
@@ -1433,7 +1401,13 @@ def get_workspace_lock_pin(
     scope: TenantScope = Depends(require_tenant_roles("owner")),
     _feature: TenantScope = Depends(require_feature("kiosk_lock")),
 ):
-    return schemas.LockPinResponse(lock_pin=scope.organization.lock_pin)
+    stored = scope.organization.lock_pin
+    decrypted = decrypt_pin(stored) or (stored if stored and re.match(r"^\d{4}$", str(stored).strip()) else None)
+    return schemas.LockPinResponse(
+        lock_pin=decrypted,
+        has_pin=bool(decrypted),
+        credentials_version=scope.organization.credentials_version or 0,
+    )
 
 
 @router.put("/lock-pin", response_model=schemas.LockPinResponse)
@@ -1446,9 +1420,25 @@ def set_workspace_lock_pin(
     opted to keep its own (Screen.uses_own_pin). See effective_maintenance_pin.
     """
     organization = scope.organization
-    organization.lock_pin = payload.lock_pin
+    raw_pin = (payload.lock_pin or "").strip()
+    if raw_pin and not re.match(r"^\d{4}$", raw_pin):
+        raise HTTPException(status_code=422, detail="Workspace PIN must be exactly 4 digits")
+
+    organization.lock_pin = encrypt_pin(raw_pin) if raw_pin else None
+    organization.credentials_version = (organization.credentials_version or 0) + 1
+    outbox_event = queue_outbox_event(
+        scope.db,
+        channel=f"org:{organization.id}",
+        event_type="credentials_updated",
+        payload={"credentials_version": organization.credentials_version},
+    )
     scope.db.commit()
-    return schemas.LockPinResponse(lock_pin=organization.lock_pin)
+    schedule_immediate_outbox_dispatch(outbox_event.id)
+    return schemas.LockPinResponse(
+        lock_pin=raw_pin or None,
+        has_pin=bool(raw_pin),
+        credentials_version=organization.credentials_version,
+    )
 
 
 @router.get("/lock-enabled", response_model=schemas.LockEnabledResponse)
@@ -1467,14 +1457,339 @@ def set_workspace_lock_enabled(
 ):
     """The tenant's own switch for whether the lock their plan sells is actually active.
 
-    Separate from the plan entitlement on purpose: a plan gaining the kiosk_lock feature
-    must never retroactively trap an already-paired fleet the moment it next syncs. See
-    kiosk_lock_enabled, which ANDs this with the plan flag.
+    Option 2.1 Enforcement: Workspace Lock cannot be turned ON unless an explicitly
+    configured 4-digit Workspace PIN exists for this organization.
     """
     organization = scope.organization
+    if payload.lock_enabled:
+        stored = organization.lock_pin
+        ws_pin = decrypt_pin(stored) or (stored if stored and re.match(r"^\d{4}$", str(stored).strip()) else None)
+        if not ws_pin or not re.match(r"^\d{4}$", ws_pin):
+            raise HTTPException(
+                status_code=422,
+                detail="Workspace Lock requires an explicitly configured 4-digit Workspace PIN. Please set a Workspace PIN before enabling TV Lock.",
+            )
+
     organization.lock_enabled = payload.lock_enabled
+    organization.credentials_version = (organization.credentials_version or 0) + 1
+    outbox_event = queue_outbox_event(
+        scope.db,
+        channel=f"org:{organization.id}",
+        event_type="lock_state_changed",
+        payload={
+            "lock_enabled": organization.lock_enabled,
+            "credentials_version": organization.credentials_version,
+        },
+    )
     scope.db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
     return schemas.LockEnabledResponse(lock_enabled=organization.lock_enabled)
+
+
+@router.get("/{screen_id}/maintenance-pin", response_model=schemas.ScreenMaintenancePinResponse)
+def get_screen_maintenance_pin(
+    screen_id: int,
+    scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    eff_pin = effective_maintenance_pin(scope.db, screen)
+    return schemas.ScreenMaintenancePinResponse(
+        screen_id=screen.id,
+        device_id=screen.device_id,
+        device_name=screen.name or f"Screen {screen.id}",
+        maintenance_pin=eff_pin,
+        effective_maintenance_pin=eff_pin,
+        uses_own_pin=screen.uses_own_pin,
+        is_inherited=not screen.uses_own_pin,
+        synced_credentials_version=screen.synced_credentials_version,
+        workspace_credentials_version=scope.organization.credentials_version,
+    )
+
+
+@router.put("/{screen_id}/maintenance-pin", response_model=schemas.ScreenMaintenancePinResponse)
+def set_screen_maintenance_pin(
+    screen_id: int,
+    payload: schemas.ScreenMaintenancePinUpdate,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    raw_pin = payload.pin.strip()
+    if not re.match(r"^\d{4}$", raw_pin):
+        raise HTTPException(status_code=422, detail="Screen PIN must be exactly 4 digits")
+
+    screen.maintenance_pin = encrypt_pin(raw_pin)
+    screen.uses_own_pin = True
+    scope.organization.credentials_version = (scope.organization.credentials_version or 0) + 1
+
+    if screen.device_id:
+        outbox_event = queue_outbox_event(
+            scope.db,
+            channel=f"screen:{screen.device_id}",
+            event_type="credentials_updated",
+            payload={"credentials_version": scope.organization.credentials_version},
+        )
+        scope.db.commit()
+        schedule_immediate_outbox_dispatch(outbox_event.id)
+    else:
+        scope.db.commit()
+
+    return schemas.ScreenMaintenancePinResponse(
+        screen_id=screen.id,
+        device_id=screen.device_id,
+        device_name=screen.name or f"Screen {screen.id}",
+        maintenance_pin=raw_pin,
+        effective_maintenance_pin=raw_pin,
+        uses_own_pin=screen.uses_own_pin,
+        is_inherited=False,
+        synced_credentials_version=screen.synced_credentials_version,
+        workspace_credentials_version=scope.organization.credentials_version,
+    )
+
+
+@router.delete("/{screen_id}/maintenance-pin", response_model=schemas.ScreenMaintenancePinResponse)
+def reset_screen_maintenance_pin(
+    screen_id: int,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    """Reset screen maintenance PIN to inherit from the shared workspace PIN."""
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    screen.uses_own_pin = False
+    scope.organization.credentials_version = (scope.organization.credentials_version or 0) + 1
+
+    if screen.device_id:
+        outbox_event = queue_outbox_event(
+            scope.db,
+            channel=f"screen:{screen.device_id}",
+            event_type="credentials_updated",
+            payload={"credentials_version": scope.organization.credentials_version},
+        )
+        scope.db.commit()
+        schedule_immediate_outbox_dispatch(outbox_event.id)
+    else:
+        scope.db.commit()
+
+    eff_pin = effective_maintenance_pin(scope.db, screen)
+    return schemas.ScreenMaintenancePinResponse(
+        screen_id=screen.id,
+        device_id=screen.device_id,
+        device_name=screen.name or f"Screen {screen.id}",
+        maintenance_pin=eff_pin,
+        effective_maintenance_pin=eff_pin,
+        uses_own_pin=False,
+        is_inherited=True,
+        synced_credentials_version=screen.synced_credentials_version,
+        workspace_credentials_version=scope.organization.credentials_version,
+    )
+
+
+@router.post("/{screen_id}/remote-unlock", response_model=schemas.TenantRemoteUnlockResponse, status_code=202)
+async def tenant_remote_unlock_screen(
+    screen_id: int,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="Screen has not paired yet")
+
+    cmd_id = f"cmd_{uuid4().hex[:12]}"
+    expires_at = models.utcnow() + timedelta(minutes=10)
+
+    cmd_log = models.DeviceCommandLog(
+        id=cmd_id,
+        device_id=screen.device_id,
+        organization_id=scope.organization.id,
+        screen_id=screen.id,
+        command="remote_unlock",
+        params_json=json.dumps({}),
+        status="PENDING",
+        actor_user_id=scope.user.id,
+        actor_username=scope.user.username,
+        created_at=models.utcnow(),
+        expires_at=expires_at,
+    )
+    scope.db.add(cmd_log)
+
+    scope.db.add(models.KioskUnlockEvent(
+        organization_id=scope.organization.id,
+        screen_id=screen.id,
+        method="remote",
+        success=True,
+        actor_user_id=scope.user.id,
+    ))
+
+    outbox_event = queue_outbox_event(
+        scope.db,
+        channel=f"screen:{screen.device_id}",
+        event_type="device_command",
+        payload={
+            "command_id": cmd_id,
+            "command": "remote_unlock",
+            "expires_at": int(expires_at.timestamp()),
+        },
+    )
+    scope.db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    return schemas.TenantRemoteUnlockResponse(
+        queued=True,
+        command_id=cmd_id,
+        screen_id=screen.id,
+        device_id=screen.device_id,
+        expires_at=expires_at.isoformat(),
+    )
+
+
+@router.post("/{device_id}/commands/{command_id}/ack", response_model=schemas.DeviceCommandAckResponse)
+def acknowledge_device_command(
+    device_id: str,
+    command_id: str,
+    payload: schemas.DeviceCommandAckRequest,
+    db: Session = Depends(database.get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    verify_device_auth(device_id, credentials, db)
+    cmd = db.query(models.DeviceCommandLog).filter(
+        models.DeviceCommandLog.id == command_id,
+        models.DeviceCommandLog.device_id == device_id,
+    ).first()
+    if not cmd:
+        raise HTTPException(status_code=404, detail="Command not found")
+
+    cmd.status = payload.status
+    cmd.executed_at = models.utcnow()
+    cmd.error_message = payload.error
+    db.commit()
+
+    return schemas.DeviceCommandAckResponse(
+        acknowledged=True,
+        command_id=command_id,
+        status=cmd.status,
+    )
+
+
+@router.post("/{device_id}/challenge", response_model=schemas.DeviceChallengeResponse)
+def request_device_challenge(
+    device_id: str,
+    payload: schemas.DeviceChallengeRequest,
+    db: Session = Depends(database.get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    verify_device_auth(device_id, credentials, db)
+    nonce = payload.nonce or secrets.token_hex(8)
+    expires_at = models.utcnow() + timedelta(minutes=15)
+
+    from .auth import get_secret_key
+    msg = f"{device_id}:{nonce}".encode("utf-8")
+    digest = hmac.new(get_secret_key().encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    response_code = f"{int(digest[:8], 16) % 1000000:06d}"
+
+    challenge = models.DeviceChallenge(
+        device_id=device_id,
+        nonce=nonce,
+        response_code=response_code,
+        expires_at=expires_at,
+        used=False,
+        created_at=models.utcnow(),
+    )
+    db.add(challenge)
+    db.commit()
+
+    return schemas.DeviceChallengeResponse(
+        device_id=device_id,
+        nonce=nonce,
+        expires_at=expires_at.isoformat(),
+    )
+
+
+@router.post("/{device_id}/verify-challenge", response_model=schemas.DeviceVerifyChallengeOut)
+def verify_device_challenge(
+    device_id: str,
+    payload: schemas.DeviceVerifyChallengeIn,
+    db: Session = Depends(database.get_db),
+):
+    now = models.utcnow()
+    challenge = (
+        db.query(models.DeviceChallenge)
+        .filter(
+            models.DeviceChallenge.device_id == device_id,
+            models.DeviceChallenge.nonce == payload.nonce.strip(),
+            models.DeviceChallenge.used == False,
+            models.DeviceChallenge.expires_at > now,
+        )
+        .order_by(models.DeviceChallenge.created_at.desc())
+        .first()
+    )
+
+    if not challenge or challenge.response_code != payload.response_code.strip():
+        db.add(models.KioskUnlockEvent(
+            organization_id=0,
+            method="challenge",
+            success=False,
+        ))
+        db.commit()
+        raise HTTPException(status_code=401, detail="Invalid, expired or already used challenge response code")
+
+    challenge.used = True
+    screen = db.query(models.Screen).filter(models.Screen.device_id == device_id).first()
+    org_id = screen.organization_id if screen and screen.organization_id else 0
+    db.add(models.KioskUnlockEvent(
+        organization_id=org_id,
+        screen_id=screen.id if screen else None,
+        method="challenge",
+        success=True,
+    ))
+    db.commit()
+
+    return schemas.DeviceVerifyChallengeOut(
+        verified=True,
+        message="Challenge response verified successfully. Maintenance unlocked.",
+    )
 
 
 @router.post("/{device_id}/kiosk-attempt")
@@ -1895,8 +2210,44 @@ async def sync_tv(
 ):
     screen = verify_device_auth(device_id, credentials, db)
 
-    pending_commands = await pop_device_commands(device_id)
-    pending_command = pending_commands[0] if pending_commands else None
+    # Durable Command Recovery: query active unacknowledged commands from database
+    now = models.utcnow()
+    active_cmd_logs = (
+        db.query(models.DeviceCommandLog)
+        .filter(
+            models.DeviceCommandLog.device_id == device_id,
+            models.DeviceCommandLog.status.in_(["PENDING", "DELIVERED"]),
+            models.DeviceCommandLog.expires_at > now,
+        )
+        .order_by(models.DeviceCommandLog.created_at.asc())
+        .all()
+    )
+    durable_commands = []
+    durable_command_names = []
+    for cmd in active_cmd_logs:
+        cmd.status = "DELIVERED"
+        durable_command_names.append(cmd.command)
+        params = {}
+        try:
+            params = json.loads(cmd.params_json) if cmd.params_json else {}
+        except Exception:
+            pass
+        durable_commands.append({
+            "command_id": cmd.id,
+            "command": cmd.command,
+            "params": params,
+            "expires_at": int(cmd.expires_at.timestamp()),
+        })
+    db.commit()
+
+    legacy_commands = await pop_device_commands(device_id)
+    merged_commands = list(dict.fromkeys(durable_command_names + legacy_commands))
+    pending_command = merged_commands[0] if merged_commands else None
+
+    eff_pin = effective_maintenance_pin(db, screen) if getattr(screen, "authenticated", False) else None
+    org = screen.organization
+    creds_version = org.credentials_version if org else 0
+    creds_action = "SET" if eff_pin else "CLEAR"
 
     # Not cleared to advertise: answer with the demo reel and the reason, and nothing of the
     # tenant's own. Deliberately ahead of the 204 short-circuit below -- a screen that was
@@ -1953,12 +2304,15 @@ async def sync_tv(
             playlist=demo_playlist,
             playlist_updated_at=models.utcnow(),
             fit_mode=screen.fit_mode or "contain",
-            maintenance_pin=effective_maintenance_pin(db, screen) if getattr(screen, "authenticated", False) else None,
-            master_pin=master_maintenance_pin(db) if getattr(screen, "authenticated", False) else None,
+            maintenance_pin=eff_pin,
+            master_pin=None,
             sync_interval_seconds=15,
             operating_mode="always",
             pending_command=pending_command,
-            pending_commands=pending_commands,
+            pending_commands=merged_commands,
+            durable_commands=durable_commands,
+            credentials_version=creds_version,
+            credentials_action=creds_action,
             screen_id=screen.id,
             organization_id=screen.organization_id,
             service_state=block_reason,
@@ -2014,11 +2368,18 @@ async def sync_tv(
         marker = newest_release
 
     marker = as_aware_utc(marker)
-    if since and marker <= as_aware_utc(since) and not pending_commands:
+    needs_credentials_sync = getattr(screen, "authenticated", False) and (
+        screen.synced_credentials_version is None or screen.synced_credentials_version < creds_version
+    )
+    if since and marker <= as_aware_utc(since) and not merged_commands and not needs_credentials_sync:
         return Response(
             status_code=204,
             headers={"X-Sync-Interval-Seconds": str(player_sync_interval_seconds())},
         )
+
+    if getattr(screen, "authenticated", False) and org:
+        screen.synced_credentials_version = creds_version
+        db.commit()
 
     playlist_payload = None
     if playlist:
@@ -2056,10 +2417,8 @@ async def sync_tv(
 
     return schemas.SyncResponse(
         fit_mode=screen.fit_mode or "contain",
-        # Withheld from a screen that authenticated with nothing but its device id: this
-        # pin unlocks the on-TV maintenance screen, and device ids are guessable.
-        maintenance_pin=effective_maintenance_pin(db, screen) if getattr(screen, "authenticated", False) else None,
-            master_pin=master_maintenance_pin(db) if getattr(screen, "authenticated", False) else None,
+        maintenance_pin=eff_pin,
+        master_pin=None,
         operating_mode=screen.operating_mode or "always",
         operating_hours=screen.operating_hours,
         playlist=playlist_payload,
@@ -2068,7 +2427,10 @@ async def sync_tv(
         app_version=current_app_version(db, screen.target_version_code or (screen.group.target_version_code if screen.group else None)),
         sync_interval_seconds=player_sync_interval_seconds(),
         pending_command=pending_command,
-        pending_commands=pending_commands,
+        pending_commands=merged_commands,
+        durable_commands=durable_commands,
+        credentials_version=creds_version,
+        credentials_action=creds_action,
         screen_id=screen.id,
         organization_id=screen.organization_id,
         brand_name=screen.organization.brand_name if screen.organization else None,

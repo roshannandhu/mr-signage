@@ -109,9 +109,6 @@ object HeartbeatReporter {
                         com.olrac.signage.sync.UpdateManager.requestUpdateCheck(appContext)
                         com.olrac.signage.service.PlaybackService.requestImmediateSync(appContext)
                     }
-                    if (cmd == "request_screenshot") {
-                        com.olrac.signage.telemetry.ScreenshotManager.requestScreenshot()
-                    }
                     if (cmd == "remote_unlock") {
                         appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
                             .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()

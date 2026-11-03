@@ -291,8 +291,6 @@ def tenant_features(owner: dict, editor: dict, viewer: dict) -> dict:
         if "playlist" in made:
             works(client.post(f"/api/screens/{made['screen']}/assign/{made['playlist']}", headers=editor),
                   "editor assigns playlist to screen", "tenant")
-        works(client.get(f"/api/screenshots/{made['screen']}/screenshots", headers=viewer),
-              "viewer lists screenshots", "tenant")
 
     # --- groups -----------------------------------------------------------------------
     group = client.post("/api/groups/", headers=editor, json={"name": "Shop Floor"})

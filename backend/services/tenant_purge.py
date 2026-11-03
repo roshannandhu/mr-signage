@@ -79,13 +79,6 @@ def _stored_urls(db: Session, org_id: int) -> list[str]:
         )
         if url
     )
-    urls.extend(
-        url
-        for (url,) in db.query(models.ScreenshotLog.file_url).filter(
-            models.ScreenshotLog.organization_id == org_id
-        )
-        if url
-    )
 
     logo = db.query(models.Organization.logo_url).filter(
         models.Organization.id == org_id
@@ -120,7 +113,6 @@ def _deletion_plan(org_id: int):
         (models.AdPlacementExtension, models.AdPlacementExtension.placement_id.in_(placement_ids)),
         (models.AdPayment, models.AdPayment.organization_id == org_id),
         (models.AdPlacement, models.AdPlacement.organization_id == org_id),
-        (models.ScreenshotLog, models.ScreenshotLog.organization_id == org_id),
         (models.EmergencyBroadcast, models.EmergencyBroadcast.organization_id == org_id),
         (models.PlaylistItem, owns_item),
         # Before playlists and groups: a screen points at both.
@@ -133,6 +125,11 @@ def _deletion_plan(org_id: int):
         (models.Client, models.Client.organization_id == org_id),
         (models.TenantPlan, models.TenantPlan.organization_id == org_id),
         (models.EnrollmentToken, models.EnrollmentToken.organization_id == org_id),
+        (models.PlatformPayment, models.PlatformPayment.organization_id == org_id),
+        (models.DeviceCommandLog, models.DeviceCommandLog.organization_id == org_id),
+        (models.TenantNote, models.TenantNote.organization_id == org_id),
+        (models.KioskUnlockEvent, models.KioskUnlockEvent.organization_id == org_id),
+        (models.AttentionDismissal, models.AttentionDismissal.organization_id == org_id),
         (models.CustomPlanRequest, models.CustomPlanRequest.organization_id == org_id),
         (models.Subscription, models.Subscription.organization_id == org_id),
         (models.User, models.User.organization_id == org_id),
@@ -200,12 +197,19 @@ def purge_organization(
         swept = delete_prefix(prefix)
         report["objects_deleted"] += swept["deleted"]
         report["objects_missed"] += swept["failed"]
+        if swept.get("error"):
+            report["storage_error"] = swept["error"]
+            logger.warning("Prefix sweep for %s had storage error: %s", prefix, swept["error"])
         # Objects before rows, honoured to the end: the rows above are only flushed, not
         # committed, so raising here rolls them back and the workspace is retried on the
         # next pass. Committing them with bytes still in the bucket would orphan those bytes
         # for good -- nothing would remain that points at them. With no storage configured
         # there is no bucket to sweep, which is not a failure.
-        if (swept.get("error") or swept["failed"]) and is_s3_enabled():
+        #
+        # When `immediately=True` (an explicit permanent delete by an administrator), do not
+        # block deleting database records if object storage is down, credentials are expired/unauthorized,
+        # or the bucket returns an error. Log the warning and allow the permanent delete to finish.
+        if (swept.get("error") or swept["failed"]) and is_s3_enabled() and not immediately:
             raise RuntimeError(
                 f"Storage sweep of {prefix} did not finish for workspace {org_id} "
                 f"({swept['failed']} objects refused, error: {swept.get('error')}); "

@@ -93,35 +93,6 @@ try:
     outside.unlink()
     print("  ok  a path escaping the uploads root is refused")
 
-    # Screenshot retention: 15 in, newest 10 survive with their files.
-    screen = models.Screen(organization_id=org.id, name="Lobby", status="online")
-    db.add(screen); db.commit()
-    urls = []
-    for i in range(15):
-        url = make(f"shot{i:02d}.jpg")
-        urls.append(url)
-        db.add(models.ScreenshotLog(
-            organization_id=org.id, screen_id=screen.id, file_url=url,
-            created_at=models.utcnow() - __import__("datetime").timedelta(minutes=15 - i),
-        ))
-    db.commit()
-    assert db.query(models.ScreenshotLog).count() == 15
-
-    asyncio.run(worker.prune_screenshots({}))
-
-    db.expire_all()
-    remaining = db.query(models.ScreenshotLog).all()
-    assert len(remaining) == 10, f"expected 10 kept, got {len(remaining)}"
-    kept_urls = {s.file_url for s in remaining}
-    # The newest ten are the last ten created.
-    assert kept_urls == set(urls[5:]), sorted(kept_urls)
-    for url in urls[:5]:
-        gone = Path(tmp.name, url.split("/uploads/", 1)[1])
-        assert not gone.exists(), f"pruned row left its file behind: {gone.name}"
-    for url in urls[5:]:
-        assert Path(tmp.name, url.split("/uploads/", 1)[1]).exists(), "pruned a file it should keep"
-    print("  ok  screenshots pruned to the newest 10, with their files")
-
     print("storage cleanup: all checks passed")
 finally:
     try:

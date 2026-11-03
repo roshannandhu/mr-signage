@@ -1,16 +1,14 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Camera, PlaySquare, X } from 'lucide-react'
+import { PlaySquare, X } from 'lucide-react'
 import { Dialog as BaseDialog } from '@base-ui/react/dialog'
-import { EmptyState } from '@/components/dashboard/empty-state'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/lib/api'
 import { relativeTime } from '@/lib/format'
-import type { Screen, Screenshot } from '@/lib/types'
+import type { Screen } from '@/lib/types'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -71,23 +69,6 @@ export function ScreenDetailsDrawer({
 }) {
   const queryClient = useQueryClient()
 
-  const screenshotsQuery = useQuery({
-    queryKey: ['screenshots', screen.id],
-    queryFn: () => api.getScreenshots(screen.id),
-    enabled: open,
-    refetchInterval: open ? 5000 : false,
-  })
-  const screenshots: Screenshot[] = screenshotsQuery.data || []
-
-  const requestShot = useMutation({
-    mutationFn: () => api.requestScreenshot(screen.id),
-    onSuccess: () => {
-      toast.success('Screenshot requested. It will appear here shortly.')
-      queryClient.invalidateQueries({ queryKey: ['screenshots', screen.id] })
-    },
-    onError: (error: Error) => toast.error(error.message),
-  })
-
   const bringToFrontMutation = useMutation({
     mutationFn: () => api.bringToFront(screen.id),
     onSuccess: () => {
@@ -127,7 +108,6 @@ export function ScreenDetailsDrawer({
             <TabsList className="px-4">
               <TabsTrigger value="information">Information</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
               <TabsIndicator />
             </TabsList>
 
@@ -167,29 +147,6 @@ export function ScreenDetailsDrawer({
                 <Row label="Last error at" value={screen.last_error_at ? dateTime(screen.last_error_at) : '—'} />
                 {!screen.last_error && (
                   <p className="text-muted-foreground py-6 text-sm">No faults reported by this screen.</p>
-                )}
-              </TabsPanel>
-
-              <TabsPanel value="screenshots">
-                <div className="flex justify-end py-3">
-                  <Button size="sm" variant="outline" disabled={requestShot.isPending} onClick={() => requestShot.mutate()}>
-                    <Camera data-icon="inline-start" /> {requestShot.isPending ? 'Requesting…' :'Request screenshot'}
-                  </Button>
-                </div>
-                {screenshotsQuery.isLoading ? (
-                  <div className="space-y-4">{Array.from({ length: 2 }).map((_, index) => <Skeleton key={index} className="aspect-video" />)}</div>
-                ) : !screenshots.length ? (
-                  <EmptyState icon={Camera} title="No screenshots yet" description="Request one to confirm what this display is actually showing." />
-                ) : (
-                  <div className="space-y-4 pb-4">
-                    {screenshots.map((shot) => (
-                      <figure key={shot.id} className="border-hairline bg-muted overflow-hidden rounded-xl border">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs, not build-time assets */}
-                        <img src={shot.url} alt={`Screen capture taken ${relativeTime(shot.created_at)}`} className="aspect-video w-full object-cover" />
-                        <figcaption className="bg-card text-muted-foreground p-2 text-xs">{relativeTime(shot.created_at)}</figcaption>
-                      </figure>
-                    ))}
-                  </div>
                 )}
               </TabsPanel>
             </div>

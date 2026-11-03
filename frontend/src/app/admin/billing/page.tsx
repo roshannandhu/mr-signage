@@ -168,6 +168,7 @@ export default function AdminBillingPage() {
       id: 'provider',
       header: 'Gateway',
       width: 'w-24',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs capitalize text-muted-foreground">{row.provider}</span>
       ),
@@ -175,6 +176,7 @@ export default function AdminBillingPage() {
     {
       id: 'reference',
       header: 'Transaction ID',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {row.provider_payment_id ?? row.provider_order_id ?? '—'}
@@ -185,6 +187,7 @@ export default function AdminBillingPage() {
       id: 'date',
       header: 'Paid Date',
       width: 'w-36',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {new Date(row.paid_at).toLocaleDateString(undefined, {
@@ -264,22 +267,22 @@ export default function AdminBillingPage() {
   ]
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Financial Command Center"
         description="Platform revenue collections, subscription renewal forecasts and payment transaction explorer"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => exportPaymentsToCsv(payments)}
-            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground transition-all hover:bg-muted"
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-3.5 py-2 text-xs sm:text-sm text-foreground transition-all hover:bg-muted"
           >
             <Download className="size-3.5" />
             Export CSV
           </button>
           <Link
             href="/admin/settings"
-            className="flex items-center gap-1.5 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-xl border border-border bg-muted px-3.5 py-2 text-xs sm:text-sm text-muted-foreground hover:text-foreground"
           >
             SMTP & Email Setup
             <ExternalLink className="size-3" />
@@ -288,7 +291,7 @@ export default function AdminBillingPage() {
       </PageHeader>
 
       {/* METRIC TILES */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard
           label="Collected (30 days)"
           value={overview ? formatPaise(overview.revenue_paise_total) : '—'}

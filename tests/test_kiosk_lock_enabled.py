@@ -111,6 +111,10 @@ def run() -> None:
     bare_enable = client.put("/api/screens/lock-enabled", headers=bare_owner_auth, json={"lock_enabled": True})
     check(bare_enable.status_code == 403, f"a plan without kiosk_lock should refuse enabling it, got {bare_enable.status_code}")
 
+    # Option 2.1: Lock toggle requires a pre-configured Workspace PIN
+    pin_setup = client.put("/api/screens/lock-pin", headers=owner_auth, json={"lock_pin": "1234"})
+    check(pin_setup.status_code == 200, f"setting workspace PIN failed: {pin_setup.text}")
+
     enabled = client.put("/api/screens/lock-enabled", headers=owner_auth, json={"lock_enabled": True})
     check(enabled.status_code == 200 and enabled.json()["lock_enabled"] is True,
           f"enabling lock failed: {enabled.status_code} {enabled.text}")

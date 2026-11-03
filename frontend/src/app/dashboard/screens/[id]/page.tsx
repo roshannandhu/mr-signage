@@ -154,12 +154,7 @@ export default function ScreenDetailPage() {
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
               <div className="bg-muted relative aspect-video w-full shrink-0 overflow-hidden rounded-xl sm:w-44">
-                {screen.latest_screenshot ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs, not build-time assets
-                  <img src={screen.latest_screenshot} alt={`What ${label} is showing`} className="size-full object-cover" />
-                ) : (
-                  <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-8" aria-hidden="true" /></div>
-                )}
+                <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-8" aria-hidden="true" /></div>
                 <div className="absolute bottom-2 left-2">
                   <OverlayBadge tone={online ? 'online' : 'offline'}>{online ? 'Online' : 'Offline'}</OverlayBadge>
                 </div>

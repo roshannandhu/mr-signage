@@ -38,8 +38,6 @@ def referenced_paths(db) -> set[str]:
         note(content.thumbnail)
     for rendition in db.query(models.MediaRendition).all():
         note(rendition.file_url)
-    for shot in db.query(models.ScreenshotLog).all():
-        note(shot.file_url)
     for stored_url in extra_stored_urls(db):
         note(stored_url)
     return referenced

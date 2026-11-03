@@ -1001,46 +1001,6 @@ async def prune_play_log_rollups(ctx):
         db.close()
 
 
-async def prune_screenshots(ctx):
-    """Keep only the newest captures per screen, and delete their files too.
-
-    Nothing removed these before. The UI only ever shows the newest ten, so the rest were
-    invisible while still consuming a row and an image file each — unbounded growth across
-    a fleet that captures regularly.
-    """
-    keep = int(os.getenv("SCREENSHOT_KEEP_PER_SCREEN", "10"))
-    db = SessionLocal()
-    removed = 0
-    try:
-        screen_ids = [row[0] for row in db.query(models.ScreenshotLog.screen_id).distinct()]
-        for screen_id in screen_ids:
-            stale = (
-                db.query(models.ScreenshotLog)
-                .filter(models.ScreenshotLog.screen_id == screen_id)
-                .order_by(models.ScreenshotLog.created_at.desc())
-                .offset(keep)
-                .all()
-            )
-            for shot in stale:
-                # File first: if the row goes and the unlink fails we lose the only
-                # pointer to it and it becomes an orphan.
-                #
-                # Via media_storage rather than delete_stored_file: the latter only
-                # understands "/uploads/", so with R2 configured every pruned screenshot
-                # dropped its row and left the object in the bucket permanently.
-                media_storage.delete(shot.file_url)
-                db.delete(shot)
-                removed += 1
-        db.commit()
-        if removed:
-            print(f"Pruned {removed} screenshots beyond the newest {keep} per screen.")
-    except Exception as e:
-        db.rollback()
-        print(f"Error pruning screenshots: {e}")
-    finally:
-        db.close()
-
-
 async def prune_finished_bookings(ctx):
     """Delete the playlist items belonging to campaigns that have finished.
 
@@ -1145,7 +1105,6 @@ HEARTBEAT_TTL_SECONDS = {
     "aggregate_play_logs": 45 * 60,
     "reconcile_alerts": 5 * 60,
     "prune_play_logs": 3 * 60 * 60,
-    "prune_screenshots": 36 * 60 * 60,
     "prune_finished_bookings": 36 * 60 * 60,
     "prune_play_log_rollups": 36 * 60 * 60,
     "purge_removed_tenants": 36 * 60 * 60,
@@ -1212,8 +1171,7 @@ class WorkerSettings:
         # even with retention set to its 1-day floor. Each run is a chunked, bounded
         # delete, so running it 24x more often costs little and caps the peak at an hour.
         cron(_with_heartbeat("prune_play_logs", prune_play_logs), minute={0}),
-        cron(_with_heartbeat("prune_screenshots", prune_screenshots), hour=3, minute=30),
-        # After the screenshot prune, in the same quiet window.
+        # In the quiet window.
         cron(_with_heartbeat("prune_finished_bookings", prune_finished_bookings), hour=3, minute=45),
         # Once a day is plenty: rollups accrue at ~36k rows/day, not 864k, and the
         # retention window is over a year. Off the hour to stay clear of the raw prune.

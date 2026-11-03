@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { AlertTriangle, CheckCircle, Clock, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle, Clock, X, XCircle } from 'lucide-react'
 
 /**
  * Shared pieces for the platform-admin pages.
@@ -60,13 +60,13 @@ export function StatCard({
 }: { label: string; value: ReactNode; icon: React.ElementType; accent?: Accent }) {
   const style = accents[accent]
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card p-4">
-      <div className={`grid size-9 place-items-center rounded-xl border ${style.tile}`}>
-        <Icon className={`size-4 ${style.icon}`} />
+    <div className="flex items-center gap-2.5 sm:gap-3 rounded-2xl border border-border bg-card p-3 sm:p-4">
+      <div className={`grid size-8 sm:size-9 shrink-0 place-items-center rounded-xl border ${style.tile}`}>
+        <Icon className={`size-3.5 sm:size-4 ${style.icon}`} />
       </div>
-      <div className="min-w-0">
-        <p className="text-xl font-bold text-foreground">{value}</p>
-        <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <div className="min-w-0 flex-1">
+        <p className="text-lg sm:text-xl font-bold tracking-tight text-foreground">{value}</p>
+        <p className="text-[11px] sm:text-xs text-muted-foreground line-clamp-2 leading-tight break-words">{label}</p>
       </div>
     </div>
   )
@@ -99,31 +99,47 @@ export function QuotaBar({ used, max }: { used: number; max: number | null }) {
   )
 }
 
-export function Feedback({ ok, error }: { ok?: string; error?: string }) {
+export function Feedback({ ok, error, onDismiss }: { ok?: string; error?: string; onDismiss?: () => void }) {
   if (!ok && !error) return null
   return (
     <div
       role="status"
-      className={`flex items-center gap-2 rounded-xl border p-3 text-sm ${
+      className={`flex items-start justify-between gap-2.5 rounded-xl border p-3 text-xs sm:text-sm leading-relaxed ${
         error
           ? 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-400'
           : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
       }`}
     >
-      {error ? <AlertTriangle className="size-4 shrink-0" /> : <CheckCircle className="size-4 shrink-0" />}
-      {error || ok}
+      <div className="flex items-start gap-2 min-w-0 flex-1">
+        {error ? (
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+        ) : (
+          <CheckCircle className="size-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+        )}
+        <span className="break-words">{error || ok}</span>
+      </div>
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="shrink-0 rounded p-0.5 opacity-70 hover:opacity-100 transition-opacity"
+          aria-label="Dismiss feedback"
+        >
+          <X className="size-3.5" />
+        </button>
+      )}
     </div>
   )
 }
 
 export function PageHeader({ title, description, children }: { title: string; description?: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">{title}</h1>
-        {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight text-foreground sm:text-2xl">{title}</h1>
+        {description && <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm leading-relaxed">{description}</p>}
       </div>
-      {children}
+      {children && <div className="flex flex-wrap items-center gap-2 shrink-0">{children}</div>}
     </div>
   )
 }

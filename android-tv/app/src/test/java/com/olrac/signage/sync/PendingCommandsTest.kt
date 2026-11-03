@@ -7,8 +7,8 @@ class PendingCommandsTest {
 
     @Test
     fun `an upgraded server's list and an old server's single field both come through`() {
-        assertEquals(listOf("bring_to_front", "request_screenshot"),
-            PendingCommands.merge("bring_to_front", listOf("bring_to_front", "request_screenshot")))
+        assertEquals(listOf("bring_to_front", "remote_unlock"),
+            PendingCommands.merge("bring_to_front", listOf("bring_to_front", "remote_unlock")))
     }
 
     @Test

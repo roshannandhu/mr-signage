@@ -1,6 +1,7 @@
 package com.olrac.signage
 
 import android.content.Context
+import android.content.ComponentName
 import android.app.role.RoleManager
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
@@ -72,7 +73,6 @@ import com.olrac.signage.network.SignInRequest
 import com.olrac.signage.service.PlaybackService
 import com.olrac.signage.ui.PlayerScreen
 import com.olrac.signage.ui.screens.*
-import com.olrac.signage.telemetry.ScreenshotManager
 import com.olrac.signage.network.RealtimeClient
 import com.olrac.signage.device.DeviceOwnerManager
 import com.olrac.signage.boot.SetupGate
@@ -99,11 +99,11 @@ class MainActivity : ComponentActivity() {
     private var showPermissionGate by mutableStateOf(false)
     private var requirementStates by mutableStateOf<List<SetupRequirementState>>(emptyList())
     private var setupError by mutableStateOf<String?>(null)
+    private var lastInteractionAtMs by mutableStateOf<Long>(System.currentTimeMillis())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
-        ScreenshotManager.registerActivity(this)
 
         configurePlayerWindow()
         deviceState = DeviceState(this)
@@ -172,6 +172,40 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // 5-minute inactivity auto-relock when ServerSetupScreen is open
+            LaunchedEffect(showServerSetup) {
+                if (showServerSetup) {
+                    while (showServerSetup) {
+                        val elapsed = System.currentTimeMillis() - lastInteractionAtMs
+                        if (elapsed >= 5 * 60_000L) {
+                            android.util.Log.i("MainActivity", "ServerSetupScreen 5-minute inactivity timeout reached; relocking to player")
+                            showServerSetup = false
+                            relockToPlayer()
+                            break
+                        }
+                        delay(10_000L)
+                    }
+                }
+            }
+
+            // Direct reactive reception of remote unlock & commands from PlaybackService (0ms latency)
+            LaunchedEffect(Unit) {
+                com.olrac.signage.service.PlaybackService.commandEvents.collect { event ->
+                    when (event) {
+                        is com.olrac.signage.service.ServiceCommandEvent.RemoteUnlock -> {
+                            if (!showPinPrompt && !showServerSetup) {
+                                android.util.Log.i("MainActivity", "Applying reactive remote unlock (id=${event.commandId})")
+                                enterMaintenance()
+                                showServerSetup = true
+                            }
+                        }
+                        is com.olrac.signage.service.ServiceCommandEvent.KioskLockChanged -> {
+                            setKioskLockState(event.locked)
+                        }
+                    }
+                }
+            }
+
             // Runs for the whole life of the Activity, unlike the gate loop above: a remote
             // unlock can arrive at any time, not only during setup. Checked here rather than
             // only in onResume because a device-owner TV resuming into lock task does not
@@ -182,7 +216,7 @@ class MainActivity : ComponentActivity() {
                     if (prefs.getBoolean(PREF_PENDING_REMOTE_UNLOCK, false)) {
                         prefs.edit().putBoolean(PREF_PENDING_REMOTE_UNLOCK, false).apply()
                         if (!showPinPrompt && !showServerSetup) {
-                            android.util.Log.i("MainActivity", "Applying a remote unlock")
+                            android.util.Log.i("MainActivity", "Applying a remote unlock from prefs fallback")
                             enterMaintenance()
                             showServerSetup = true
                         }
@@ -488,14 +522,36 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    fun setKioskLockState(locked: Boolean) {
+        runOnUiThread {
+            if (locked) {
+                DeviceOwnerManager.applyKioskPolicy(this)
+                rearmLockTask()
+                android.util.Log.i("MainActivity", "Workspace Lock re-armed dynamically")
+            } else {
+                val launcher = systemLauncher()
+                DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { ComponentName(it.packageName, it.className) })
+                try { stopLockTask() } catch (e: Exception) {}
+                android.util.Log.i("MainActivity", "Workspace Lock released dynamically")
+            }
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         visible = true
+        activeActivity = this
     }
 
     override fun onStop() {
+        if (activeActivity == this) activeActivity = null
         visible = false
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        if (activeActivity == this) activeActivity = null
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -514,10 +570,17 @@ class MainActivity : ComponentActivity() {
         // prompt or the maintenance screen is open -- re-applying there would shrink the lock-task
         // allowlist under Settings the operator just opened from it.
         if (!showPinPrompt && !showServerSetup) {
-            // Deliberately back on the player: end the exit AND let the watchdog protect again.
-            getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
-                .remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
-            DeviceOwnerManager.applyKioskPolicy(this)
+            if (com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)) {
+                // Deliberately back on the player: end the exit AND let the watchdog protect again.
+                getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
+                    .remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
+                DeviceOwnerManager.applyKioskPolicy(this)
+                rearmLockTask()
+            } else {
+                val launcher = systemLauncher()
+                DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { ComponentName(it.packageName, it.className) })
+                try { stopLockTask() } catch (e: Exception) {}
+            }
         }
         defaultHome = isDefaultHomeLauncher()
         // The player is in front again, so the setup hold has done its job. Lifting it here
@@ -625,6 +688,7 @@ class MainActivity : ComponentActivity() {
      * press twice and the sequence would never match.
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        lastInteractionAtMs = System.currentTimeMillis()
         // Not on the pin prompt or the setup screen: there these keys are navigation, and
         // matching would swallow a press mid-form.
         val gestureEnabled = !showPinPrompt && !showServerSetup
@@ -695,10 +759,6 @@ class MainActivity : ComponentActivity() {
             return true
         }
         return super.onKeyDown(keyCode, event)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
     }
 
     private suspend fun resolveAndRefreshPairing(deviceId: String) {
@@ -1234,6 +1294,15 @@ class MainActivity : ComponentActivity() {
         /** Whether the player is on screen. Read by PlaybackService, which shares the process. */
         @Volatile var visible = false
             private set
+
+        @Volatile var activeActivity: MainActivity? = null
+
+        fun onKioskLockChanged(context: Context, locked: Boolean) {
+            activeActivity?.setKioskLockState(locked)
+            if (locked && !visible) {
+                com.olrac.signage.boot.PlayerLauncher.launch(context, delayMs = 200L, reason = "kiosk_lock_rearmed")
+            }
+        }
         private const val PAIRING_RETRY_MS = 5_000L
 
         // Boot reconnect backoff. Starts quick because the common case is a TV that booted a

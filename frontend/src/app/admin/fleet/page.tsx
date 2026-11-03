@@ -26,7 +26,6 @@ import {
 import { adminApi, api } from '@/lib/api'
 import type { AppRelease, FleetScreen } from '@/lib/types'
 import { PageHeader, StatCard } from '@/components/admin/admin-ui'
-import { MaintenancePinCard } from '@/components/admin/maintenance-pin-card'
 import { AdminDataTable, type DataTableColumn } from '@/components/admin/kit/admin-data-table'
 import { ScreenMap, type MapPoint } from '@/components/dashboard/screen-map'
 import { toast } from 'sonner'
@@ -46,7 +45,7 @@ export default function AdminFleetPage() {
   // Bulk selection
   const [selectedScreenIds, setSelectedScreenIds] = useState<number[]>([])
   const [bulkConfirmModal, setBulkConfirmModal] = useState<{
-    command: 'check_update' | 'bring_to_front' | 'request_screenshot'
+    command: 'check_update' | 'bring_to_front'
     commandLabel: string
   } | null>(null)
   const [bulkReason, setBulkReason] = useState('')
@@ -126,7 +125,7 @@ export default function AdminFleetPage() {
       command,
       reason,
     }: {
-      command: 'check_update' | 'bring_to_front' | 'request_screenshot'
+      command: 'check_update' | 'bring_to_front'
       reason: string
     }) => {
       return adminApi.sendBulkScreenCommands({
@@ -187,9 +186,12 @@ export default function AdminFleetPage() {
       header: 'Screen / TV',
       accessorKey: 'name',
       cell: ({ row }) => (
-        <div className="flex flex-col">
-          <span className="font-medium text-foreground">{row.name || `Screen ${row.id}`}</span>
-          <span className="font-mono text-[11px] text-muted-foreground">{row.device_id || `ID: ${row.id}`}</span>
+        <div className="flex flex-col min-w-0">
+          <span className="font-medium text-foreground truncate">{row.name || `Screen ${row.id}`}</span>
+          <span className="font-mono text-[11px] text-muted-foreground truncate">{row.device_id || `ID: ${row.id}`}</span>
+          <span className="sm:hidden text-[10px] text-muted-foreground">
+            {row.organization_name} • v{row.app_version || '1.0'}
+          </span>
         </div>
       ),
     },
@@ -197,6 +199,7 @@ export default function AdminFleetPage() {
       id: 'workspace',
       header: 'Workspace',
       accessorKey: 'organization_name',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="text-foreground">{row.organization_name}</span>
@@ -212,6 +215,7 @@ export default function AdminFleetPage() {
     {
       id: 'lock_strength',
       header: 'Lock Strength',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <div>
           {row.device_owner ? (
@@ -251,6 +255,7 @@ export default function AdminFleetPage() {
     {
       id: 'version',
       header: 'Version',
+      hideOnMobile: true,
       cell: ({ row }) => {
         const isLatest = latest !== null && row.app_version === latest
         return (
@@ -272,6 +277,7 @@ export default function AdminFleetPage() {
     {
       id: 'secret',
       header: 'Secret Auth',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <div>
           {row.has_device_secret ? (
@@ -297,11 +303,13 @@ export default function AdminFleetPage() {
     {
       id: 'update_status',
       header: 'Update State',
+      hideOnMobile: true,
       cell: ({ row }) => <UpdateChip screen={row} />,
     },
     {
       id: 'last_seen',
       header: 'Last Seen',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
           {row.last_seen ? new Date(row.last_seen).toLocaleString() : '—'}
@@ -326,12 +334,12 @@ export default function AdminFleetPage() {
   ]
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="TV Fleet Control Center"
         description="Comprehensive real-time telemetry, rollout monitoring, diagnostics, and remote command orchestration"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-xl border border-border bg-muted/40 p-1">
             <button
               onClick={() => setViewMode('table')}
@@ -352,15 +360,13 @@ export default function AdminFleetPage() {
           </div>
           <button
             onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'fleet'] })}
-            className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground transition hover:bg-muted/80"
+            className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-1.5 text-xs sm:text-sm text-muted-foreground transition hover:bg-muted/80"
           >
             <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </PageHeader>
-
-      <MaintenancePinCard />
 
       {/* Legacy auth status warning */}
       {data?.legacy_device_auth && (
@@ -393,7 +399,7 @@ export default function AdminFleetPage() {
       )}
 
       {/* Metrics Grid */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Total Paired TVs" value={data?.total ?? 0} icon={MonitorPlay} accent="violet" />
         <StatCard
           label="Online Now"
@@ -496,18 +502,6 @@ export default function AdminFleetPage() {
             >
               <Maximize className="size-3.5" />
               Bring to Front
-            </button>
-            <button
-              onClick={() =>
-                setBulkConfirmModal({
-                  command: 'request_screenshot',
-                  commandLabel: 'Request Live Screenshots',
-                })
-              }
-              className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
-            >
-              <Tv className="size-3.5" />
-              Request Screenshot
             </button>
             <button
               onClick={() => setSelectedScreenIds([])}
@@ -726,7 +720,7 @@ function FleetScreenDrawer({
       command,
       reason,
     }: {
-      command: 'check_update' | 'bring_to_front' | 'request_screenshot' | 'remote_unlock'
+      command: 'check_update' | 'bring_to_front' | 'remote_unlock'
       reason?: string
     }) => {
       return adminApi.sendScreenCommand(screen.id, { command, reason })
@@ -877,21 +871,6 @@ function FleetScreenDrawer({
                   <div className="text-left">
                     <p>Trigger Immediate Update Check</p>
                     <p className="text-[10px] text-muted-foreground">Signals TV device to poll for new APK release binary</p>
-                  </div>
-                </div>
-                <Send className="size-3.5 text-muted-foreground" />
-              </button>
-
-              <button
-                onClick={() => commandMutation.mutate({ command: 'request_screenshot', reason: 'Operator live preview' })}
-                disabled={commandMutation.isPending || !screen.device_id}
-                className="flex w-full items-center justify-between rounded-xl border border-border bg-card p-3 text-xs font-medium text-foreground transition hover:bg-muted disabled:opacity-50"
-              >
-                <div className="flex items-center gap-2">
-                  <Tv className="size-4 text-cyan-500" />
-                  <div className="text-left">
-                    <p>Request Live Screen Capture</p>
-                    <p className="text-[10px] text-muted-foreground">Queues an instant screenshot telemetry request</p>
                   </div>
                 </div>
                 <Send className="size-3.5 text-muted-foreground" />

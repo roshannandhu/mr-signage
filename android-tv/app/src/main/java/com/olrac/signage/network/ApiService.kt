@@ -192,7 +192,49 @@ data class SyncResponse(
     // here would read as false -- the opposite of "an old server means stay locked" -- the
     // moment this field did not exist yet on the server. Resolved explicitly at the call
     // site (`?: true`) instead.
-    val kiosk_lock: Boolean? = null
+    val kiosk_lock: Boolean? = null,
+    val credentials_version: Int? = null,
+    val credentials_action: String? = null,
+    val durable_commands: List<DurableCommandDto>? = null
+)
+
+data class DurableCommandDto(
+    val command_id: String,
+    val command: String,
+    val params: Map<String, Any?>? = null,
+    val expires_at: Long? = null
+)
+
+data class DeviceCommandAckRequest(
+    val status: String,
+    val error: String? = null,
+    val executed_at: Long? = null
+)
+
+data class DeviceCommandAckResponse(
+    val acknowledged: Boolean,
+    val command_id: String,
+    val status: String
+)
+
+data class DeviceChallengeRequestDto(
+    val nonce: String? = null
+)
+
+data class DeviceChallengeResponseDto(
+    val device_id: String,
+    val nonce: String,
+    val expires_at: String
+)
+
+data class DeviceVerifyChallengeDto(
+    val nonce: String,
+    val response_code: String
+)
+
+data class DeviceVerifyChallengeResponseDto(
+    val verified: Boolean,
+    val message: String
 )
 
 data class AppVersionDto(
@@ -311,13 +353,6 @@ interface ApiService {
         @Body request: com.olrac.signage.service.PlayLogBatchRequest
     ): Response<Unit>
 
-    @retrofit2.http.Multipart
-    @POST("api/screenshots/device/{device_id}/screenshot")
-    suspend fun uploadScreenshot(
-        @Path("device_id") deviceId: String,
-        @retrofit2.http.Part file: okhttp3.MultipartBody.Part
-    ): Response<Void>
-
     // Best-effort audit trail for the admin console -- the PIN check itself already
     // happened locally before this call, so a failure here never affects whether the TV
     // unlocks, only whether a super admin can see that it tried.
@@ -326,6 +361,25 @@ interface ApiService {
         @Path("device_id") deviceId: String,
         @Body request: KioskAttemptRequest
     ): Response<Unit>
+
+    @POST("api/screens/{device_id}/commands/{command_id}/ack")
+    suspend fun ackCommand(
+        @Path("device_id") deviceId: String,
+        @Path("command_id") commandId: String,
+        @Body request: DeviceCommandAckRequest
+    ): Response<DeviceCommandAckResponse>
+
+    @POST("api/screens/{device_id}/challenge")
+    suspend fun requestChallenge(
+        @Path("device_id") deviceId: String,
+        @Body request: DeviceChallengeRequestDto
+    ): Response<DeviceChallengeResponseDto>
+
+    @POST("api/screens/{device_id}/verify-challenge")
+    suspend fun verifyChallenge(
+        @Path("device_id") deviceId: String,
+        @Body request: DeviceVerifyChallengeDto
+    ): Response<DeviceVerifyChallengeResponseDto>
 }
 
 data class KioskAttemptRequest(val success: Boolean)

@@ -137,7 +137,6 @@ export interface Screen {
   last_error_at: string | null
   effective_playlist_id: number | null
   orientation_source?: 'auto' | 'manual'
-  latest_screenshot?: string | null
   description?: string | null
   tags?: string | null
   location?: string | null
@@ -374,13 +373,6 @@ export interface CampaignPoint {
   date: string
   total_plays: number
   completed_plays: number
-}
-
-export interface Screenshot {
-  id: number
-  screen_id: number
-  url: string
-  created_at: string
 }
 
 /** How the player handles content whose aspect ratio differs from the panel. */

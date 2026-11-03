@@ -146,6 +146,10 @@ def _run_worker_in_process() -> bool:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Enforce strict PIN encryption key validation before any request is served
+    from .pin_crypto import get_pin_cipher
+    get_pin_cipher()
+
     # Called here rather than at module scope. Importing this module used to build the
     # schema as a side effect, so anything that merely imported backend.main -- pytest
     # collection above all -- opened a connection and wrote to whatever database the
@@ -252,6 +256,24 @@ async def lifespan(_app: FastAPI):
     threading.Thread(target=_media_supervisor_loop, daemon=True).start()
     threading.Thread(target=_screen_health_monitor_loop, daemon=True, name="screen-health-monitor").start()
 
+    async def _outbox_sweeper_loop():
+        """Fallback sweeper for pending or retried transactional outbox events."""
+        while True:
+            try:
+                await asyncio.sleep(2.0)
+                sweep_db = database.SessionLocal()
+                try:
+                    from .outbox import process_outbox_batch
+                    process_outbox_batch(sweep_db)
+                finally:
+                    sweep_db.close()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.debug("Outbox sweeper error: %s", exc)
+
+    outbox_task = asyncio.create_task(_outbox_sweeper_loop())
+
     arq_worker = None
     worker_task = None
     if _run_worker_in_process():
@@ -269,6 +291,8 @@ async def lifespan(_app: FastAPI):
     try:
         yield
     finally:
+        if outbox_task is not None:
+            outbox_task.cancel()
         if arq_worker is not None:
             try:
                 await arq_worker.close()
@@ -769,7 +793,7 @@ async def health_check(db: Session = Depends(database.get_db)):
 from .routers import (
     admin, admin_overview, alerts, analytics, auth, billing, branding, clients, content, device_diagnostics,
     emergency, enrollment_tokens,
-    groups, placements, playlists, provisioning, releases, screens, screenshots,
+    groups, placements, playlists, provisioning, releases, screens,
     tenant_plans, users, websockets,
 )
 
@@ -802,7 +826,6 @@ app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(websockets.router, prefix="/api/ws", tags=["Websockets"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(emergency.router, prefix="/api/emergency", tags=["Emergency"])
-app.include_router(screenshots.router, prefix="/api/screenshots", tags=["Screenshots"])
 app.include_router(releases.router, prefix="/api/releases", tags=["Releases"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(analytics.router)

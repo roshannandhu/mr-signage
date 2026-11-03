@@ -64,8 +64,6 @@ def get_active_db_keys() -> set[str]:
             add(c.thumbnail)
         for r in db.query(models.MediaRendition).all():
             add(r.file_url)
-        for s in db.query(models.ScreenshotLog).all():
-            add(s.file_url)
         # Workspace logos, the demo video and every release APK, which the loops above miss.
         for stored_url in extra_stored_urls(db):
             add(stored_url)

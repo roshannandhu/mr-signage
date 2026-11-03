@@ -103,6 +103,8 @@ class WatchdogAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val currentPkg = event.packageName?.toString() ?: return
         recordRecentPackage(currentPkg)
+        // Complete Kiosk Release: When Workspace Lock is OFF, watchdog stands down completely.
+        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(applicationContext)) return
         if (!shouldReclaimScreen(currentPkg)) return
         // Stand down while the operator is in maintenance or has just exited, or the watchdog
         // reclaims the player from Settings and the home launcher and they can reach neither.

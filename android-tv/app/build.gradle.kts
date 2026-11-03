@@ -50,7 +50,7 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                quotedBuildConfig(configuredApiBaseUrl.orNull ?: "https://olrac-signage-32lh.onrender.com/")
+                quotedBuildConfig(configuredApiBaseUrl.orNull ?: "https://mr-signage.onrender.com/")
             )
         }
     }

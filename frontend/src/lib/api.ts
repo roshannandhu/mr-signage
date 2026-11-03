@@ -1,10 +1,10 @@
 import { useAuthStore } from './store'
 import type {
-  FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User,
+  FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, TransitionName, User,
   SecurityOverview, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote
 } from './types'
 
-const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
+const PROD_API_URL = 'https://mr-signage.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
 let API_BASE = `${configuredUrl}/api`
 export let API_HOST = configuredUrl
@@ -12,12 +12,12 @@ export let API_HOST = configuredUrl
 if (typeof window !== 'undefined') {
   try {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    if (!isLocalhost && (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1'))) {
-      API_BASE = `${PROD_API_URL}/api`
-      API_HOST = PROD_API_URL
-    } else if (isLocalhost && !process.env.NEXT_PUBLIC_API_URL) {
+    if (isLocalhost) {
       API_BASE = 'http://localhost:8000/api'
       API_HOST = 'http://localhost:8000'
+    } else if (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1')) {
+      API_BASE = `${PROD_API_URL}/api`
+      API_HOST = PROD_API_URL
     }
   } catch {
     // Keep configured value
@@ -84,7 +84,10 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 async function authFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
-  const { token, acting } = useAuthStore.getState()
+  let { token, acting } = useAuthStore.getState()
+  if (!token && typeof window !== 'undefined') {
+    token = localStorage.getItem('token')
+  }
   const headers = new Headers(options.headers)
   if (token) headers.set('Authorization', `Bearer ${token}`)
   // Attached here rather than at each call site so stepping into a workspace reaches every
@@ -233,6 +236,48 @@ export const api = {
   setWorkspaceLockEnabled: (lock_enabled: boolean) =>
     fetchWithAuth<LockEnabled>('/screens/lock-enabled', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lock_enabled }),
+    }),
+  getScreenMaintenancePin: (screenId: number) =>
+    fetchWithAuth<{
+      screen_id: number
+      maintenance_pin?: string | null
+      effective_maintenance_pin: string | null
+      uses_own_pin?: boolean
+      is_inherited: boolean
+      synced_credentials_version: number
+      workspace_credentials_version: number
+    }>(`/screens/${screenId}/maintenance-pin`),
+  setScreenMaintenancePin: (screenId: number, pin: string) =>
+    fetchWithAuth<{
+      screen_id: number
+      maintenance_pin: string
+      effective_maintenance_pin: string
+      is_inherited: boolean
+      credentials_version: number
+    }>(`/screens/${screenId}/maintenance-pin`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin, maintenance_pin: pin }),
+    }),
+  resetScreenMaintenancePin: (screenId: number) =>
+    fetchWithAuth<{
+      screen_id: number
+      maintenance_pin: null
+      effective_maintenance_pin: string | null
+      is_inherited: boolean
+      credentials_version: number
+    }>(`/screens/${screenId}/maintenance-pin`, {
+      method: 'DELETE',
+    }),
+  remoteUnlockScreen: (screenId: number, reason: string) =>
+    fetchWithAuth<{
+      status: string
+      command_id: string
+      expires_at: string
+    }>(`/screens/${screenId}/remote-unlock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
     }),
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
@@ -667,8 +712,6 @@ export const api = {
   cancelEmergencyBroadcast: (data: { target_type: string, target_id: number | null, playlist_id: number }) =>
     fetchWithAuth('/emergency/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }),
     
-  getScreenshots: (screenId: number) => fetchWithAuth<Screenshot[]>(`/screenshots/${screenId}/screenshots`),
-  requestScreenshot: (screenId: number) => fetchWithAuth(`/screenshots/${screenId}/request-screenshot`, { method: 'POST' }),
   bringToFront: (screenId: number) => fetchWithAuth(`/screens/${screenId}/bring-to-front`, { method: 'POST' }),
 
   getCampaigns: () => fetchWithAuth<Campaign[]>('/analytics/campaigns'),
@@ -1011,6 +1054,25 @@ export const adminApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) },
       body: JSON.stringify({ reason }),
+    }),
+
+  generateChallengeResponse: (data: {
+    device_id: string
+    nonce: string
+    admin_password: string
+    reason: string
+  }) =>
+    fetchWithAuth<{
+      device_id: string
+      nonce: string
+      challenge_code: string
+      response_code: string
+      expires_at: string
+      validity_window_seconds: number
+    }>('/admin/security/challenge-response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...reasonHeader(data.reason) },
+      body: JSON.stringify({ ...data, password: data.admin_password }),
     }),
 
   updateSecurityPolicy: (data: { require_super_admin_google_sso: boolean }) =>

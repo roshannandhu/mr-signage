@@ -1,14 +1,9 @@
 """Phase 3.8: an offline TV holds more than one queued command, each for its own hold time.
 
-Before this, queue_device_command wrote a single Redis key per screen (SETEX), so a second
-distinct command overwrote the first instead of queueing alongside it -- an operator who
-pressed "Open app" and then "Screenshot" on the same offline screen only ever delivered
-whichever one synced last. request_screenshot also never queued at all; it only published
-to a live websocket, so an offline screen never got a screenshot it had missed. Pins:
+Pins:
   * two distinct commands queued for the same offline screen both survive to the next sync
   * each command is consumed exactly once -- a second sync has nothing left
   * a command past its own hold time is dropped rather than delivered late
-  * a request-screenshot call on an offline screen is still waiting at the next sync
 """
 import json
 import os
@@ -69,16 +64,17 @@ def run() -> None:
     screen_id = client.get("/api/screens", headers=auth).json()[0]["id"]
 
     # --- two distinct commands queued while the screen is offline both survive --------------
+    from backend.services.screen_telemetry_service import queue_device_command
+    import asyncio
     btf = client.post(f"/api/screens/{screen_id}/bring-to-front", headers=auth)
     check(btf.status_code == 200, f"bring-to-front failed: {btf.status_code} {btf.text}")
-    shot = client.post(f"/api/screenshots/{screen_id}/request-screenshot", headers=auth)
-    check(shot.status_code == 200, f"request-screenshot failed: {shot.status_code} {shot.text}")
+    asyncio.run(queue_device_command(device_id, "check_update"))
 
     sync = client.get(f"/api/screens/{device_id}/sync")
     check(sync.status_code == 200, f"sync failed: {sync.status_code} {sync.text}")
     body = sync.json()
     delivered = set(body.get("pending_commands") or [])
-    check(delivered == {"bring_to_front", "request_screenshot"},
+    check(delivered == {"bring_to_front", "check_update"},
           f"expected both commands queued, got {delivered}")
     check(body.get("pending_command") in delivered, f"pending_command should be one of the queued ones, got {body.get('pending_command')!r}")
 

@@ -413,12 +413,7 @@ export default function ScreensPage() {
                     )}
                     <TableCell className="py-2.5">
                       <div className="bg-muted h-10 w-[72px] overflow-hidden rounded-md">
-                        {screen.latest_screenshot ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs
-                          <img src={screen.latest_screenshot} alt="" className="size-full object-cover" />
-                        ) : (
-                          <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-4" /></div>
-                        )}
+                        <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-4" /></div>
                       </div>
                     </TableCell>
                     <TableCell className="py-2.5">
@@ -485,14 +480,9 @@ export default function ScreensPage() {
                     </>
                   }
                   preview={
-                    screen.latest_screenshot ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- player uploads are arbitrary remote URLs
-                      <img src={screen.latest_screenshot} alt={`What ${label} is showing`} className="size-full object-cover" />
-                    ) : (
-                      <div className="text-muted-foreground/40 grid size-full place-items-center">
-                        <MonitorPlay className="size-9" aria-hidden="true" />
-                      </div>
-                    )
+                    <div className="text-muted-foreground/40 grid size-full place-items-center">
+                      <MonitorPlay className="size-9" aria-hidden="true" />
+                    </div>
                   }
                   badges={<OverlayBadge tone={online ? 'online' : 'offline'}>{online ? 'Online' : 'Offline'}</OverlayBadge>}
                   menu={

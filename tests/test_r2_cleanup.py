@@ -150,43 +150,6 @@ def main() -> None:
             f"deleting content left {len(left)} object(s) in the bucket: {sorted(left)}"
         )
 
-        # --- screenshot pruning must empty the bucket --------------------------------
-        db = SessionLocal()
-        screen = models.Screen(name="Panel", organization_id=org_id,
-                               device_id=f"r2-tv-{uuid.uuid4().hex[:6]}")
-        db.add(screen)
-        db.commit()
-        db.refresh(screen)
-
-        os.environ["SCREENSHOT_KEEP_PER_SCREEN"] = "2"
-        shot_keys = []
-        for index in range(5):
-            key = f"screenshots/{org_id}/{uuid.uuid4().hex}.jpg"
-            s3.put_object(Bucket=BUCKET, Key=key, Body=b"jpeg-bytes")
-            shot_keys.append(key)
-            db.add(models.ScreenshotLog(
-                organization_id=org_id, screen_id=screen.id, file_url=f"s3://{key}",
-            ))
-            db.commit()
-        db.close()
-
-        assert len(keys()) == 5, f"fixture wrong: {keys()}"
-
-        worker.SessionLocal = SessionLocal
-        asyncio.run(worker.prune_screenshots(None))
-
-        remaining = keys()
-        assert len(remaining) == 2, (
-            f"prune kept {len(remaining)} objects, expected 2 "
-            f"(SCREENSHOT_KEEP_PER_SCREEN); the older three were left in the bucket: "
-            f"{sorted(remaining)}"
-        )
-
-        db = SessionLocal()
-        rows = db.query(models.ScreenshotLog).count()
-        db.close()
-        assert rows == 2, f"expected 2 screenshot rows to survive, got {rows}"
-
 
 if __name__ == "__main__":
     main()

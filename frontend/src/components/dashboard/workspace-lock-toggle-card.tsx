@@ -16,6 +16,7 @@ import { api } from '@/lib/api'
 export function WorkspaceLockToggleCard() {
   const queryClient = useQueryClient()
   const lockEnabledQuery = useQuery({ queryKey: ['workspace-lock-enabled'], queryFn: api.getWorkspaceLockEnabled })
+  const lockPinQuery = useQuery({ queryKey: ['workspace-lock-pin'], queryFn: api.getWorkspaceLockPin })
 
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => api.setWorkspaceLockEnabled(enabled),
@@ -28,6 +29,15 @@ export function WorkspaceLockToggleCard() {
 
   if (lockEnabledQuery.isLoading) return null
   const enabled = lockEnabledQuery.data?.lock_enabled ?? false
+  const hasLockPin = Boolean(lockPinQuery.data?.lock_pin)
+
+  const handleToggle = (checked: boolean) => {
+    if (checked && !hasLockPin) {
+      toast.error('A 4-digit Workspace Lock PIN is required before enabling TV lock. Please configure a PIN below.')
+      return
+    }
+    toggle.mutate(checked)
+  }
 
   return (
     <div className="ring-hairline bg-card rounded-2xl p-5 ring-1 sm:p-6">
@@ -52,7 +62,7 @@ export function WorkspaceLockToggleCard() {
             className="peer sr-only"
             checked={enabled}
             disabled={toggle.isPending}
-            onChange={(event) => toggle.mutate(event.target.checked)}
+            onChange={(event) => handleToggle(event.target.checked)}
           />
           <div className="bg-muted peer-checked:bg-primary h-6 w-11 rounded-full transition-colors" />
           <div className="absolute left-1 size-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
@@ -61,6 +71,11 @@ export function WorkspaceLockToggleCard() {
       {!enabled && (
         <p className="text-muted-foreground mt-4 text-xs">
           Locking is disabled. TVs operate normally -- Back and Home work like any other app.
+          {!hasLockPin && (
+            <span className="block mt-1 text-amber-600 dark:text-amber-400 font-medium">
+              Note: You must set a 4-digit Workspace PIN below before turning TV lock ON.
+            </span>
+          )}
         </p>
       )}
     </div>

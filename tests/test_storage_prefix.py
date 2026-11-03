@@ -175,30 +175,13 @@ def test_thumbnail_is_written_where_its_url_points():
     assert "public_upload_url(storage_key)" in source
 
 
-def test_screenshots_land_in_one_place_whichever_backend_is_configured():
-    """Local disk and R2 must file a capture under the same key, or the folder layout
-    changes the day object storage is switched on.
-    """
-    import inspect
-    from backend.routers import screenshots
-
-    source = inspect.getsource(screenshots.upload_device_screenshot)
-    assert source.count('storage_key = ') == 1, (
-        "upload_device_screenshot must build its storage key once and use it in both "
-        "branches; a second assignment is how the two backends drifted apart"
-    )
-    assert 'storage_key = f"{prefix}/{unique_filename}"' in source
-    assert "os.path.join(UPLOAD_DIR, storage_key)" in source
-
-
 def test_hierarchical_storage_prefixes():
-    """Test folder structures for tenant, client ads, general, branding, and screenshots."""
+    """Test folder structures for tenant, client ads, general, and branding."""
     from backend.media_urls import (
         tenant_storage_root,
         client_ads_prefix,
         general_media_prefix,
         branding_storage_prefix,
-        screen_screenshot_prefix,
         mint_media_filename,
     )
 
@@ -217,7 +200,6 @@ def test_hierarchical_storage_prefixes():
     assert client_ads_prefix(org, "Kalyan Jewellers") == "tenants/Roshan-Nandhu-67/clients/Kalyan-Jewellers/ads"
     assert general_media_prefix(org) == "tenants/Roshan-Nandhu-67/general"
     assert branding_storage_prefix(org) == "tenants/Roshan-Nandhu-67/branding"
-    assert screen_screenshot_prefix(org, 57) == "tenants/Roshan-Nandhu-67/screens/57"
 
     # Mint clean filenames
     assert mint_media_filename("Msolar Test.mp4", ".mp4", "65e8b4f7-1234") == "Msolar-Test-65e8b4f7.mp4"

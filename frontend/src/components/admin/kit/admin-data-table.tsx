@@ -156,7 +156,7 @@ export function DataTableSearch({
   const inputId = useId()
 
   return (
-    <div className="relative flex-1 sm:max-w-xs">
+    <div className="relative w-full sm:w-auto sm:max-w-xs min-w-[180px]">
       <label htmlFor={inputId} className="sr-only">
         {ariaLabel}
       </label>
@@ -396,7 +396,7 @@ function DataTableSkeletonRow<TData>({
           <td
             key={col.id}
             className={cn(
-              compact ? 'px-3 py-2.5' : 'p-4',
+              compact ? 'px-2.5 py-2 sm:px-3 sm:py-2.5' : 'p-3 sm:p-4',
               col.hideOnMobile && 'hidden sm:table-cell',
               col.className,
             )}
@@ -467,8 +467,8 @@ export function AdminDataTable<TData>({
       {/* Optional Top Toolbar */}
       {hasToolbar && (
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Left section: Title or Search */}
-          <div className="flex flex-1 flex-wrap items-center gap-3">
+          {/* Left section: Title or Search & Filters */}
+          <div className="flex flex-1 flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5 sm:gap-3">
             {title && (
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 {HeaderIcon && <HeaderIcon className="size-4 text-foreground shrink-0" aria-hidden="true" />}
@@ -521,7 +521,7 @@ export function AdminDataTable<TData>({
                       }
                       className={cn(
                         'text-left font-medium',
-                        compact ? 'px-3 py-2.5' : 'p-4',
+                        compact ? 'px-2.5 py-2 sm:px-3 sm:py-2.5' : 'p-3 sm:p-4',
                         column.align === 'right' && 'text-right',
                         column.align === 'center' && 'text-center',
                         column.hideOnMobile && 'hidden sm:table-cell',
@@ -644,7 +644,7 @@ export function AdminDataTable<TData>({
                           <td
                             key={column.id}
                             className={cn(
-                              compact ? 'px-3 py-2.5' : 'p-4',
+                              compact ? 'px-2.5 py-2 sm:px-3 sm:py-2.5' : 'p-3 sm:p-4',
                               column.align === 'right' && 'text-right',
                               column.align === 'center' && 'text-center',
                               column.hideOnMobile && 'hidden sm:table-cell',

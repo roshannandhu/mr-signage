@@ -30,7 +30,6 @@ import com.olrac.signage.network.RealtimeClient
 import com.olrac.signage.sync.PlaylistSynchronizer
 import com.olrac.signage.sync.SyncBackoffPolicy
 import com.olrac.signage.telemetry.HeartbeatReporter
-import com.olrac.signage.telemetry.ScreenshotManager
 import com.olrac.signage.workers.HeartbeatWorker
 import com.olrac.signage.workers.SyncWorker
 import kotlinx.coroutines.CoroutineScope
@@ -178,11 +177,28 @@ class PlaybackService : Service() {
             }
 
             when {
-                type == "request_screenshot" || command == "request_screenshot" -> ScreenshotManager.requestScreenshot()
                 (type == "launch_app" || type == "bring_to_front" || command == "launch_app" || command == "bring_to_front") -> {
                     // Arrives on the screen AND org sockets for one press; act on it once.
                     if (com.olrac.signage.boot.RemoteLaunchGate.allow()) launchPlayer()
                     else Log.d(TAG, "Ignoring a repeat bring_to_front")
+                }
+                type == "lock_state_changed" -> {
+                    val lockEnabled = msg.optBoolean("lock_enabled", true)
+                    Log.i(TAG, "Received WS lock_state_changed: lock_enabled=$lockEnabled")
+                    MainActivity.onKioskLockChanged(this@PlaybackService, lockEnabled)
+                    emitCommand(ServiceCommandEvent.KioskLockChanged(lockEnabled))
+                }
+                type == "credentials_updated" -> {
+                    Log.i(TAG, "Received WS credentials_updated event; triggering immediate sync")
+                    immediateSyncSignals.trySend(Unit)
+                }
+                command == "remote_unlock" || (type == "device_command" && msg.optString("command") == "remote_unlock") -> {
+                    val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
+                    Log.i(TAG, "Received WS remote_unlock command (id=$commandId)")
+                    getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+                        .edit().putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
+                    emitCommand(ServiceCommandEvent.RemoteUnlock(commandId))
+                    launchPlayer()
                 }
                 type in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") ||
                     command in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") -> {
@@ -433,9 +449,20 @@ class PlaybackService : Service() {
             }
         }
 
+        val commandEvents = kotlinx.coroutines.flow.MutableSharedFlow<ServiceCommandEvent>(extraBufferCapacity = 16)
+
+        fun emitCommand(event: ServiceCommandEvent) {
+            commandEvents.tryEmit(event)
+        }
+
         fun requestImmediateSync(context: Context) {
             val intent = Intent(context, PlaybackService::class.java).setAction(ACTION_SYNC_NOW)
             ContextCompat.startForegroundService(context, intent)
         }
     }
+}
+
+sealed interface ServiceCommandEvent {
+    data class RemoteUnlock(val commandId: String?) : ServiceCommandEvent
+    data class KioskLockChanged(val locked: Boolean) : ServiceCommandEvent
 }

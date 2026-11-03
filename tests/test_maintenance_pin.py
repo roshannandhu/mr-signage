@@ -115,8 +115,9 @@ def run() -> None:
         own, master = pins_sent_to(client, device, device_secrets[device])
         check(own == expected_own,
               f"{device} lost its own PIN when a master was set: {own!r}")
-        check(master == "4821",
-              f"{device} was not given the master code: {master!r}")
+        # Option 1.2: Static master PIN is never sent over the wire to TVs
+        check(master is None,
+              f"{device} was unexpectedly given static master code over the wire: {master!r}")
 
     # --- the tenant sees THEIR code, never the operator's master ---------------------------
     screens = client.get("/api/screens/", headers=owner).json()

@@ -107,13 +107,13 @@ function EnvironmentBadge({ enabled }: { enabled: boolean }) {
   const local = health.data.backend === 'sqlite' || ['localhost', '127.0.0.1', '::1'].includes(host)
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase ${
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 sm:px-2.5 text-[11px] font-semibold tracking-wide uppercase ${
         local ? 'border-border text-muted-foreground' : 'border-red-500/40 text-red-700 dark:text-red-400'
       }`}
       title={local ? 'Connected to a local database' : 'Connected to the production database'}
     >
-      <span className={`size-1.5 rounded-full ${local ? 'bg-muted-foreground' : 'bg-red-500'}`} aria-hidden="true" />
-      {local ? 'Local' : 'Production'}
+      <span className={`size-1.5 rounded-full shrink-0 ${local ? 'bg-muted-foreground' : 'bg-red-500'}`} aria-hidden="true" />
+      <span className="hidden sm:inline">{local ? 'Local' : 'Production'}</span>
     </span>
   )
 }
@@ -292,20 +292,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* min-w-0 so a wide table scrolls itself instead of pushing the page sideways. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/75 sm:px-6">
+          <header className="sticky top-0 z-30 flex h-14 items-center gap-1.5 sm:gap-3 border-b border-border bg-background/90 px-2.5 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-background/75">
             <button
               onClick={() => setNavOpen(true)}
-              className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden"
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground lg:hidden"
               aria-label="Open admin navigation"
             >
               <Menu className="size-5" />
             </button>
 
             <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
-              <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+              <ol className="flex min-w-0 items-center gap-1 text-xs sm:text-sm sm:gap-1.5">
                 {crumbs.map((crumb, index) => (
-                  <li key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1.5">
-                    {index > 0 && <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                  <li key={`${crumb}-${index}`} className="flex min-w-0 items-center gap-1 sm:gap-1.5">
+                    {index > 0 && <ChevronRight className="size-3 sm:size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
                     <span
                       className={`truncate ${index === crumbs.length - 1 ? 'font-medium text-foreground' : 'text-muted-foreground max-sm:hidden'}`}
                       aria-current={index === crumbs.length - 1 ? 'page' : undefined}

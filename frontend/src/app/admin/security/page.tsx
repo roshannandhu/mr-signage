@@ -4,14 +4,19 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  Check,
   CheckCircle,
+  Copy,
   Eye,
   EyeOff,
   Globe,
   Key,
+  KeyRound,
+  Lock,
   LogOut,
   RefreshCw,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Tv,
   Unlock,
@@ -73,6 +78,39 @@ export default function AdminSecurityPage() {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  // Challenge-response state
+  const [challengeModalOpen, setChallengeModalOpen] = useState(false)
+  const [challengeDeviceId, setChallengeDeviceId] = useState('')
+  const [challengeNonce, setChallengeNonce] = useState('')
+  const [challengePassword, setChallengePassword] = useState('')
+  const [challengeReason, setChallengeReason] = useState('')
+  const [copiedChallenge, setCopiedChallenge] = useState(false)
+  const [challengeResult, setChallengeResult] = useState<{
+    device_id: string
+    nonce: string
+    challenge_code: string
+    response_code?: string
+    expires_at: string
+    validity_window_seconds: number
+  } | null>(null)
+
+  const challengeMutation = useMutation({
+    mutationFn: () =>
+      adminApi.generateChallengeResponse({
+        device_id: challengeDeviceId.trim(),
+        nonce: challengeNonce.trim(),
+        admin_password: challengePassword,
+        reason: challengeReason.trim(),
+      }),
+    onSuccess: (res) => {
+      setChallengeResult(res)
+      setChallengePassword('')
+      toast.success('Dynamic challenge-response code generated (audited)')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   const superAdmins = data?.super_admins ?? []
   const recentSignIns = data?.recent_sign_ins ?? []
   const recentUnlocks = data?.recent_kiosk_unlocks ?? []
@@ -116,15 +154,15 @@ export default function AdminSecurityPage() {
         />
       </div>
 
-      {/* Security Policies & Master Maintenance PIN */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Security Policies, Master Maintenance PIN & Dynamic Challenge-Response */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Google SSO Policy Card */}
         <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-6 shadow-sm">
           <div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Globe className="size-5 text-primary" />
-                <h3 className="text-base font-semibold text-foreground">Super Admin Authentication Policy</h3>
+                <h3 className="text-base font-semibold text-foreground">Super Admin Auth Policy</h3>
               </div>
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
@@ -138,22 +176,22 @@ export default function AdminSecurityPage() {
             </div>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
               When enforced, password login attempts by super administrators will be rejected with an immediate 403 Forbidden.
-              Operators must sign in using verified Google Enterprise accounts. (Break-glass CLI: <code className="font-mono text-foreground">seed_admin</code>).
+              Operators must sign in using verified Google Enterprise accounts.
             </p>
           </div>
 
           <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-            <span className="text-xs font-medium text-foreground">Enforce Google SSO for All Super Admins</span>
+            <span className="text-xs font-medium text-foreground">Enforce Google SSO</span>
             <button
               onClick={() => policyMutation.mutate(!data?.require_super_admin_google_sso)}
               disabled={policyMutation.isPending}
-              className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
                 data?.require_super_admin_google_sso
                   ? 'border border-border bg-card text-foreground hover:bg-muted'
                   : 'bg-primary text-primary-foreground hover:bg-primary/90'
               }`}
             >
-              {data?.require_super_admin_google_sso ? 'Disable Policy' : 'Enforce Policy'}
+              {data?.require_super_admin_google_sso ? 'Disable' : 'Enforce'}
             </button>
           </div>
         </div>
@@ -171,13 +209,13 @@ export default function AdminSecurityPage() {
               </span>
             </div>
             <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-              The universal door bypass code used by field engineers on TV remote d-pads when individual screens lack an override PIN.
-              Masked by default to protect on-site display integrity. Every reveal is logged to the immutable audit trail.
+              Universal door bypass code used on remote d-pads when screens lack an override PIN.
+              Masked by default to protect display integrity. Every reveal is logged to the audit trail.
             </p>
           </div>
 
           <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">Master PIN:</span>
               <span className="font-mono text-base font-bold tracking-widest text-foreground">
                 {revealedPin || '••••'}
@@ -190,7 +228,7 @@ export default function AdminSecurityPage() {
                 className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
               >
                 <EyeOff className="size-3.5" />
-                Hide PIN
+                Hide
               </button>
             ) : (
               <button
@@ -198,9 +236,41 @@ export default function AdminSecurityPage() {
                 className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
               >
                 <Eye className="size-3.5" />
-                Unmask PIN (Audited)
+                Unmask PIN
               </button>
             )}
+          </div>
+        </div>
+
+        {/* Dynamic Challenge-Response Unlock Card */}
+        <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="size-5 text-indigo-500" />
+                <h3 className="text-base font-semibold text-foreground">Dynamic Challenge Unlock</h3>
+              </div>
+              <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:text-indigo-400">
+                Option 1.2 HMAC
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              Generate an ephemeral, single-use 6-digit emergency PIN for on-site TV maintenance. The TV computes HMAC-SHA256 from its device nonce without storing any permanent master credentials.
+            </p>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+            <span className="text-xs text-muted-foreground">Zero static device secrets</span>
+            <button
+              onClick={() => {
+                setChallengeResult(null)
+                setChallengeModalOpen(true)
+              }}
+              className="flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 transition"
+            >
+              <KeyRound className="size-3.5" />
+              Generate Code
+            </button>
           </div>
         </div>
       </div>
@@ -469,6 +539,133 @@ export default function AdminSecurityPage() {
                 {revealMutation.isPending ? 'Logging…' : 'Confirm & Reveal'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Challenge-Response Modal (Option 1.2) */}
+      {challengeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="size-5 text-indigo-500" />
+              <h3 className="text-base font-semibold text-foreground">Emergency Dynamic Challenge Generator</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Enter the TV&apos;s Device ID and the 6-character Nonce displayed on screen. A single-use HMAC code will be generated for on-site technician access.
+            </p>
+
+            {challengeResult ? (
+              <div className="mt-5 space-y-4 rounded-xl border border-indigo-500/30 bg-indigo-500/10 p-4 text-center">
+                <span className="text-xs font-medium text-indigo-700 dark:text-indigo-300">Generated 6-Digit Single-Use Bypass Code</span>
+                <div className="flex items-center justify-center gap-3">
+                  <span className="font-mono text-3xl font-extrabold tracking-[0.3em] text-foreground">
+                    {challengeResult.challenge_code || challengeResult.response_code}
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(challengeResult.challenge_code || challengeResult.response_code || '')
+                      setCopiedChallenge(true)
+                      setTimeout(() => setCopiedChallenge(false), 2000)
+                    }}
+                    className="rounded-lg border border-border bg-card p-2 text-muted-foreground hover:text-foreground"
+                    title="Copy Code"
+                  >
+                    {copiedChallenge ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Valid for {challengeResult.validity_window_seconds}s (expires: {new Date(challengeResult.expires_at).toLocaleTimeString()})
+                </p>
+
+                <div className="pt-2">
+                  <button
+                    onClick={() => {
+                      setChallengeModalOpen(false)
+                      setChallengeResult(null)
+                      setChallengeNonce('')
+                    }}
+                    className="w-full rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-foreground">TV Device ID</label>
+                  <input
+                    type="text"
+                    value={challengeDeviceId}
+                    onChange={(e) => setChallengeDeviceId(e.target.value)}
+                    placeholder="e.g. tv_abc12345"
+                    className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 font-mono text-xs text-foreground placeholder:text-muted-foreground focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-foreground">Screen Nonce</label>
+                  <input
+                    type="text"
+                    value={challengeNonce}
+                    onChange={(e) => setChallengeNonce(e.target.value.toUpperCase())}
+                    placeholder="e.g. A1B2C3"
+                    maxLength={16}
+                    className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 font-mono text-xs uppercase tracking-wider text-foreground placeholder:text-muted-foreground focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-foreground">Super Admin Password (Re-authentication)</label>
+                  <input
+                    type="password"
+                    value={challengePassword}
+                    onChange={(e) => setChallengePassword(e.target.value)}
+                    placeholder="Enter your operator password"
+                    className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-foreground">
+                    Operational Reason <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    value={challengeReason}
+                    onChange={(e) => setChallengeReason(e.target.value)}
+                    placeholder="State on-site technician ticket, screen location, or incident..."
+                    rows={2}
+                    className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3 pt-2">
+                  <button
+                    onClick={() => {
+                      setChallengeModalOpen(false)
+                      setChallengePassword('')
+                    }}
+                    className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => challengeMutation.mutate()}
+                    disabled={
+                      !challengeDeviceId.trim() ||
+                      !challengeNonce.trim() ||
+                      !challengePassword ||
+                      !challengeReason.trim() ||
+                      challengeMutation.isPending
+                    }
+                    className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    {challengeMutation.isPending ? 'Calculating…' : 'Generate Emergency PIN'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from './api'
+import { useAuthStore } from './store'
 
 /**
  * The tenant's plan feature flags, for deciding what to SHOW.
@@ -13,7 +14,13 @@ import { api } from './api'
  * summary, so adding this to the nav costs no extra request on any page that also uses it.
  */
 export function usePlanFeatures() {
-  const summaryQuery = useQuery({ queryKey: ['billing-summary'], queryFn: api.getBillingSummary })
+  const token = useAuthStore((state) => state.token)
+  const hasToken = Boolean(token || (typeof window !== 'undefined' && localStorage.getItem('token')))
+  const summaryQuery = useQuery({
+    queryKey: ['billing-summary'],
+    queryFn: api.getBillingSummary,
+    enabled: hasToken,
+  })
   const flags = summaryQuery.data?.plan.feature_flags ?? {}
   // Unknown while loading reads as "has it", so the nav does not flash an item and then hide
   // it a moment later on every page load.

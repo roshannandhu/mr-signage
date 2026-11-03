@@ -220,6 +220,9 @@ ISOLATED_SCRIPTS = {
     "test_screen_auto_playlist.py",
     # Custom bookings cap locations and enforce max screens.
     "test_custom_booking_screen_cap.py",
+    # Hardened PIN management, outbox delivery, device ACKs, and challenge-response.
+    "test_pin_outbox_hardening.py",
+    "test_pin_edge_cases_and_security.py",
 }
 
 # Pure-logic tests: no database, no import-time engine, safe to run in-process.
@@ -261,6 +264,8 @@ PURE_MODULES = {
     "test_limiter_key.py",
     # Names typed by a tenant survive being put into a PDF paragraph.
     "test_report_markup.py",
+    # Dedicated PIN encryption with Fernet, key validation, and tamper resistance.
+    "test_pin_encryption.py",
 }
 
 

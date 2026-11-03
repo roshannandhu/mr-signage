@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, time, timedelta
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from .media_urls import resolve_media_url
@@ -282,11 +282,25 @@ class LockPinUpdate(BaseModel):
     fleet out with an empty code -- the same "blank means unset" the brand name field uses.
     """
 
-    lock_pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$")
+    lock_pin: Optional[str] = None
+
+    @field_validator("lock_pin")
+    @classmethod
+    def validate_pin(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        v = v.strip()
+        if not v:
+            return None
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("Workspace PIN must be exactly 4 digits")
+        return v
 
 
 class LockPinResponse(BaseModel):
     lock_pin: Optional[str] = None
+    has_pin: bool = False
+    credentials_version: int = 0
 
 
 class LockEnabledUpdate(BaseModel):
@@ -317,6 +331,103 @@ class RemoteUnlockResponse(BaseModel):
     queued: bool
 
 
+class ScreenMaintenancePinResponse(BaseModel):
+    screen_id: int
+    device_id: Optional[str] = None
+    device_name: Optional[str] = None
+    maintenance_pin: Optional[str] = None
+    effective_maintenance_pin: Optional[str] = None
+    uses_own_pin: bool
+    is_inherited: bool = True
+    synced_credentials_version: int
+    workspace_credentials_version: int
+
+
+class ScreenMaintenancePinUpdate(BaseModel):
+    pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$", description="4-digit numeric maintenance PIN")
+    maintenance_pin: Optional[str] = Field(default=None, pattern=r"^\d{4}$", description="4-digit numeric maintenance PIN")
+
+    @model_validator(mode="before")
+    @classmethod
+    def reconcile_pin_field(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            p = data.get("pin") or data.get("maintenance_pin")
+            if p:
+                data["pin"] = str(p).strip()
+                data["maintenance_pin"] = str(p).strip()
+        return data
+
+
+class TenantRemoteUnlockResponse(BaseModel):
+    queued: bool
+    command_id: str
+    screen_id: int
+    device_id: Optional[str] = None
+    expires_at: str
+
+
+class DeviceCommandAckRequest(BaseModel):
+    status: str = Field(..., description="EXECUTED, FAILED, or EXPIRED")
+    error: Optional[str] = None
+    executed_at: Optional[int] = None
+
+
+class DeviceCommandAckResponse(BaseModel):
+    acknowledged: bool
+    command_id: str
+    status: str
+
+
+class DeviceChallengeRequest(BaseModel):
+    nonce: Optional[str] = None
+
+
+class DeviceChallengeResponse(BaseModel):
+    device_id: str
+    nonce: str
+    expires_at: str
+
+
+class AdminChallengeResponseIn(BaseModel):
+    device_id: str
+    nonce: str
+    reason: str = Field(..., min_length=3)
+    password: Optional[str] = None
+    admin_password: Optional[str] = None
+
+    @model_validator(mode="after")
+    def check_password(self):
+        pw = self.password or self.admin_password
+        if not pw:
+            raise ValueError("password confirmation is required")
+        self.password = pw
+        return self
+
+
+class AdminChallengeResponseOut(BaseModel):
+    device_id: str
+    response_code: str
+    challenge_code: Optional[str] = None
+    expires_at: str
+    validity_window_seconds: int = 300
+
+    @model_validator(mode="after")
+    def populate_challenge_code(self):
+        if not self.challenge_code:
+            self.challenge_code = self.response_code
+        return self
+
+
+class DeviceVerifyChallengeIn(BaseModel):
+    nonce: str
+    response_code: str
+
+
+class DeviceVerifyChallengeOut(BaseModel):
+    verified: bool
+    message: str
+
+
 class ScreenResponse(ScreenBase):
     id: int
     pair_code: Optional[str]
@@ -328,9 +439,6 @@ class ScreenResponse(ScreenBase):
     # null rather than leaking a credential into the fleet list.
     device_secret: Optional[str] = None
     orientation_source: str = "auto"
-    # Newest capture, attached by the list endpoint so the fleet grid can show a live
-    # thumbnail without a request per card.
-    latest_screenshot: Optional[str] = None
     # Update state, so the dashboard can monitor a rollout instead of guessing.
     # app_version above is what the TV reports it is actually running.
     target_version_code: Optional[int] = None
@@ -908,6 +1016,9 @@ class SyncResponse(BaseModel):
     # itself. True does not by itself mean "locked right now"; maintenance_pin above still
     # carries the code that actually opens it.
     kiosk_lock: bool = True
+    credentials_version: int = 0
+    credentials_action: str = "NONE"
+    durable_commands: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class PlanResponse(BaseModel):

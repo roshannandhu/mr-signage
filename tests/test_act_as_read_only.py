@@ -57,7 +57,7 @@ PURE_COMPUTATION_ROUTES = {
 }
 # Routers with no TenantScope at all -- TV/device credentials or platform-admin-only --
 # which this sweep (tenant-dashboard writes) does not apply to.
-EXCLUDED_ROUTERS = {"admin.py", "auth.py", "device_diagnostics.py", "screenshots.py", "websockets.py"}
+EXCLUDED_ROUTERS = {"admin.py", "auth.py", "device_diagnostics.py", "websockets.py"}
 # billing.py's writes use get_tenant_scope/get_billing_scope directly (so a pending_approval
 # workspace can still pay its way in) rather than require_tenant_roles; each calls
 # scope.require_write_access() by hand instead. Verified by name below.

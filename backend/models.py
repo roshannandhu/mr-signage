@@ -7,6 +7,7 @@ from sqlalchemy.orm import relationship, backref
 from sqlalchemy.types import TypeDecorator
 
 from .database import Base
+from .pin_crypto import encrypt_pin
 
 
 def utcnow() -> datetime:
@@ -122,7 +123,8 @@ class Organization(Base):
     # behaviour, unchanged until an owner opts into a shared one. A screen can still opt
     # out per-TV (Screen.uses_own_pin) for a panel that needs a different code, a lobby
     # display a cleaner also has to open, say, without handing them the whole fleet's PIN.
-    lock_pin = Column(String(4), nullable=True)
+    lock_pin = Column(String(255), nullable=True)
+    credentials_version = Column(Integer, nullable=False, default=0, server_default="0")
     # The tenant's own on/off switch for the lock -- separate from whether their PLAN
     # includes the feature at all (plan_features(plan)["kiosk_lock"]). Defaults off: a
     # tenant whose plan just started selling TV lock is not retroactively trapped on
@@ -388,19 +390,6 @@ class User(Base):
         return self.organization.status
 
 
-class ScreenshotLog(Base):
-    __tablename__ = "screenshot_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
-    screen_id = Column(Integer, ForeignKey("screens.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_url = Column(String, nullable=False)
-    created_at = Column(UtcDateTime, nullable=False, default=utcnow)
-    
-    screen = relationship("Screen", back_populates="screenshots")
-    organization = relationship("Organization")
-
-
 class ScreenGroup(Base):
     __tablename__ = "screen_groups"
 
@@ -475,8 +464,9 @@ class Screen(Base):
     # the player caches it locally because the screen exists to fix connectivity and
     # must therefore work with the server unreachable.
     maintenance_pin = Column(
-        String, nullable=False, default=lambda: f"{secrets.randbelow(10000):04d}"
+        String(255), nullable=False, default=lambda: encrypt_pin(f"{secrets.randbelow(10000):04d}")
     )
+    synced_credentials_version = Column(Integer, nullable=False, default=0, server_default="0")
     # True keeps this one screen on its own maintenance_pin even when the workspace has set
     # a shared lock PIN -- see effective_maintenance_pin, the only place that reads this
     # alongside Organization.lock_pin. Defaults false so setting a workspace PIN immediately
@@ -545,7 +535,6 @@ class Screen(Base):
     playlist = relationship("Playlist", back_populates="screens")
     group = relationship("ScreenGroup", back_populates="screens")
     organization = relationship("Organization", back_populates="screens")
-    screenshots = relationship("ScreenshotLog", back_populates="screen", cascade="all, delete-orphan")
 
     def resolve_playlist_id(self, groups=None):
         """The playlist this screen is configured to play, or None.
@@ -1406,4 +1395,57 @@ class TenantNote(Base):
     body = Column(Text, nullable=False)
     pinned = Column(Boolean, nullable=False, default=False)
     created_at = Column(UtcDateTime, nullable=False, default=utcnow)
+
+
+class OutboxEvent(Base):
+    """Transactional outbox event for reliable, ordered, at-least-once push delivery."""
+    __tablename__ = "outbox_events"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
+    channel = Column(String(100), nullable=False, index=True)
+    event_type = Column(String(50), nullable=False)
+    payload_json = Column(Text, nullable=False)
+    status = Column(String(20), nullable=False, default="PENDING", index=True)  # PENDING, DELIVERED, DEAD_LETTER
+    retry_count = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(UtcDateTime, nullable=False, default=utcnow)
+    processed_at = Column(UtcDateTime, nullable=True)
+
+
+class DeviceCommandLog(Base):
+    """Tracks physical execution lifecycle and acknowledgments of remote device commands."""
+    __tablename__ = "device_command_logs"
+
+    id = Column(String(36), primary_key=True)  # UUID
+    device_id = Column(String(100), nullable=False, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    screen_id = Column(Integer, ForeignKey("screens.id", ondelete="SET NULL"), nullable=True, index=True)
+    command = Column(String(50), nullable=False)
+    params_json = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False, default="PENDING", index=True)  # PENDING, DELIVERED, EXECUTED, FAILED, EXPIRED
+    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_username = Column(String(150), nullable=True)
+    created_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
+    expires_at = Column(UtcDateTime, nullable=False, index=True)
+    executed_at = Column(UtcDateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    organization = relationship("Organization")
+    screen = relationship("Screen")
+    actor_user = relationship("User")
+
+
+class DeviceChallenge(Base):
+    """Ephemeral challenge nonce for Super Admin emergency on-site unlock."""
+    __tablename__ = "device_challenges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(String(100), nullable=False, index=True)
+    nonce = Column(String(32), nullable=False, index=True)
+    response_code = Column(String(64), nullable=False)
+    expires_at = Column(UtcDateTime, nullable=False, index=True)
+    used = Column(Boolean, nullable=False, default=False, server_default="false")
+    created_at = Column(UtcDateTime, nullable=False, default=utcnow)
+
 

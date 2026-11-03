@@ -76,11 +76,6 @@ def branding_storage_prefix(organization) -> str:
     return f"{tenant_storage_root(organization)}/branding"
 
 
-def screen_screenshot_prefix(organization, screen_id: int | str) -> str:
-    """Folder prefix for screen screenshots: 'tenants/<Tenant-Name>-<org_id>/screens/<screen_id>'."""
-    return f"{tenant_storage_root(organization)}/screens/{screen_id}"
-
-
 def mint_media_filename(original_name: str | None, ext: str, unique_stem: str) -> str:
     """Combine clean media name with short unique hash, e.g. 'Msolar_Ad-65e8b4f7.mp4'."""
     short_hash = unique_stem.split("-")[0] if "-" in unique_stem else unique_stem[:8]
@@ -282,7 +277,7 @@ def media_base_url() -> str:
     public_host = os.getenv("PUBLIC_HOST", "").strip()
     if public_host and not ("127.0.0.1" in public_host or "localhost" in public_host):
         return f"http://{public_host}:{os.getenv('PORT', '8010')}"
-    return "https://olrac-signage-32lh.onrender.com"
+    return "https://mr-signage.onrender.com"
 
 
 def resolve_media_url(value: str | None) -> str | None:
@@ -314,7 +309,7 @@ def resolve_media_url(value: str | None) -> str | None:
 def delete_stored_file(stored_url: str | None, upload_dir: str) -> bool:
     """Remove the local file a stored location points at. Returns True if it went.
 
-    Shared by content deletion, screenshot retention and the orphan sweep so the
+    Shared by content deletion and the orphan sweep so the
     path-escape guard exists once. A stored value is attacker-influenced in principle, so
     the resolved path must still sit inside the uploads root — otherwise a crafted
     "/uploads/../../etc/passwd" would delete outside it.

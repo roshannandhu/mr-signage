@@ -27,11 +27,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from backend import database, models  # noqa: E402
 from backend.main import app  # noqa: E402
-from backend.routers import screenshots  # noqa: E402
 from backend.routers.auth import create_access_token, get_password_hash  # noqa: E402
 
 models.Base.metadata.create_all(bind=database.engine)
-screenshots.UPLOAD_DIR = _uploads.name  # never write into the real uploads folder
 
 FAILURES: list[str] = []
 
@@ -48,31 +46,10 @@ def run() -> None:
     db.flush()
     db.add(models.User(organization_id=org.id, username="owner", email="ow@x.t",
                        hashed_password=get_password_hash("x"), role="owner", is_active=True))
-    screen = models.Screen(organization_id=org.id, device_id="tv-s", status="online")
-    db.add(screen)
-    db.flush()
-    from backend.services import issue_device_secret
-    secret = issue_device_secret(screen)
     db.commit()
     db.close()
 
     client = TestClient(app)
-    url = "/api/screenshots/device/tv-s/screenshot"
-    # The upload route requires a bearer token from the screen, legacy auth or not.
-    token = client.post("/api/screens/auth", json={"device_id": "tv-s", "device_secret": secret}).json()["access_token"]
-    device = {"Authorization": f"Bearer {token}"}
-
-    # --- only images ------------------------------------------------------------------------
-    for name, mime in (("x.html", "text/html"), ("x.svg", "image/svg+xml"), ("x.js", "text/javascript")):
-        refused = client.post(url, headers=device, files={"file": (name, b"<script>alert(1)</script>", mime)})
-        check(refused.status_code == 415, f"{name} was accepted as a screenshot ({refused.status_code})")
-
-    for name, mime in (("shot.jpg", "image/jpeg"), ("shot.PNG", "image/png"), ("shot.webp", "image/webp")):
-        accepted = client.post(url, headers=device, files={"file": (name, b"\xff\xd8\xff fake image bytes", mime)})
-        check(accepted.status_code == 200, f"{name} was refused ({accepted.status_code}): {accepted.text[:120]}")
-
-    nothing_stored_for_html = [p for p in pathlib.Path(_uploads.name).rglob("*.html")]
-    check(not nothing_stored_for_html, f"an .html file reached the uploads folder: {nothing_stored_for_html}")
 
     # --- email-status -----------------------------------------------------------------------
     check(client.get("/api/placements/email-status").status_code == 401,
@@ -98,4 +75,4 @@ if __name__ == "__main__":
         for failure in FAILURES:
             print("  -", failure)
         sys.exit(1)
-    print("OK - screenshots must be images, and email-status is signed-in and does not crash")
+    print("OK - email-status is signed-in and does not crash")

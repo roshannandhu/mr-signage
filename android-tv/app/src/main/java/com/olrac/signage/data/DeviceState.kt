@@ -144,8 +144,17 @@ class DeviceState(context: Context) {
     val maintenancePin: String
         get() = preferences.getString(KEY_MAINTENANCE_PIN, null) ?: DEFAULT_MAINTENANCE_PIN
 
-    fun setMaintenancePin(pin: String) {
-        preferences.edit().putString(KEY_MAINTENANCE_PIN, pin).commit()
+    fun setMaintenancePin(pin: String?) {
+        preferences.edit().apply {
+            if (pin.isNullOrBlank()) remove(KEY_MAINTENANCE_PIN) else putString(KEY_MAINTENANCE_PIN, pin)
+        }.commit()
+    }
+
+    val credentialsVersion: Int
+        get() = preferences.getInt(KEY_CREDENTIALS_VERSION, 0)
+
+    fun setCredentialsVersion(version: Int) {
+        preferences.edit().putInt(KEY_CREDENTIALS_VERSION, version).commit()
     }
 
     /**
@@ -273,6 +282,7 @@ class DeviceState(context: Context) {
         const val KEY_SCREEN_NAME = "screen_name"
         const val KEY_API_BASE_URL = "api_base_url"
         const val KEY_MAINTENANCE_PIN = "maintenance_pin"
+        const val KEY_CREDENTIALS_VERSION = "credentials_version"
         const val KEY_MASTER_PIN = "master_pin"
         const val KEY_DEVICE_SECRET = "device_secret"
         const val KEY_OPERATING_MODE = "operating_mode"
