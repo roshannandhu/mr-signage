@@ -721,8 +721,15 @@ export interface ScreenUpdateResult {
 export interface FleetScreen {
   id: number
   name: string | null
+  device_id?: string | null
   organization_id: number
   organization_name: string
+  location?: string | null
+  latitude?: number | null
+  longitude?: number | null
+  model?: string | null
+  device_owner?: boolean
+  has_device_secret?: boolean
   online: boolean
   app_version: string | null
   target_version_code: number | null

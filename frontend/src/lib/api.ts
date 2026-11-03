@@ -958,5 +958,47 @@ export const adminApi = {
       headers: { 'Content-Type': 'application/json', ...reasonHeader(options.reason) },
       body: JSON.stringify({ role, confirm_username: options.confirmUsername }),
     }),
+
+  // Screen commands & bulk commands
+  sendScreenCommand: (
+    screenId: number,
+    data: { command: string; reason?: string; ttl_seconds?: number },
+  ) =>
+    fetchWithAuth<{ screen_id: number; command: string; queued: boolean }>(`/admin/screens/${screenId}/commands`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...reasonHeader(data.reason) },
+      body: JSON.stringify(data),
+    }),
+
+  sendBulkScreenCommands: (data: {
+    screen_ids: number[]
+    command: string
+    reason?: string
+    ttl_seconds?: number
+  }) =>
+    fetchWithAuth<{
+      command: string
+      total: number
+      queued_count: number
+      results: Array<{ screen_id: number; command: string; queued: boolean }>
+    }>('/admin/screens/bulk-commands', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...reasonHeader(data.reason) },
+      body: JSON.stringify(data),
+    }),
+
+  // Tenant-specific provisioning QR
+  generateTenantProvisioningQr: (
+    orgId: number,
+    data: { wifi_ssid: string; wifi_password?: string; wifi_security?: string },
+  ) =>
+    fetchWithAuth<{ qr_base64: string; token: string; expires_at: string; instructions: string }>(
+      `/admin/tenants/${orgId}/provisioning/qr`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      },
+    ),
 }
 

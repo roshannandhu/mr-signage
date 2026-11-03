@@ -1817,8 +1817,15 @@ def reject_custom_request(
 class FleetScreenOut(BaseModel):
     id: int
     name: Optional[str] = None
+    device_id: Optional[str] = None
     organization_id: int
     organization_name: str
+    location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    model: Optional[str] = None
+    device_owner: bool = False
+    has_device_secret: bool = False
     online: bool
     app_version: Optional[str] = None
     # A pinned build (canary ring); null means the screen follows the global released build.
@@ -1892,8 +1899,15 @@ def fleet_overview(
             FleetScreenOut(
                 id=screen.id,
                 name=screen.name,
+                device_id=screen.device_id,
                 organization_id=screen.organization_id,
                 organization_name=org_names.get(screen.organization_id, "—"),
+                location=screen.location,
+                latitude=screen.latitude,
+                longitude=screen.longitude,
+                model=screen.model,
+                device_owner=bool(screen.device_owner),
+                has_device_secret=bool(screen.device_secret_hash),
                 online=is_online,
                 app_version=screen.app_version,
                 target_version_code=screen.target_version_code,
@@ -1919,6 +1933,164 @@ def fleet_overview(
         screens=rows,
         legacy_device_auth=legacy_device_auth_allowed(),
         screens_without_secret=screens_without_secret(db),
+    )
+
+
+# ------------------------------------------------------------------ screen commands
+
+ALLOWED_SCREEN_COMMANDS = {"check_update", "bring_to_front", "request_screenshot", "remote_unlock"}
+
+
+class ScreenCommandIn(BaseModel):
+    command: str = Field(..., description="One of: check_update, bring_to_front, request_screenshot, remote_unlock")
+    ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
+    reason: Optional[str] = None
+
+
+class ScreenCommandOut(BaseModel):
+    screen_id: int
+    command: str
+    queued: bool
+
+
+class BulkScreenCommandIn(BaseModel):
+    screen_ids: List[int] = Field(..., max_items=100)
+    command: str = Field(..., description="One of: check_update, bring_to_front, request_screenshot, remote_unlock")
+    ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
+    reason: Optional[str] = None
+
+
+class BulkScreenCommandOut(BaseModel):
+    command: str
+    total: int
+    queued_count: int
+    results: List[ScreenCommandOut]
+
+
+@router.post("/screens/{screen_id}/commands", response_model=ScreenCommandOut)
+async def send_screen_command(
+    screen_id: int,
+    req: ScreenCommandIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    if req.command not in ALLOWED_SCREEN_COMMANDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Command '{req.command}' not supported. Allowed: {sorted(ALLOWED_SCREEN_COMMANDS)}",
+        )
+
+    screen = db.query(models.Screen).filter(models.Screen.id == screen_id).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="This screen has not paired yet")
+
+    from ..services import queue_device_command
+
+    queued = await queue_device_command(screen.device_id, req.command, ttl_seconds=req.ttl_seconds)
+
+    if req.command == "remote_unlock":
+        db.add(
+            models.KioskUnlockEvent(
+                organization_id=screen.organization_id,
+                screen_id=screen.id,
+                method="remote",
+                success=True,
+                actor_user_id=scope.user.id,
+            )
+        )
+
+    org = db.query(models.Organization).filter(models.Organization.id == screen.organization_id).first()
+    _audit(
+        db,
+        scope,
+        request,
+        f"screen.command.{req.command}",
+        org=org,
+        target_type="screen",
+        target_id=screen.id,
+        after={"command": req.command, "queued": queued, "reason": req.reason},
+    )
+    db.commit()
+
+    logger.info(
+        "Screen command '%s' queued for screen %s (org %s) by %s (queued=%s)",
+        req.command,
+        screen.id,
+        screen.organization_id,
+        scope.user.username,
+        queued,
+    )
+    return ScreenCommandOut(screen_id=screen.id, command=req.command, queued=queued)
+
+
+@router.post("/screens/bulk-commands", response_model=BulkScreenCommandOut)
+async def send_bulk_screen_commands(
+    req: BulkScreenCommandIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    if req.command not in ALLOWED_SCREEN_COMMANDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Command '{req.command}' not supported. Allowed: {sorted(ALLOWED_SCREEN_COMMANDS)}",
+        )
+    if not req.screen_ids:
+        raise HTTPException(status_code=422, detail="No screen IDs provided")
+
+    from ..services import queue_device_command
+
+    screens = db.query(models.Screen).filter(models.Screen.id.in_(req.screen_ids)).all()
+    screen_map = {s.id: s for s in screens}
+
+    results: List[ScreenCommandOut] = []
+    queued_count = 0
+
+    for sid in req.screen_ids:
+        sc = screen_map.get(sid)
+        if not sc or not sc.device_id:
+            results.append(ScreenCommandOut(screen_id=sid, command=req.command, queued=False))
+            continue
+
+        q = await queue_device_command(sc.device_id, req.command, ttl_seconds=req.ttl_seconds)
+        if q:
+            queued_count += 1
+        if req.command == "remote_unlock":
+            db.add(
+                models.KioskUnlockEvent(
+                    organization_id=sc.organization_id,
+                    screen_id=sc.id,
+                    method="remote",
+                    success=True,
+                    actor_user_id=scope.user.id,
+                )
+            )
+        results.append(ScreenCommandOut(screen_id=sid, command=req.command, queued=q))
+
+    _audit(
+        db,
+        scope,
+        request,
+        f"screen.bulk_command.{req.command}",
+        target_type="screen_batch",
+        target_id=None,
+        after={
+            "command": req.command,
+            "target_count": len(req.screen_ids),
+            "queued_count": queued_count,
+            "reason": req.reason,
+        },
+    )
+    db.commit()
+
+    return BulkScreenCommandOut(
+        command=req.command,
+        total=len(req.screen_ids),
+        queued_count=queued_count,
+        results=results,
     )
 
 
