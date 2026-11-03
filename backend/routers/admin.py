@@ -20,7 +20,7 @@ import shutil
 import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
@@ -1954,7 +1954,7 @@ class ScreenCommandOut(BaseModel):
 
 
 class BulkScreenCommandIn(BaseModel):
-    screen_ids: List[int] = Field(..., max_items=100)
+    screen_ids: List[int] = Field(..., max_length=100)
     command: str = Field(..., description="One of: check_update, bring_to_front, request_screenshot, remote_unlock")
     ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
     reason: Optional[str] = None
@@ -2421,3 +2421,630 @@ def send_test_email(
     _audit(scope.db, scope, request, "platform.test_email.send", target_type="email", after={"to": to})
     scope.db.commit()
     return {"status": "sent", "to": to}
+
+
+
+# ------------------------------------------------------------------ Phase E: Trust & Security
+
+class SignOutEverywhereOut(BaseModel):
+    status: str
+    user_id: int
+    token_version: int
+
+
+@router.post("/users/{user_id}/sign-out-everywhere", response_model=SignOutEverywhereOut)
+def sign_out_everywhere(
+    user_id: int,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Revoke all active sessions for a user by incrementing their token_version."""
+    target_user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target_user.token_version = (target_user.token_version or 0) + 1
+    _audit(
+        db,
+        scope,
+        request,
+        "user.sign_out_everywhere",
+        target_type="user",
+        target_id=target_user.id,
+        after={"token_version": target_user.token_version, "username": target_user.username},
+    )
+    db.commit()
+    logger.info("User %s (id %s) signed out everywhere by %s (new token_version: %s)", target_user.username, target_user.id, scope.user.username, target_user.token_version)
+    return SignOutEverywhereOut(
+        status="ok",
+        user_id=target_user.id,
+        token_version=target_user.token_version,
+    )
+
+
+class SecurityAdminItem(BaseModel):
+    id: int
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    auth_provider: str = "local"
+    token_version: int = 0
+    last_login_at: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class AuthEventItem(BaseModel):
+    id: int
+    user_id: Optional[int] = None
+    attempted_username: str
+    success: bool
+    method: str
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    occurred_at: Optional[str] = None
+
+
+class KioskUnlockItem(BaseModel):
+    id: int
+    screen_id: int
+    organization_id: int
+    method: str
+    success: bool
+    actor_user_id: Optional[int] = None
+    occurred_at: Optional[str] = None
+
+
+class SecurityOverviewOut(BaseModel):
+    super_admins: List[SecurityAdminItem]
+    recent_sign_ins: List[AuthEventItem]
+    recent_kiosk_unlocks: List[KioskUnlockItem]
+    act_as_events: List[Dict[str, Any]]
+    require_super_admin_google_sso: bool
+    legacy_device_auth: bool
+    screens_without_secret: int
+
+
+@router.get("/security/overview", response_model=SecurityOverviewOut)
+def get_security_overview(
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    super_admins = db.query(models.User).filter(models.User.role == "super_admin").all()
+    admin_items = [
+        SecurityAdminItem(
+            id=u.id,
+            username=u.username,
+            email=u.email,
+            full_name=u.full_name,
+            auth_provider=u.auth_provider,
+            token_version=u.token_version or 0,
+            last_login_at=_iso(u.last_login_at),
+            created_at=_iso(u.created_at),
+        )
+        for u in super_admins
+    ]
+
+    auth_events = db.query(models.AuthEvent).order_by(models.AuthEvent.id.desc()).limit(50).all()
+    auth_items = [
+        AuthEventItem(
+            id=e.id,
+            user_id=e.user_id,
+            attempted_username=e.attempted_username,
+            success=e.success,
+            method=e.method,
+            ip=e.ip,
+            user_agent=e.user_agent,
+            occurred_at=_iso(e.occurred_at),
+        )
+        for e in auth_events
+    ]
+
+    unlocks = db.query(models.KioskUnlockEvent).order_by(models.KioskUnlockEvent.id.desc()).limit(30).all()
+    unlock_items = [
+        KioskUnlockItem(
+            id=u.id,
+            screen_id=u.screen_id,
+            organization_id=u.organization_id,
+            method=u.method,
+            success=u.success,
+            actor_user_id=u.actor_user_id,
+            occurred_at=_iso(u.created_at),
+        )
+        for u in unlocks
+    ]
+
+    act_as = (
+        db.query(models.AdminAuditEvent)
+        .filter(models.AdminAuditEvent.action.like("act_as%"))
+        .order_by(models.AdminAuditEvent.id.desc())
+        .limit(20)
+        .all()
+    )
+    act_as_items = [
+        {
+            "id": a.id,
+            "occurred_at": _iso(a.occurred_at),
+            "actor_username": a.actor_username,
+            "target_org_id": a.target_org_id,
+            "action": a.action,
+            "reason": a.reason,
+            "ip": a.ip,
+        }
+        for a in act_as
+    ]
+
+    sso_setting = (
+        db.query(models.SystemSetting)
+        .filter(models.SystemSetting.key == "require_super_admin_google_sso")
+        .first()
+    )
+    require_sso = sso_setting.value == "true" if sso_setting else False
+
+    return SecurityOverviewOut(
+        super_admins=admin_items,
+        recent_sign_ins=auth_items,
+        recent_kiosk_unlocks=unlock_items,
+        act_as_events=act_as_items,
+        require_super_admin_google_sso=require_sso,
+        legacy_device_auth=legacy_device_auth_allowed(),
+        screens_without_secret=screens_without_secret(db),
+    )
+
+
+class RevealPinIn(BaseModel):
+    reason: str = Field(..., min_length=3, description="Operational reason for unmasking the master maintenance PIN")
+
+
+@router.post("/security/maintenance-pin/reveal")
+def reveal_maintenance_pin(
+    req: RevealPinIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Reveal the master maintenance PIN. Level-2 confirmation: every reveal is audited."""
+    from .screens import UNIVERSAL_PIN_KEY
+
+    setting = db.query(models.SystemSetting).filter(models.SystemSetting.key == UNIVERSAL_PIN_KEY).first()
+    pin = setting.value if setting else "1234"
+
+    _audit(
+        db,
+        scope,
+        request,
+        "security.maintenance_pin.reveal",
+        target_type="system_setting",
+        target_id=UNIVERSAL_PIN_KEY,
+        after={"action": "revealed", "reason": req.reason},
+    )
+    db.commit()
+    return {"pin": pin, "revealed_at": _iso(models.utcnow())}
+
+
+class SecurityPolicyIn(BaseModel):
+    require_super_admin_google_sso: bool
+
+
+@router.put("/security/policy")
+def update_security_policy(
+    req: SecurityPolicyIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    setting = (
+        db.query(models.SystemSetting)
+        .filter(models.SystemSetting.key == "require_super_admin_google_sso")
+        .first()
+    )
+    val_str = "true" if req.require_super_admin_google_sso else "false"
+    if not setting:
+        setting = models.SystemSetting(
+            key="require_super_admin_google_sso",
+            value=val_str,
+            description="Whether super administrators must authenticate using Google SSO",
+        )
+        db.add(setting)
+    else:
+        setting.value = val_str
+
+    _audit(
+        db,
+        scope,
+        request,
+        "security.policy.update",
+        target_type="system_setting",
+        target_id="require_super_admin_google_sso",
+        after={"require_super_admin_google_sso": req.require_super_admin_google_sso},
+    )
+    db.commit()
+    return {"status": "ok", "require_super_admin_google_sso": req.require_super_admin_google_sso}
+
+
+# ------------------------------------------------------------------ System Settings (Phase E §4.18)
+
+class SystemSettingsOut(BaseModel):
+    contact_email: Optional[str] = None
+    audit_retention_days: int = 90
+    require_super_admin_google_sso: bool = False
+    demo_video_url: Optional[str] = None
+    attention_offline_screen_hours: int = 24
+    attention_expiring_plan_days: int = 7
+    attention_storage_percent: int = 90
+
+
+class SystemSettingsIn(BaseModel):
+    contact_email: Optional[str] = None
+    audit_retention_days: Optional[int] = Field(default=90, ge=7, le=365)
+    require_super_admin_google_sso: Optional[bool] = False
+    demo_video_url: Optional[str] = None
+    attention_offline_screen_hours: Optional[int] = Field(default=24, ge=1, le=168)
+    attention_expiring_plan_days: Optional[int] = Field(default=7, ge=1, le=30)
+    attention_storage_percent: Optional[int] = Field(default=90, ge=50, le=99)
+
+
+@router.get("/settings", response_model=SystemSettingsOut)
+def get_system_settings(
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    settings = {s.key: s.value for s in db.query(models.SystemSetting).all()}
+    return SystemSettingsOut(
+        contact_email=settings.get("contact_email"),
+        audit_retention_days=int(settings.get("audit_retention_days", 90)),
+        require_super_admin_google_sso=settings.get("require_super_admin_google_sso") == "true",
+        demo_video_url=settings.get(DEMO_VIDEO_KEY, DEFAULT_DEMO_VIDEO),
+        attention_offline_screen_hours=int(settings.get("attention_offline_screen_hours", 24)),
+        attention_expiring_plan_days=int(settings.get("attention_expiring_plan_days", 7)),
+        attention_storage_percent=int(settings.get("attention_storage_percent", 90)),
+    )
+
+
+@router.put("/settings", response_model=SystemSettingsOut)
+def update_system_settings(
+    req: SystemSettingsIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    updates = {}
+    if req.contact_email is not None:
+        updates["contact_email"] = req.contact_email.strip()
+    if req.audit_retention_days is not None:
+        updates["audit_retention_days"] = str(req.audit_retention_days)
+    if req.require_super_admin_google_sso is not None:
+        updates["require_super_admin_google_sso"] = "true" if req.require_super_admin_google_sso else "false"
+    if req.demo_video_url is not None:
+        updates[DEMO_VIDEO_KEY] = req.demo_video_url.strip()
+    if req.attention_offline_screen_hours is not None:
+        updates["attention_offline_screen_hours"] = str(req.attention_offline_screen_hours)
+    if req.attention_expiring_plan_days is not None:
+        updates["attention_expiring_plan_days"] = str(req.attention_expiring_plan_days)
+    if req.attention_storage_percent is not None:
+        updates["attention_storage_percent"] = str(req.attention_storage_percent)
+
+    for k, v in updates.items():
+        row = db.query(models.SystemSetting).filter(models.SystemSetting.key == k).first()
+        if not row:
+            db.add(models.SystemSetting(key=k, value=v))
+        else:
+            row.value = v
+
+    _audit(
+        db,
+        scope,
+        request,
+        "platform.settings.update",
+        target_type="system_settings",
+        target_id=None,
+        after=updates,
+    )
+    db.commit()
+
+    return get_system_settings(scope=scope, db=db)
+
+
+# ------------------------------------------------------------------ Support Center & Attention Queue (Phase F §4.17)
+
+class AttentionItem(BaseModel):
+    id: str
+    rule: str
+    severity: str  # "critical" | "warning" | "info"
+    title: str
+    why: str
+    suggested_action: str
+    action_href: str
+    organization_id: Optional[int] = None
+    organization_name: Optional[str] = None
+    target_id: Optional[str] = None
+    created_at: str
+
+
+class DismissAttentionIn(BaseModel):
+    rule: str
+    target_id: Optional[str] = None
+    organization_id: Optional[int] = None
+    action: str = Field(..., description="'snooze' or 'resolve'")
+    snooze_hours: Optional[int] = 24
+
+
+@router.get("/support/attention-queue", response_model=List[AttentionItem])
+def get_attention_queue(
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    now = models.utcnow()
+    # Read active dismissals
+    dismissals = db.query(models.AttentionDismissal).all()
+    active_dismissals = set()
+    for d in dismissals:
+        if d.resolved:
+            active_dismissals.add(f"{d.rule}:{d.organization_id or '*'}:{d.target_id or '*'}")
+        elif d.snoozed_until and d.snoozed_until > now:
+            active_dismissals.add(f"{d.rule}:{d.organization_id or '*'}:{d.target_id or '*'}")
+
+    items: List[AttentionItem] = []
+    orgs = {o.id: o for o in db.query(models.Organization).filter(models.Organization.deleted_at.is_(None)).all()}
+
+    # 1. TVs offline > 24h
+    cutoff_24h = now - timedelta(hours=24)
+    offline_screens = (
+        db.query(models.Screen)
+        .filter(models.Screen.deleted_at.is_(None), models.Screen.status == "offline", models.Screen.last_seen < cutoff_24h)
+        .all()
+    )
+    for s in offline_screens:
+        key = f"offline_24h:{s.organization_id}:{s.id}"
+        if key not in active_dismissals:
+            org = orgs.get(s.organization_id)
+            items.append(
+                AttentionItem(
+                    id=key,
+                    rule="offline_24h",
+                    severity="warning",
+                    title=f"TV '{s.name or s.id}' offline > 24 hours",
+                    why="Device has not pinged telemetry in over 24 hours. Screen may have lost power or Wi-Fi.",
+                    suggested_action="Inspect screen in TV Fleet or send Bring-to-Front command",
+                    action_href=f"/admin/fleet",
+                    organization_id=s.organization_id,
+                    organization_name=org.name if org else "—",
+                    target_id=str(s.id),
+                    created_at=_iso(s.last_seen or now) or "",
+                )
+            )
+
+    # 2. Failed TV updates
+    failed_screens = (
+        db.query(models.Screen)
+        .filter(
+            models.Screen.deleted_at.is_(None),
+            (models.Screen.update_status.in_(["failed", "rolled_back"])) | (models.Screen.update_failure_count > 0),
+        )
+        .all()
+    )
+    for s in failed_screens:
+        key = f"failed_update:{s.organization_id}:{s.id}"
+        if key not in active_dismissals:
+            org = orgs.get(s.organization_id)
+            items.append(
+                AttentionItem(
+                    id=key,
+                    rule="failed_update",
+                    severity="critical",
+                    title=f"Update failed on TV '{s.name or s.id}'",
+                    why=f"Player update encountered an installation or checksum failure ({s.update_failure_count} attempts).",
+                    suggested_action="Review release target or retry update in Fleet control",
+                    action_href="/admin/fleet",
+                    organization_id=s.organization_id,
+                    organization_name=org.name if org else "—",
+                    target_id=str(s.id),
+                    created_at=_iso(now) or "",
+                )
+            )
+
+    # 3. Pending signups waiting > 24h
+    cutoff_signup = now - timedelta(hours=24)
+    pending_orgs = (
+        db.query(models.Organization)
+        .filter(models.Organization.status == "pending_approval", models.Organization.created_at < cutoff_signup)
+        .all()
+    )
+    for o in pending_orgs:
+        key = f"pending_signup_24h:{o.id}:*"
+        if key not in active_dismissals:
+            items.append(
+                AttentionItem(
+                    id=key,
+                    rule="pending_signup_24h",
+                    severity="warning",
+                    title=f"Workspace '{o.name}' waiting for approval > 24 hours",
+                    why="Tenant completed signup over 24 hours ago and has not yet been reviewed.",
+                    suggested_action="Review onboarding details in Review Center",
+                    action_href="/admin/approvals",
+                    organization_id=o.id,
+                    organization_name=o.name,
+                    target_id=str(o.id),
+                    created_at=_iso(o.created_at) or "",
+                )
+            )
+
+    # 4. Custom requests pending > 48h
+    cutoff_req = now - timedelta(hours=48)
+    pending_reqs = (
+        db.query(models.CustomPlanRequest)
+        .filter(models.CustomPlanRequest.status == "pending", models.CustomPlanRequest.created_at < cutoff_req)
+        .all()
+    )
+    for cr in pending_reqs:
+        key = f"pending_custom_request_48h:{cr.organization_id}:{cr.id}"
+        if key not in active_dismissals:
+            org = orgs.get(cr.organization_id)
+            items.append(
+                AttentionItem(
+                    id=key,
+                    rule="pending_custom_request_48h",
+                    severity="info",
+                    title=f"Custom plan inquiry waiting > 48 hours ({cr.company_name or cr.organization_name or 'Tenant'})",
+                    why="Lead submitted custom scale enterprise requirements over 2 days ago.",
+                    suggested_action="Price quote or send inquiry from Review Center",
+                    action_href="/admin/approvals",
+                    organization_id=cr.organization_id,
+                    organization_name=org.name if org else "—",
+                    target_id=str(cr.id),
+                    created_at=_iso(cr.created_at) or "",
+                )
+            )
+
+    return items
+
+
+@router.post("/support/attention-queue/dismiss")
+def dismiss_attention_item(
+    req: DismissAttentionIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    now = models.utcnow()
+    snooze_until = now + timedelta(hours=req.snooze_hours or 24) if req.action == "snooze" else None
+
+    dismissal = models.AttentionDismissal(
+        rule=req.rule,
+        organization_id=req.organization_id,
+        target_id=req.target_id,
+        resolved=(req.action == "resolve"),
+        snoozed_until=snooze_until,
+        dismissed_by=scope.user.id,
+    )
+    db.add(dismissal)
+    _audit(
+        db,
+        scope,
+        request,
+        f"attention_queue.{req.action}",
+        target_type="attention_rule",
+        target_id=req.rule,
+        after={
+            "organization_id": req.organization_id,
+            "target_id": req.target_id,
+            "action": req.action,
+            "snoozed_until": _iso(snooze_until),
+        },
+    )
+    db.commit()
+    return {"status": "ok", "action": req.action}
+
+
+# ------------------------------------------------------------------ Tenant Notes (Phase F §4.17)
+
+class TenantNoteOut(BaseModel):
+    id: int
+    organization_id: int
+    author_user_id: Optional[int] = None
+    author_username: Optional[str] = None
+    body: str
+    pinned: bool
+    created_at: str
+
+
+class TenantNoteIn(BaseModel):
+    body: str = Field(..., min_length=1, max_length=5000)
+    pinned: bool = False
+
+
+@router.get("/tenants/{org_id}/notes", response_model=List[TenantNoteOut])
+def list_tenant_notes(
+    org_id: int,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    org = _get_org(db, org_id)
+    notes = (
+        db.query(models.TenantNote)
+        .filter(models.TenantNote.organization_id == org.id)
+        .order_by(models.TenantNote.pinned.desc(), models.TenantNote.id.desc())
+        .all()
+    )
+    return [
+        TenantNoteOut(
+            id=n.id,
+            organization_id=n.organization_id,
+            author_user_id=n.author_user_id,
+            author_username=n.author_username,
+            body=n.body,
+            pinned=n.pinned,
+            created_at=_iso(n.created_at) or "",
+        )
+        for n in notes
+    ]
+
+
+@router.post("/tenants/{org_id}/notes", response_model=TenantNoteOut)
+def create_tenant_note(
+    org_id: int,
+    req: TenantNoteIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    org = _get_org(db, org_id)
+    note = models.TenantNote(
+        organization_id=org.id,
+        author_user_id=scope.user.id,
+        author_username=scope.user.username,
+        body=req.body.strip(),
+        pinned=req.pinned,
+    )
+    db.add(note)
+    db.flush()
+    _audit(
+        db,
+        scope,
+        request,
+        "tenant.note.create",
+        org=org,
+        target_type="tenant_note",
+        target_id=note.id,
+        after={"pinned": note.pinned, "body_preview": note.body[:80]},
+    )
+    db.commit()
+    return TenantNoteOut(
+        id=note.id,
+        organization_id=note.organization_id,
+        author_user_id=note.author_user_id,
+        author_username=note.author_username,
+        body=note.body,
+        pinned=note.pinned,
+        created_at=_iso(note.created_at) or "",
+    )
+
+
+@router.delete("/tenants/{org_id}/notes/{note_id}")
+def delete_tenant_note(
+    org_id: int,
+    note_id: int,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    org = _get_org(db, org_id)
+    note = (
+        db.query(models.TenantNote)
+        .filter(models.TenantNote.id == note_id, models.TenantNote.organization_id == org.id)
+        .first()
+    )
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    _audit(
+        db,
+        scope,
+        request,
+        "tenant.note.delete",
+        org=org,
+        target_type="tenant_note",
+        target_id=note_id,
+    )
+    db.commit()
+    return {"status": "deleted", "note_id": note_id}

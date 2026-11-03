@@ -1,0 +1,484 @@
+'use client'
+
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  AlertTriangle,
+  CheckCircle,
+  Eye,
+  EyeOff,
+  Globe,
+  Key,
+  Lock,
+  LogOut,
+  RefreshCw,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Smartphone,
+  Tv,
+  Unlock,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react'
+import { adminApi } from '@/lib/api'
+import { PageHeader, StatCard } from '@/components/admin/admin-ui'
+import { toast } from 'sonner'
+
+export default function AdminSecurityPage() {
+  const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState<'admins' | 'sign_ins' | 'kiosk_unlocks' | 'act_as'>('admins')
+
+  // Maintenance PIN reveal state
+  const [revealedPin, setRevealedPin] = useState<string | null>(null)
+  const [revealModalOpen, setRevealModalOpen] = useState(false)
+  const [revealReason, setRevealReason] = useState('')
+
+  // Query security overview
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin', 'security', 'overview'],
+    queryFn: adminApi.getSecurityOverview,
+    refetchInterval: 30000,
+  })
+
+  // Sign out everywhere mutation
+  const signOutMutation = useMutation({
+    mutationFn: (userId: number) => adminApi.signOutEverywhere(userId),
+    onSuccess: (res) => {
+      toast.success(`User sessions invalidated (token version: ${res.token_version})`)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  // Policy update mutation
+  const policyMutation = useMutation({
+    mutationFn: (requireGoogle: boolean) =>
+      adminApi.updateSecurityPolicy({ require_super_admin_google_sso: requireGoogle }),
+    onSuccess: (res) => {
+      toast.success(
+        res.require_super_admin_google_sso
+          ? 'Enforced: Super admins must now authenticate via Google SSO'
+          : 'Policy relaxed: Password authentication permitted for super admins',
+      )
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  // Reveal PIN mutation (Level-2 confirmation)
+  const revealMutation = useMutation({
+    mutationFn: (reason: string) => adminApi.revealMaintenancePin(reason),
+    onSuccess: (res) => {
+      setRevealedPin(res.pin)
+      setRevealModalOpen(false)
+      setRevealReason('')
+      toast.success('Master maintenance PIN unmasked (audited)')
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const superAdmins = data?.super_admins ?? []
+  const recentSignIns = data?.recent_sign_ins ?? []
+  const recentUnlocks = data?.recent_kiosk_unlocks ?? []
+  const actAsEvents = data?.act_as_events ?? []
+
+  return (
+    <div className="space-y-6 p-6 text-foreground lg:p-8">
+      <PageHeader
+        title="Security & Trust Operations Center"
+        description="Operator privilege administration, session revocation, sign-in monitoring, and kiosk lockdown governance"
+      >
+        <button
+          onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'security'] })}
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80"
+        >
+          <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </PageHeader>
+
+      {/* Top metrics grid */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Super Administrators" value={superAdmins.length} icon={ShieldCheck} accent="violet" />
+        <StatCard
+          label="Google SSO Enforced"
+          value={data?.require_super_admin_google_sso ? 'Active' : 'Disabled'}
+          icon={Globe}
+          accent={data?.require_super_admin_google_sso ? 'emerald' : 'amber'}
+        />
+        <StatCard
+          label="Recent Kiosk Unlocks"
+          value={recentUnlocks.length}
+          icon={Unlock}
+          accent={recentUnlocks.length > 0 ? 'amber' : 'emerald'}
+        />
+        <StatCard
+          label="Stranded Legacy TVs"
+          value={data?.screens_without_secret ?? 0}
+          icon={Tv}
+          accent={data?.screens_without_secret === 0 ? 'emerald' : 'rose'}
+        />
+      </div>
+
+      {/* Security Policies & Master Maintenance PIN */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Google SSO Policy Card */}
+        <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Globe className="size-5 text-primary" />
+                <h3 className="text-base font-semibold text-foreground">Super Admin Authentication Policy</h3>
+              </div>
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                  data?.require_super_admin_google_sso
+                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                }`}
+              >
+                {data?.require_super_admin_google_sso ? 'Enforced' : 'Optional'}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              When enforced, password login attempts by super administrators will be rejected with an immediate 403 Forbidden.
+              Operators must sign in using verified Google Enterprise accounts. (Break-glass CLI: <code className="font-mono text-foreground">seed_admin</code>).
+            </p>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+            <span className="text-xs font-medium text-foreground">Enforce Google SSO for All Super Admins</span>
+            <button
+              onClick={() => policyMutation.mutate(!data?.require_super_admin_google_sso)}
+              disabled={policyMutation.isPending}
+              className={`rounded-xl px-4 py-2 text-xs font-semibold transition ${
+                data?.require_super_admin_google_sso
+                  ? 'border border-border bg-card text-foreground hover:bg-muted'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
+              }`}
+            >
+              {data?.require_super_admin_google_sso ? 'Disable Policy' : 'Enforce Policy'}
+            </button>
+          </div>
+        </div>
+
+        {/* Master Maintenance PIN Card with Audited Reveal */}
+        <div className="flex flex-col justify-between rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="size-5 text-amber-500" />
+                <h3 className="text-base font-semibold text-foreground">Master Fleet Maintenance PIN</h3>
+              </div>
+              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:text-amber-400">
+                Level-2 Guarded
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              The universal door bypass code used by field engineers on TV remote d-pads when individual screens lack an override PIN.
+              Masked by default to protect on-site display integrity. Every reveal is logged to the immutable audit trail.
+            </p>
+          </div>
+
+          <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">Master PIN:</span>
+              <span className="font-mono text-base font-bold tracking-widest text-foreground">
+                {revealedPin || '••••'}
+              </span>
+            </div>
+
+            {revealedPin ? (
+              <button
+                onClick={() => setRevealedPin(null)}
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                <EyeOff className="size-3.5" />
+                Hide PIN
+              </button>
+            ) : (
+              <button
+                onClick={() => setRevealModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+              >
+                <Eye className="size-3.5" />
+                Unmask PIN (Audited)
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs for detailed tables */}
+      <section className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3">
+          <button
+            onClick={() => setActiveTab('admins')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === 'admins' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Super Administrators ({superAdmins.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('sign_ins')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === 'sign_ins' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Recent Sign-Ins ({recentSignIns.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('kiosk_unlocks')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === 'kiosk_unlocks' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Kiosk Unlock Events ({recentUnlocks.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('act_as')}
+            className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+              activeTab === 'act_as' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Workspace Act-As History ({actAsEvents.length})
+          </button>
+        </div>
+
+        {/* Tab 1: Super Administrators */}
+        {activeTab === 'admins' && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-sm">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="p-3 pl-4 text-left">Admin User</th>
+                  <th className="p-3 text-left">Email</th>
+                  <th className="p-3 text-left">Auth Method</th>
+                  <th className="p-3 text-left">Last Login</th>
+                  <th className="p-3 text-left">Token Version</th>
+                  <th className="p-3 pr-4 text-right">Emergency Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {superAdmins.map((admin) => (
+                  <tr key={admin.id} className="hover:bg-muted/20">
+                    <td className="p-3 pl-4 font-medium text-foreground">
+                      <div className="flex items-center gap-2">
+                        <Shield className="size-4 text-primary" />
+                        <span>{admin.username}</span>
+                        {admin.full_name && <span className="text-xs text-muted-foreground">({admin.full_name})</span>}
+                      </div>
+                    </td>
+                    <td className="p-3 text-xs text-foreground">{admin.email || '—'}</td>
+                    <td className="p-3">
+                      <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs capitalize text-foreground">
+                        {admin.auth_provider}
+                      </span>
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground">
+                      {admin.last_login_at ? new Date(admin.last_login_at).toLocaleString() : 'Never'}
+                    </td>
+                    <td className="p-3 font-mono text-xs text-muted-foreground">v{admin.token_version}</td>
+                    <td className="p-3 pr-4 text-right">
+                      <button
+                        onClick={() => signOutMutation.mutate(admin.id)}
+                        disabled={signOutMutation.isPending}
+                        title="Invalidates all active tokens by bumping token_version"
+                        className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
+                      >
+                        <LogOut className="size-3" />
+                        Sign Out Everywhere
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tab 2: Recent Sign-Ins */}
+        {activeTab === 'sign_ins' && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[700px] text-sm">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="p-3 pl-4 text-left">Timestamp</th>
+                  <th className="p-3 text-left">Attempted User</th>
+                  <th className="p-3 text-left">Method</th>
+                  <th className="p-3 text-left">Result</th>
+                  <th className="p-3 text-left">IP Address</th>
+                  <th className="p-3 pr-4 text-left">User Agent</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {recentSignIns.map((evt) => (
+                  <tr key={evt.id} className="hover:bg-muted/20">
+                    <td className="p-3 pl-4 text-xs text-muted-foreground">
+                      {evt.occurred_at ? new Date(evt.occurred_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="p-3 font-medium text-foreground">{evt.attempted_username}</td>
+                    <td className="p-3 text-xs capitalize text-muted-foreground">{evt.method}</td>
+                    <td className="p-3">
+                      {evt.success ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle className="size-3.5" />
+                          Success
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700 dark:text-rose-400">
+                          <AlertTriangle className="size-3.5" />
+                          Failed
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3 font-mono text-xs text-foreground">{evt.ip || '—'}</td>
+                    <td className="p-3 pr-4 font-mono text-[11px] text-muted-foreground truncate max-w-[200px]" title={evt.user_agent || ''}>
+                      {evt.user_agent || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tab 3: Kiosk Unlocks */}
+        {activeTab === 'kiosk_unlocks' && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="p-3 pl-4 text-left">Timestamp</th>
+                  <th className="p-3 text-left">Screen ID</th>
+                  <th className="p-3 text-left">Organization ID</th>
+                  <th className="p-3 text-left">Method</th>
+                  <th className="p-3 pr-4 text-left">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {recentUnlocks.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-xs text-muted-foreground">
+                      No kiosk unlock events recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  recentUnlocks.map((u) => (
+                    <tr key={u.id} className="hover:bg-muted/20">
+                      <td className="p-3 pl-4 text-xs text-muted-foreground">
+                        {u.occurred_at ? new Date(u.occurred_at).toLocaleString() : '—'}
+                      </td>
+                      <td className="p-3 font-mono text-xs text-foreground">Screen #{u.screen_id}</td>
+                      <td className="p-3 font-mono text-xs text-foreground">Org #{u.organization_id}</td>
+                      <td className="p-3 text-xs capitalize text-foreground">{u.method}</td>
+                      <td className="p-3 pr-4">
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle className="size-3.5" />
+                          Unlocked
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Tab 4: Act-As Activity */}
+        {activeTab === 'act_as' && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
+              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  <th className="p-3 pl-4 text-left">Timestamp</th>
+                  <th className="p-3 text-left">Super Admin Actor</th>
+                  <th className="p-3 text-left">Target Tenant</th>
+                  <th className="p-3 text-left">Action</th>
+                  <th className="p-3 pr-4 text-left">Client IP</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {actAsEvents.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-xs text-muted-foreground">
+                      No act-as workspace sessions recorded.
+                    </td>
+                  </tr>
+                ) : (
+                  actAsEvents.map((a) => (
+                    <tr key={a.id} className="hover:bg-muted/20">
+                      <td className="p-3 pl-4 text-xs text-muted-foreground">
+                        {new Date(a.occurred_at).toLocaleString()}
+                      </td>
+                      <td className="p-3 font-medium text-foreground">{a.actor_username}</td>
+                      <td className="p-3 font-mono text-xs text-foreground">Tenant #{a.target_org_id}</td>
+                      <td className="p-3">
+                        <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-foreground">
+                          {a.action}
+                        </span>
+                      </td>
+                      <td className="p-3 pr-4 font-mono text-xs text-muted-foreground">{a.ip || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Reveal PIN Modal (Level-2 with Reason) */}
+      {revealModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <Key className="size-5 text-amber-500" />
+              <h3 className="text-base font-semibold text-foreground">Audited Maintenance PIN Reveal</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Unmasking the master fleet maintenance PIN requires an operator audit reason. This action is permanently recorded.
+            </p>
+
+            <div className="mt-4">
+              <label className="text-xs font-medium text-foreground">
+                Operational Reason <span className="text-rose-500">* (Level-2 Guard)</span>
+              </label>
+              <textarea
+                value={revealReason}
+                onChange={(e) => setRevealReason(e.target.value)}
+                placeholder="State field technician ticket number or troubleshooting context..."
+                rows={3}
+                className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-3 text-xs text-foreground placeholder:text-muted-foreground focus:border-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setRevealModalOpen(false)
+                  setRevealReason('')
+                }}
+                className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => revealMutation.mutate(revealReason)}
+                disabled={!revealReason.trim() || revealMutation.isPending}
+                className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+              >
+                {revealMutation.isPending ? 'Logging…' : 'Confirm & Reveal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+

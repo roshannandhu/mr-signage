@@ -69,3 +69,4 @@ export function computeTenantHealth(t: TenantSummary): TenantHealth {
 
   return { score, tone, reasons }
 }
+

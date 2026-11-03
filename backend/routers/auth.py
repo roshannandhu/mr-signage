@@ -60,7 +60,15 @@ def _token_is_for(payload: dict, user: models.User) -> bool:
     minted from now on carries one.
     """
     uid = payload.get("uid")
-    return uid is None or uid == user.id
+    if uid is not None and uid != user.id:
+        return False
+    # Token version check (B5): if token has "tv", must be >= user.token_version
+    # If token has no "tv" claim, treated as version 0 so existing live tokens stay valid.
+    token_tv = payload.get("tv", 0)
+    user_tv = user.token_version or 0
+    if token_tv < user_tv:
+        return False
+    return True
 
 
 def login_token(user: models.User) -> str:
@@ -69,8 +77,9 @@ def login_token(user: models.User) -> str:
     The subject alone is a username, and usernames are reused: delete a user and the next
     person to register that name inherited the old token for the rest of its seven days,
     across tenants. The id ties the token to the one row it was issued for.
+    Includes token_version claim ("tv") for instant fleet-wide session revocation.
     """
-    return create_access_token(data={"sub": user.username, "uid": user.id})
+    return create_access_token(data={"sub": user.username, "uid": user.id, "tv": user.token_version or 0})
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -92,6 +101,9 @@ def login_for_access_token(
 ):
     from sqlalchemy import func
     login_id = (form_data.username or "").strip().lower()
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
     user = (
         db.query(models.User)
         .filter(
@@ -101,11 +113,61 @@ def login_for_access_token(
         .first()
     )
     if not user or not user.is_active or not verify_password(form_data.password, user.hashed_password):
+        # Record failed auth event
+        db.add(
+            models.AuthEvent(
+                user_id=user.id if user else None,
+                attempted_username=form_data.username or "unknown",
+                success=False,
+                method="password",
+                ip=client_ip,
+                user_agent=user_agent,
+            )
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Check super admin Google SSO policy
+    if user.role == "super_admin":
+        sso_setting = (
+            db.query(models.SystemSetting)
+            .filter(models.SystemSetting.key == "require_super_admin_google_sso")
+            .first()
+        )
+        if sso_setting and sso_setting.value == "true":
+            db.add(
+                models.AuthEvent(
+                    user_id=user.id,
+                    attempted_username=form_data.username,
+                    success=False,
+                    method="password",
+                    ip=client_ip,
+                    user_agent=user_agent,
+                )
+            )
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Security policy: Super admins must sign in using Google SSO",
+            )
+
+    # Record success and update last_login_at
+    user.last_login_at = models.utcnow()
+    db.add(
+        models.AuthEvent(
+            user_id=user.id,
+            attempted_username=form_data.username,
+            success=True,
+            method="password",
+            ip=client_ip,
+            user_agent=user_agent,
+        )
+    )
+    db.commit()
 
     access_token = login_token(user)
     return {"access_token": access_token, "token_type": "bearer", "user": user}
@@ -294,6 +356,19 @@ def sign_in_with_google(
         db.commit()
         db.refresh(user)
         logging.getLogger(__name__).info("New Google signup for %s (Org ID %s, Status %s).", email, organization.id, organization.status)
+
+    user.last_login_at = models.utcnow()
+    db.add(
+        models.AuthEvent(
+            user_id=user.id,
+            attempted_username=email,
+            success=True,
+            method="google",
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    )
+    db.commit()
 
     logging.getLogger(__name__).info("Google web sign-in for %s", user.username)
     return {

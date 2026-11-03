@@ -122,6 +122,7 @@ ISOLATED_SCRIPTS = {
     "test_admin_payments_paging.py",
     "test_plan_impact.py",
     "test_admin_screen_commands.py",
+    "test_phase_e_trust.py",
     # How many TVs hold no device secret: the number that says when legacy login can close.
     "test_legacy_auth_count.py",
     # Only a screen's own token acts as that screen; Google-flow tokens do not.

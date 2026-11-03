@@ -1,6 +1,8 @@
 import { useAuthStore } from './store'
 import type {
-  FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User } from './types'
+  FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, Screenshot, TransitionName, User,
+  SecurityOverview, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote
+} from './types'
 
 const PROD_API_URL = 'https://olrac-signage-32lh.onrender.com'
 const configuredUrl = (process.env.NEXT_PUBLIC_API_URL || PROD_API_URL).replace(/\/$/, '')
@@ -1000,5 +1002,68 @@ export const adminApi = {
         body: JSON.stringify(data),
       },
     ),
+
+  // Phase E & F Trust, Security, Settings, Health & Support
+  getSecurityOverview: () => fetchWithAuth<SecurityOverview>('/admin/security/overview'),
+
+  revealMaintenancePin: (reason: string) =>
+    fetchWithAuth<{ pin: string; revealed_at: string }>('/admin/security/maintenance-pin/reveal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...reasonHeader(reason) },
+      body: JSON.stringify({ reason }),
+    }),
+
+  updateSecurityPolicy: (data: { require_super_admin_google_sso: boolean }) =>
+    fetchWithAuth<{ status: string; require_super_admin_google_sso: boolean }>('/admin/security/policy', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  signOutEverywhere: (userId: number) =>
+    fetchWithAuth<{ status: string; user_id: number; token_version: number }>(
+      `/admin/users/${userId}/sign-out-everywhere`,
+      { method: 'POST' },
+    ),
+
+  getPlatformHealth: () => fetchWithAuth<PlatformHealthDetails>('/admin/platform-health'),
+
+  getSettings: () => fetchWithAuth<SystemSettings>('/admin/settings'),
+
+  updateSettings: (data: Partial<SystemSettings>) =>
+    fetchWithAuth<SystemSettings>('/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  getAttentionQueue: () => fetchWithAuth<AttentionItem[]>('/admin/support/attention-queue'),
+
+  dismissAttentionItem: (data: {
+    rule: string
+    target_id?: string
+    organization_id?: number
+    action: 'snooze' | 'resolve'
+    snooze_hours?: number
+  }) =>
+    fetchWithAuth<{ status: string; action: string }>('/admin/support/attention-queue/dismiss', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  listTenantNotes: (orgId: number) => fetchWithAuth<TenantNote[]>(`/admin/tenants/${orgId}/notes`),
+
+  createTenantNote: (orgId: number, data: { body: string; pinned?: boolean }) =>
+    fetchWithAuth<TenantNote>(`/admin/tenants/${orgId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  deleteTenantNote: (orgId: number, noteId: number) =>
+    fetchWithAuth<{ status: string; note_id: number }>(`/admin/tenants/${orgId}/notes/${noteId}`, {
+      method: 'DELETE',
+    }),
 }
 

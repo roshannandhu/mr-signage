@@ -959,3 +959,111 @@ export interface PlanImpactResponse {
   exceeding_storage: number
   lost_features: string[]
 }
+
+
+
+// ------------------------------------------------------------------ Phase E & F Trust, Security, Settings, Health & Support
+
+export interface SecurityAdmin {
+  id: number
+  username: string
+  email: string | null
+  full_name: string | null
+  auth_provider: string
+  token_version: number
+  last_login_at: string | null
+  created_at: string | null
+}
+
+export interface AuthEventItem {
+  id: number
+  user_id: number | null
+  attempted_username: string
+  success: boolean
+  method: string
+  ip: string | null
+  user_agent: string | null
+  occurred_at: string | null
+}
+
+export interface KioskUnlockItem {
+  id: number
+  screen_id: number
+  organization_id: number
+  method: string
+  success: boolean
+  actor_user_id: number | null
+  occurred_at: string | null
+}
+
+export interface SecurityOverview {
+  super_admins: SecurityAdmin[]
+  recent_sign_ins: AuthEventItem[]
+  recent_kiosk_unlocks: KioskUnlockItem[]
+  act_as_events: Array<{
+    id: number
+    occurred_at: string
+    actor_username: string
+    target_org_id: number | null
+    action: string
+    reason: string | null
+    ip: string | null
+  }>
+  require_super_admin_google_sso: boolean
+  legacy_device_auth: boolean
+  screens_without_secret: number
+}
+
+export interface PlatformHealthDetails {
+  status: 'ok' | 'degraded' | string
+  database: string
+  backend: string
+  host: string
+  redis: string
+  object_storage: string
+  email: string
+  storage_env?: {
+    set: string[]
+    missing: string[]
+    unexpected: string[]
+    placeholder: string[]
+  }
+  schema_migration_error: string | null
+  legacy_screens_without_secret: number | null
+  cron_jobs?: Record<string, { last_run_at: string; duration_seconds: number } | null>
+  warning: string | null
+}
+
+export interface SystemSettings {
+  contact_email: string | null
+  audit_retention_days: number
+  require_super_admin_google_sso: boolean
+  demo_video_url: string | null
+  attention_offline_screen_hours: number
+  attention_expiring_plan_days: number
+  attention_storage_percent: number
+}
+
+export interface AttentionItem {
+  id: string
+  rule: string
+  severity: 'critical' | 'warning' | 'info'
+  title: string
+  why: string
+  suggested_action: string
+  action_href: string
+  organization_id: number | null
+  organization_name: string | null
+  target_id: string | null
+  created_at: string
+}
+
+export interface TenantNote {
+  id: number
+  organization_id: number
+  author_user_id: number | null
+  author_username: string | null
+  body: string
+  pinned: boolean
+  created_at: string
+}

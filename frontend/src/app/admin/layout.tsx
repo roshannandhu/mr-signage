@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   ShieldCheck, Users, Film, LogOut, LayoutDashboard, Package, Receipt, Rocket, QrCode, Menu, X,
-  Activity, HardDrive, PanelLeftClose, PanelLeftOpen, ChevronRight,
+  Activity, HardDrive, PanelLeftClose, PanelLeftOpen, ChevronRight, Lock, FileText, HeartPulse, Settings, Bell,
 } from 'lucide-react'
 
 type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exact?: boolean; badge?: number }
@@ -24,12 +24,13 @@ type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; exac
 // Grouped the way an operator thinks: who they sell to, what is for sale, what is running
 // in the field, and the platform itself.
 const navSections: { label: string; items: NavItem[] }[] = [
-  { label: '', items: [{ href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true }] },
+  { label: '', items: [{ href: '/admin', label: 'Mission Control', icon: LayoutDashboard, exact: true }] },
   {
-    label: 'Customers',
+    label: 'Customers & Ops',
     items: [
-      { href: '/admin/approvals', label: 'Approvals', icon: ShieldCheck },
       { href: '/admin/tenants', label: 'Tenants', icon: Users },
+      { href: '/admin/approvals', label: 'Review Center', icon: ShieldCheck },
+      { href: '/admin/support', label: 'Attention Queue', icon: Bell },
     ],
   },
   {
@@ -40,7 +41,7 @@ const navSections: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: 'Fleet',
+    label: 'TV Fleet',
     items: [
       { href: '/admin/fleet', label: 'TV Fleet', icon: Activity },
       { href: '/admin/releases', label: 'App Releases', icon: Rocket },
@@ -48,8 +49,17 @@ const navSections: { label: string; items: NavItem[] }[] = [
     ],
   },
   {
+    label: 'Trust & Security',
+    items: [
+      { href: '/admin/security', label: 'Security Center', icon: Lock },
+      { href: '/admin/audit', label: 'Audit Log', icon: FileText },
+    ],
+  },
+  {
     label: 'Platform',
     items: [
+      { href: '/admin/health', label: 'Platform Health', icon: HeartPulse },
+      { href: '/admin/settings', label: 'System Settings', icon: Settings },
       { href: '/admin/storage', label: 'Storage', icon: HardDrive },
       { href: '/admin/demo-video', label: 'Demo Video', icon: Film },
     ],

@@ -363,6 +363,8 @@ class User(Base):
     google_sub = Column(String, unique=True, index=True, nullable=True)
     picture = Column(String, nullable=True)
     auth_provider = Column(String, nullable=False, default="local")
+    last_login_at = Column(UtcDateTime, nullable=True)
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     organization = relationship("Organization", back_populates="users", foreign_keys=[organization_id])
 
@@ -1360,3 +1362,48 @@ Index(
     PlayLogHourlyRollup.date_hour,
     unique=True
 )
+
+
+class AuthEvent(Base):
+    """Sign-in history, successful and failed logins across password and Google flows."""
+
+    __tablename__ = "auth_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    attempted_username = Column(String(150), nullable=False)
+    success = Column(Boolean, nullable=False, index=True)
+    method = Column(String(30), nullable=False)  # "password" | "google"
+    ip = Column(String(64), nullable=True)
+    user_agent = Column(String(300), nullable=True)
+    occurred_at = Column(UtcDateTime, nullable=False, default=utcnow, index=True)
+
+
+class AttentionDismissal(Base):
+    """Operator snooze/resolution records for Support Center attention queue items."""
+
+    __tablename__ = "attention_dismissals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    rule = Column(String(50), nullable=False, index=True)
+    organization_id = Column(Integer, nullable=True, index=True)
+    target_id = Column(String(100), nullable=True)
+    snoozed_until = Column(UtcDateTime, nullable=True)
+    resolved = Column(Boolean, nullable=False, default=False)
+    dismissed_by = Column(Integer, nullable=True)
+    created_at = Column(UtcDateTime, nullable=False, default=utcnow)
+
+
+class TenantNote(Base):
+    """Internal private operator notes for tenant workspaces. Never visible to tenant users."""
+
+    __tablename__ = "tenant_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    author_username = Column(String(150), nullable=True)
+    body = Column(Text, nullable=False)
+    pinned = Column(Boolean, nullable=False, default=False)
+    created_at = Column(UtcDateTime, nullable=False, default=utcnow)
+

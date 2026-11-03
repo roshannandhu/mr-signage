@@ -18,10 +18,13 @@ import {
   Map as MapIcon,
   MonitorPlay,
   Palette,
+  Pin,
   Shield,
   Sliders,
   Sparkles,
+  StickyNote,
   Table as TableIcon,
+  Trash2,
   Unlock,
   Users,
   X,
@@ -62,6 +65,7 @@ type Tab =
   | 'branding'
   | 'security'
   | 'activity'
+  | 'notes'
 
 export default function AdminTenantDetailPage({
   params,
@@ -74,6 +78,8 @@ export default function AdminTenantDetailPage({
   const [screenView, setScreenView] = useState<'table' | 'map'>('table')
   const [selectedAuditLog, setSelectedAuditLog] = useState<AuditEvent | null>(null)
   const [isGrantOpen, setIsGrantOpen] = useState(false)
+  const [newNoteBody, setNewNoteBody] = useState('')
+  const [newNotePinned, setNewNotePinned] = useState(false)
 
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -162,6 +168,33 @@ export default function AdminTenantDetailPage({
     onSuccess: () => {
       toast.success('Subscription window updated')
       queryClient.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const notesQuery = useQuery({
+    queryKey: ['admin', 'tenant', tenantId, 'notes'],
+    queryFn: () => adminApi.listTenantNotes(tenantId),
+    enabled: tab === 'notes',
+  })
+
+  const createNoteMutation = useMutation({
+    mutationFn: () =>
+      adminApi.createTenantNote(tenantId, { body: newNoteBody, pinned: newNotePinned }),
+    onSuccess: () => {
+      toast.success('Internal note saved')
+      setNewNoteBody('')
+      setNewNotePinned(false)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId, 'notes'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: (noteId: number) => adminApi.deleteTenantNote(tenantId, noteId),
+    onSuccess: () => {
+      toast.success('Note removed')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId, 'notes'] })
     },
     onError: (e: Error) => toast.error(e.message),
   })
@@ -553,7 +586,7 @@ export default function AdminTenantDetailPage({
             </div>
           </PageHeader>
 
-          {/* 9-Tab Navigation */}
+          {/* 10-Tab Navigation */}
           <div className="flex overflow-x-auto border-b border-border text-sm scrollbar-none">
             {[
               { id: 'overview', label: 'Overview', icon: Layers },
@@ -565,6 +598,7 @@ export default function AdminTenantDetailPage({
               { id: 'branding', label: 'Branding', icon: Palette },
               { id: 'security', label: 'Security', icon: Shield },
               { id: 'activity', label: 'Activity', icon: Activity },
+              { id: 'notes', label: 'Internal Notes', icon: StickyNote },
             ].map((t) => {
               const Icon = t.icon
               const active = tab === t.id
@@ -943,6 +977,106 @@ export default function AdminTenantDetailPage({
                 columns={auditColumns}
                 isLoading={auditEventsQuery.isLoading}
               />
+            </div>
+          )}
+
+          {/* TAB 10: INTERNAL NOTES */}
+          {tab === 'notes' && (
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-border bg-card p-6">
+                <h3 className="font-bold text-foreground mb-1">Add Operator Note</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Confidential notes visible only to super admins. Not visible to the tenant.
+                </p>
+                <div className="space-y-3">
+                  <textarea
+                    rows={3}
+                    value={newNoteBody}
+                    onChange={(e) => setNewNoteBody(e.target.value)}
+                    placeholder="E.g., High-value VIP client, requires phone confirmation before plan changes..."
+                    className="w-full rounded-xl border border-border bg-background p-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground"
+                  />
+                  <div className="flex items-center justify-between">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={newNotePinned}
+                        onChange={(e) => setNewNotePinned(e.target.checked)}
+                        className="rounded border-border accent-primary"
+                      />
+                      <Pin className="size-3.5 text-amber-500" />
+                      <span>Pin note to top</span>
+                    </label>
+                    <button
+                      disabled={!newNoteBody.trim() || createNoteMutation.isPending}
+                      onClick={() => createNoteMutation.mutate()}
+                      className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      {createNoteMutation.isPending ? 'Saving…' : 'Save Note'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {notesQuery.isLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading internal notes…</p>
+                ) : (notesQuery.data ?? []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-6 text-center">
+                    No internal operator notes recorded for this workspace.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {(notesQuery.data ?? []).map((note) => (
+                      <div
+                        key={note.id}
+                        className={`rounded-2xl border p-4 transition-colors ${
+                          note.pinned
+                            ? 'border-amber-500/40 bg-amber-500/5'
+                            : 'border-border bg-card'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              {note.pinned && (
+                                <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">
+                                  <Pin className="size-3" /> Pinned
+                                </span>
+                              )}
+                              <span className="text-xs font-semibold text-foreground">
+                                {note.author_username || 'Super Admin'}
+                              </span>
+                              <span className="text-xs text-muted-foreground">•</span>
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {new Date(note.created_at).toLocaleString()}
+                              </span>
+                            </div>
+                            <p className="whitespace-pre-wrap text-sm text-foreground pt-1">
+                              {note.body}
+                            </p>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const ok = await confirm({
+                                title: 'Delete Internal Note',
+                                description: 'Are you sure you want to delete this internal note?',
+                                confirmLabel: 'Delete',
+                                destructive: true,
+                              })
+                              if (ok) deleteNoteMutation.mutate(note.id)
+                            }}
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500"
+                            title="Delete note"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
