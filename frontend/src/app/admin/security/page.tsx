@@ -9,18 +9,12 @@ import {
   EyeOff,
   Globe,
   Key,
-  Lock,
   LogOut,
   RefreshCw,
   Shield,
-  ShieldAlert,
   ShieldCheck,
-  Smartphone,
   Tv,
   Unlock,
-  UserCheck,
-  Users,
-  X,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { PageHeader, StatCard } from '@/components/admin/admin-ui'
@@ -36,7 +30,7 @@ export default function AdminSecurityPage() {
   const [revealReason, setRevealReason] = useState('')
 
   // Query security overview
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isFetching } = useQuery({
     queryKey: ['admin', 'security', 'overview'],
     queryFn: adminApi.getSecurityOverview,
     refetchInterval: 30000,

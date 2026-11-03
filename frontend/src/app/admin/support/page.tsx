@@ -3,24 +3,17 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertCircle,
   AlertTriangle,
-  ArrowRight,
-  Bell,
   CheckCircle2,
-  Clock,
   ExternalLink,
-  Filter,
   LifeBuoy,
   RefreshCw,
-  Search,
   ShieldAlert,
   Sparkles,
   Moon,
 } from 'lucide-react'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
-import type { AttentionItem } from '@/lib/types'
 import { PageHeader, StatCard } from '@/components/admin/admin-ui'
 import { toast } from 'sonner'
 
@@ -86,7 +79,7 @@ export default function AdminSupportPage() {
       {/* Filter Tabs */}
       <section className="space-y-4">
         <div className="flex items-center justify-between border-b border-border pb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setSeverityFilter('all')}
               className={`rounded-xl px-3 py-1.5 text-xs font-medium transition ${

@@ -2,14 +2,19 @@ import { expect, test, type Page } from '@playwright/test'
 import { ADMIN, TENANT_NAME } from './seed'
 
 const ADMIN_PAGES = [
-  { path: '/admin', crumb: 'Overview' },
-  { path: '/admin/approvals', crumb: 'Approvals' },
+  { path: '/admin', crumb: 'Mission Control' },
+  { path: '/admin/approvals', crumb: 'Review Center' },
+  { path: '/admin/support', crumb: 'Attention Queue' },
   { path: '/admin/tenants', crumb: 'Tenants' },
   { path: '/admin/packages', crumb: 'Packages' },
   { path: '/admin/billing', crumb: 'Billing' },
   { path: '/admin/fleet', crumb: 'TV Fleet' },
   { path: '/admin/releases', crumb: 'App Releases' },
   { path: '/admin/provisioning', crumb: 'Provisioning' },
+  { path: '/admin/security', crumb: 'Security Center' },
+  { path: '/admin/audit', crumb: 'Audit Log' },
+  { path: '/admin/health', crumb: 'Platform Health' },
+  { path: '/admin/settings', crumb: 'System Settings' },
   { path: '/admin/storage', crumb: 'Storage' },
   { path: '/admin/demo-video', crumb: 'Demo Video' },
 ]
@@ -35,6 +40,25 @@ function collectErrors(page: Page) {
 }
 
 const currentCrumb = (page: Page) => page.locator('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+
+test.beforeEach(async ({ page }) => {
+  // Ensure all API calls route strictly to the isolated test backend on port 8011
+  await page.route('**/api/**', async (route) => {
+    try {
+      const req = route.request()
+      const url = new URL(req.url())
+      const targetUrl = `http://127.0.0.1:8011${url.pathname}${url.search}`
+      const response = await page.request.fetch(req, { url: targetUrl })
+      await route.fulfill({ response })
+    } catch {
+      await route.abort('failed').catch(() => {})
+    }
+  })
+})
+
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
 
 test('every admin page loads with its breadcrumb and no errors', async ({ page }) => {
   const errors = collectErrors(page)
@@ -64,8 +88,9 @@ test('background is pure black in dark mode and pure white in light mode', async
 test('removing a workspace needs a reason and its name typed', async ({ page }) => {
   await signIn(page)
   await page.goto('/admin/tenants')
-  const row = page.getByRole('row').filter({ hasText: TENANT_NAME })
-  await row.getByRole('button', { name: 'Remove' }).click()
+  const actionBtn = page.getByRole('button', { name: `Actions for ${TENANT_NAME}`, exact: true })
+  await actionBtn.click()
+  await page.getByRole('menuitem', { name: 'Remove workspace' }).click()
 
   const dialog = page.getByRole('dialog')
   const submit = dialog.getByRole('button', { name: 'Remove workspace' })
@@ -79,7 +104,7 @@ test('removing a workspace needs a reason and its name typed', async ({ page }) 
   // Cancel: the check is that the guard holds, not that the tenant is removed.
   await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(dialog).toBeHidden()
-  await expect(row.getByRole('button', { name: 'Remove' })).toBeVisible()
+  await expect(actionBtn).toBeVisible()
 })
 
 test('phone navigation opens as a drawer and closes on navigation', async ({ page }) => {

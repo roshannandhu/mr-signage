@@ -3,16 +3,10 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Calendar,
-  CheckCircle,
-  Clock,
   Download,
   Eye,
-  FileText,
-  Filter,
   RefreshCw,
   Search,
-  Shield,
   User,
   X,
 } from 'lucide-react'
@@ -42,7 +36,8 @@ export default function AdminAuditPage() {
     },
   })
 
-  const events = data?.items ?? []
+  const rawItems = data?.items
+  const events = useMemo(() => rawItems ?? [], [rawItems])
   const totalCount = data?.total ?? 0
 
   // Filtered by local search query if typed

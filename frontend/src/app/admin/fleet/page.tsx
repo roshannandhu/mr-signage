@@ -67,9 +67,10 @@ export default function AdminFleetPage() {
   const versions = data ? Object.entries(data.versions).sort((a, b) => b[1] - a[1]) : []
 
   // Filtered screens for table & map
+  const screens = data?.screens
   const filteredScreens = useMemo(() => {
-    if (!data?.screens) return []
-    return data.screens.filter((s) => {
+    if (!screens) return []
+    return screens.filter((s) => {
       // Search
       if (search.trim()) {
         const q = search.toLowerCase()
@@ -102,7 +103,7 @@ export default function AdminFleetPage() {
       }
       return true
     })
-  }, [data?.screens, search, statusFilter, lockFilter, secretFilter, updateFilter, latest])
+  }, [screens, search, statusFilter, lockFilter, secretFilter, updateFilter, latest])
 
   // Map points
   const mapPoints: MapPoint[] = useMemo(() => {
@@ -554,7 +555,7 @@ export default function AdminFleetPage() {
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
+                onChange={(e) => setStatusFilter(e.target.value as 'all' | 'online' | 'offline')}
                 className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-foreground focus:outline-none"
               >
                 <option value="all">All Statuses</option>
@@ -564,7 +565,7 @@ export default function AdminFleetPage() {
 
               <select
                 value={lockFilter}
-                onChange={(e) => setLockFilter(e.target.value as any)}
+                onChange={(e) => setLockFilter(e.target.value as 'all' | 'owner' | 'standard')}
                 className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-foreground focus:outline-none"
               >
                 <option value="all">All Lock Modes</option>
@@ -574,7 +575,7 @@ export default function AdminFleetPage() {
 
               <select
                 value={secretFilter}
-                onChange={(e) => setSecretFilter(e.target.value as any)}
+                onChange={(e) => setSecretFilter(e.target.value as 'all' | 'missing' | 'has_secret')}
                 className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-foreground focus:outline-none"
               >
                 <option value="all">All Auth Types</option>
@@ -584,7 +585,7 @@ export default function AdminFleetPage() {
 
               <select
                 value={updateFilter}
-                onChange={(e) => setUpdateFilter(e.target.value as any)}
+                onChange={(e) => setUpdateFilter(e.target.value as 'all' | 'failed' | 'updating' | 'latest')}
                 className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-foreground focus:outline-none"
               >
                 <option value="all">All Update States</option>

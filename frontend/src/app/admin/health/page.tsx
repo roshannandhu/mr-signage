@@ -2,8 +2,6 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Activity,
-  AlertCircle,
   AlertTriangle,
   CheckCircle,
   Clock,
@@ -11,11 +9,7 @@ import {
   Database,
   HardDrive,
   HeartPulse,
-  Mail,
   RefreshCw,
-  Server,
-  ShieldAlert,
-  ShieldCheck,
   Zap,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
@@ -24,7 +18,7 @@ import { PageHeader, StatCard } from '@/components/admin/admin-ui'
 export default function AdminHealthPage() {
   const queryClient = useQueryClient()
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isFetching } = useQuery({
     queryKey: ['admin', 'platform-health'],
     queryFn: adminApi.getPlatformHealth,
     refetchInterval: 30000,

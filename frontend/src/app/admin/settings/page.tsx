@@ -1,59 +1,50 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  Bell,
-  Check,
-  CheckCircle,
-  Database,
-  Film,
-  HardDrive,
-  Mail,
-  RefreshCw,
-  Save,
-  Send,
-  Settings,
-  Shield,
-  Sliders,
-} from 'lucide-react'
+import { Bell, Mail, Save, Send, Sliders } from 'lucide-react'
 import { adminApi } from '@/lib/api'
+import type { SystemSettings } from '@/lib/types'
 import { PageHeader } from '@/components/admin/admin-ui'
 import { toast } from 'sonner'
 
 export default function AdminSettingsPage() {
-  const queryClient = useQueryClient()
-
-  const [contactEmail, setContactEmail] = useState('')
-  const [auditRetentionDays, setAuditRetentionDays] = useState(90)
-  const [requireGoogleSso, setRequireGoogleSso] = useState(false)
-  const [demoVideoUrl, setDemoVideoUrl] = useState('')
-  const [offlineHours, setOfflineHours] = useState(24)
-  const [expiringDays, setExpiringDays] = useState(7)
-  const [storagePercent, setStoragePercent] = useState(90)
-
-  // SMTP test state
-  const [testEmailTo, setTestEmailTo] = useState('')
-  const [testingSmtp, setTestingSmtp] = useState(false)
-
-  // Fetch settings
   const { data: settings, isLoading } = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: adminApi.getSettings,
   })
 
-  // Populate state on load
-  useEffect(() => {
-    if (settings) {
-      setContactEmail(settings.contact_email || '')
-      setAuditRetentionDays(settings.audit_retention_days || 90)
-      setRequireGoogleSso(settings.require_super_admin_google_sso || false)
-      setDemoVideoUrl(settings.demo_video_url || '')
-      setOfflineHours(settings.attention_offline_screen_hours || 24)
-      setExpiringDays(settings.attention_expiring_plan_days || 7)
-      setStoragePercent(settings.attention_storage_percent || 90)
-    }
-  }, [settings])
+  if (isLoading || !settings) {
+    return (
+      <div className="space-y-6 p-6 text-foreground lg:p-8">
+        <PageHeader
+          title="System Settings & Policy Governance"
+          description="Configure platform contact identities, SMTP test verification, retention cycles, and automated attention thresholds"
+        />
+        <div className="rounded-2xl border border-border bg-card p-12 text-center text-sm text-muted-foreground">
+          Loading platform settings…
+        </div>
+      </div>
+    )
+  }
+
+  return <SettingsForm initialSettings={settings} />
+}
+
+function SettingsForm({ initialSettings }: { initialSettings: SystemSettings }) {
+  const queryClient = useQueryClient()
+
+  const [contactEmail, setContactEmail] = useState(initialSettings.contact_email || '')
+  const [auditRetentionDays, setAuditRetentionDays] = useState(initialSettings.audit_retention_days || 90)
+  const [requireGoogleSso, setRequireGoogleSso] = useState(initialSettings.require_super_admin_google_sso || false)
+  const [demoVideoUrl, setDemoVideoUrl] = useState(initialSettings.demo_video_url || '')
+  const [offlineHours, setOfflineHours] = useState(initialSettings.attention_offline_screen_hours || 24)
+  const [expiringDays, setExpiringDays] = useState(initialSettings.attention_expiring_plan_days || 7)
+  const [storagePercent, setStoragePercent] = useState(initialSettings.attention_storage_percent || 90)
+
+  // SMTP test state
+  const [testEmailTo, setTestEmailTo] = useState('')
+  const [testingSmtp, setTestingSmtp] = useState(false)
 
   // Save settings mutation
   const saveMutation = useMutation({
@@ -82,8 +73,9 @@ export default function AdminSettingsPage() {
     try {
       await adminApi.sendTestEmail(testEmailTo.trim())
       toast.success(`Test email dispatched to ${testEmailTo.trim()}`)
-    } catch (err: any) {
-      toast.error(`SMTP error: ${err.message || 'Delivery failed'}`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Delivery failed'
+      toast.error(`SMTP error: ${message}`)
     } finally {
       setTestingSmtp(false)
     }
@@ -97,7 +89,7 @@ export default function AdminSettingsPage() {
       >
         <button
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || isLoading}
+          disabled={saveMutation.isPending}
           className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 disabled:opacity-50"
         >
           <Save className="size-4" />
@@ -113,53 +105,52 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">Platform Support & Mail Identity</h3>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-foreground">Platform Support Email</label>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground">Primary Support Email</label>
             <input
               type="email"
-              placeholder="support@mrsignage.com"
               value={contactEmail}
               onChange={(e) => setContactEmail(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+              placeholder="support@company.com"
+              className="w-full rounded-xl border border-border bg-muted/30 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Address displayed on tenant invoice sign-offs and billing contact drafts.
+            <p className="text-[11px] text-muted-foreground">
+              Displayed on public invoices, tenant support cards, and outgoing notification headers.
             </p>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-foreground">Universal Demo Video URL</label>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground">Universal Demo Video Asset URL</label>
             <input
-              type="url"
-              placeholder="https://storage.example.com/demo/universal-reel.mp4"
+              type="text"
               value={demoVideoUrl}
               onChange={(e) => setDemoVideoUrl(e.target.value)}
-              className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
+              placeholder="https://assets.domain.com/demo.mp4"
+              className="w-full rounded-xl border border-border bg-muted/30 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Default looping reel played on newly provisioned screens before first tenant playlist assignment.
+            <p className="text-[11px] text-muted-foreground">
+              Direct CDN or R2 link played automatically by TV screens prior to tenant workspace activation.
             </p>
           </div>
 
-          {/* Interactive SMTP Live Verification */}
+          {/* Test SMTP Email Dispatcher */}
           <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
-            <h4 className="text-xs font-semibold text-foreground">Live SMTP Delivery Test</h4>
+            <h4 className="text-xs font-semibold text-foreground">Live SMTP Test Dispatcher</h4>
             <p className="text-[11px] text-muted-foreground">
-              Directly tests production mail transport connectivity and authenticates credentials.
+              Verify transactional SMTP transport by dispatching an authentic diagnostic test email.
             </p>
-            <form onSubmit={handleSendTestEmail} className="flex gap-2">
+            <form onSubmit={handleSendTestEmail} className="flex flex-col sm:flex-row gap-2">
               <input
                 type="email"
-                required
-                placeholder="recipient@example.com"
                 value={testEmailTo}
                 onChange={(e) => setTestEmailTo(e.target.value)}
-                className="flex-1 rounded-xl border border-border bg-card p-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                placeholder="operator@company.com"
+                className="flex-1 rounded-xl border border-border bg-card p-2 text-xs text-foreground focus:outline-none"
               />
               <button
                 type="submit"
                 disabled={testingSmtp || !testEmailTo.trim()}
-                className="flex items-center gap-1.5 rounded-xl bg-card border border-border px-3 py-2 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted disabled:opacity-50"
               >
                 <Send className="size-3" />
                 {testingSmtp ? 'Sending…' : 'Send Test'}
@@ -168,37 +159,35 @@ export default function AdminSettingsPage() {
           </div>
         </section>
 
-        {/* Security, Retention & Attention Thresholds */}
+        {/* Governance & Attention Thresholds */}
         <section className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
           <div className="flex items-center gap-2 border-b border-border pb-3">
             <Sliders className="size-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">Retention & Proactive Thresholds</h3>
+            <h3 className="text-sm font-semibold text-foreground">Platform Governance & Operational Thresholds</h3>
           </div>
 
-          {/* Audit Retention */}
-          <div>
-            <label className="text-xs font-medium text-foreground">Audit Log Retention Window (Days)</label>
-            <input
-              type="number"
-              min={7}
-              max={365}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-foreground">Audit Trail Retention (Days)</label>
+            <select
               value={auditRetentionDays}
               onChange={(e) => setAuditRetentionDays(Number(e.target.value))}
-              className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground focus:border-primary focus:outline-none"
-            />
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Immutable platform audit logs older than this duration will be queued for cold-archive pruning.
-            </p>
+              className="w-full rounded-xl border border-border bg-muted/30 p-2.5 text-xs text-foreground focus:outline-none"
+            >
+              <option value={30}>30 Days</option>
+              <option value={90}>90 Days (Recommended)</option>
+              <option value={180}>180 Days</option>
+              <option value={365}>365 Days (1 Year Compliance)</option>
+            </select>
           </div>
 
           {/* Attention Queue Thresholds */}
-          <div className="space-y-3 rounded-xl border border-border bg-muted/20 p-4">
-            <div className="flex items-center gap-1.5">
+          <div className="space-y-2 rounded-xl border border-border bg-muted/20 p-4">
+            <div className="flex items-center gap-2">
               <Bell className="size-3.5 text-amber-500" />
-              <h4 className="text-xs font-semibold text-foreground">Attention Queue Alert Triggers</h4>
+              <h4 className="text-xs font-semibold text-foreground">Proactive Queue Triggers</h4>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
                 <label className="text-[11px] text-muted-foreground">TV Offline (Hours)</label>
                 <input
@@ -260,4 +249,3 @@ export default function AdminSettingsPage() {
     </div>
   )
 }
-

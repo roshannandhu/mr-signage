@@ -3,24 +3,17 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  AlertCircle,
-  ArrowRight,
-  CheckCircle2,
-  ChevronRight,
   Download,
   Info,
   Package,
   PackagePlus,
   PauseCircle,
-  PlayCircle,
   Rocket,
-  ShieldAlert,
-  ShieldCheck,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import type { RolloutState, AppRelease } from '@/lib/types'
+import type { RolloutState } from '@/lib/types'
 import { relativeTime } from '@/lib/format'
 import { PageHeader } from '@/components/admin/admin-ui'
 

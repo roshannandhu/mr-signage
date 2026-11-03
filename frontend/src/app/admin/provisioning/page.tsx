@@ -13,9 +13,6 @@ import {
   Printer,
   QrCode,
   Shield,
-  Smartphone,
-  Tv,
-  Wifi,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -39,7 +36,7 @@ export default function AdminProvisioningPage() {
   const [copiedToken, setCopiedToken] = useState(false)
 
   // Fetch tenants for tenant selector
-  const { data: tenants = [], isLoading: loadingTenants } = useQuery({
+  const { data: tenants = [] } = useQuery({
     queryKey: ['admin', 'tenants', 'all-for-provisioning'],
     queryFn: () => adminApi.listTenants(),
   })
@@ -340,7 +337,7 @@ export default function AdminProvisioningPage() {
               </div>
               <h4 className="mt-4 text-sm font-semibold text-foreground">Awaiting Provisioning Parameters</h4>
               <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-                Select a tenant on the left and input the deployment location's Wi-Fi network to generate a zero-touch Android Device-Owner setup QR sheet.
+                Select a tenant on the left and input the deployment location&apos;s Wi-Fi network to generate a zero-touch Android Device-Owner setup QR sheet.
               </p>
             </div>
           )}

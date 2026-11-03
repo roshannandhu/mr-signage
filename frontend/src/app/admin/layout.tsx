@@ -176,7 +176,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     queryKey: ['admin', 'custom-requests'], queryFn: adminApi.listCustomRequests,
     enabled: isAdmin, refetchInterval: 15000,
   })
-  const requestedCount = (requestsQuery.data ?? []).filter((r) => r.status === 'requested').length
+  const requestedCount = (Array.isArray(requestsQuery.data) ? requestsQuery.data : []).filter((r) => r.status === 'requested').length
 
   useEffect(() => {
     if (!hydrated) return

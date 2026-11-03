@@ -117,7 +117,6 @@ export default function AdminDemoVideoPage() {
 
       {!isLoading && data?.url && (
         <section className="overflow-hidden rounded-2xl border border-border bg-black">
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
           <video key={data.url} src={data.url} controls className="max-h-[420px] w-full" />
         </section>
       )}
