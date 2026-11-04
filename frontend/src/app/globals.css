@@ -315,3 +315,23 @@
   color: var(--color-popover-foreground, #0f172a);
   border-color: rgb(255 255 255 / 0.12);
 }
+
+/* Global Mobile Responsive Safeguards ------------------------------------- */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Ensure code, pre, monospace tokens, hashes, and URLs never blowout horizontal viewport */
+code, pre, .font-mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Safe touch target minimum on touch devices */
+@media (pointer: coarse) {
+  button, a, input, select, textarea {
+    touch-action: manipulation;
+  }
+}

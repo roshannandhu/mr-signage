@@ -247,14 +247,14 @@ export default function ActivateWorkspacePage() {
   const requests = (requestsQuery.data ?? []).filter((r) => r.status !== 'paid')
 
   return (
-    <main className="relative min-h-screen bg-background px-6 py-12 text-foreground">
+    <div className="relative min-h-[calc(100vh-10rem)] bg-background px-4 py-6 sm:px-6 sm:py-10 text-foreground overflow-hidden rounded-3xl">
       <div className="pointer-events-none absolute -left-32 -top-32 size-[500px] rounded-full bg-emerald-500/10 blur-[140px]" />
       <div className="pointer-events-none absolute -bottom-32 -right-32 size-[500px] rounded-full bg-teal-500/10 blur-[140px]" />
 
       <div className="relative mx-auto w-full max-w-6xl">
-        <header className="mb-10 flex items-center justify-between gap-4">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20">
+            <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20 shrink-0">
               <RadioTower className="size-5" />
             </div>
             <div>
@@ -262,11 +262,11 @@ export default function ActivateWorkspacePage() {
               <p className="text-[10px] font-semibold text-emerald-400 tracking-wider">(Midhun-Roshan)</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
             <span className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
               <RefreshCw className="size-3 text-emerald-400" /> Activates the moment you pay
             </span>
-            <Button onClick={logout} variant="outline" className="h-10 border-border bg-muted text-foreground hover:bg-muted">
+            <Button onClick={logout} variant="outline" className="h-10 border-border bg-muted text-foreground hover:bg-muted shrink-0">
               <LogOut className="mr-2 size-4" /> Sign out
             </Button>
           </div>
@@ -459,7 +459,7 @@ export default function ActivateWorkspacePage() {
           </div>
         )}
       </div>
-    </main>
+    </div>
   )
 }
 

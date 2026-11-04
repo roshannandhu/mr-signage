@@ -158,32 +158,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           is, and keeps the way out one click away at all times. */}
       {acting && (
         <div
-          className={`sticky top-0 z-50 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-sm text-white sm:px-6 lg:px-8 ${
+          className={`sticky top-0 z-50 flex flex-col gap-2 p-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8 text-xs sm:text-sm text-white w-full ${
             acting.readOnly ? 'bg-neutral-700' : 'bg-violet-600'
           }`}
         >
-          <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 flex-1">
-            {acting.readOnly ? (
-              <>
-                Platform operator — <strong className="font-semibold">read-only view</strong> of{' '}
-                <strong className="font-semibold">{acting.name}</strong>. Nothing here can be changed.
-              </>
-            ) : (
-              <>
-                Platform operator — you are working inside{' '}
-                <strong className="font-semibold">{acting.name}</strong>. Everything you change here
-                belongs to them.
-              </>
-            )}
-          </p>
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="size-4 shrink-0" aria-hidden="true" />
+            <p className="min-w-0 leading-tight">
+              {acting.readOnly ? (
+                <>
+                  Platform operator — <strong className="font-semibold">read-only view</strong> of{' '}
+                  <strong className="font-semibold">{acting.name}</strong>.
+                </>
+              ) : (
+                <>
+                  Platform operator — in workspace <strong className="font-semibold">{acting.name}</strong>.
+                </>
+              )}
+            </p>
+          </div>
           <button
             onClick={() => {
               const id = acting.id
               leaveWorkspace()
               router.replace(`/admin/tenants/${id}`)
             }}
-            className="shrink-0 rounded-lg bg-white/15 px-3 py-1 font-semibold transition-colors hover:bg-white/25"
+            className="self-start sm:self-auto shrink-0 rounded-lg bg-white/15 px-3 py-1 text-xs font-semibold transition-colors hover:bg-white/25"
           >
             Leave workspace
           </button>

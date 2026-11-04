@@ -44,7 +44,8 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
   const [unlockReason, setUnlockReason] = useState('')
 
   const pinData = pinQuery.data
-  const effectivePin = pinData?.effective_maintenance_pin ?? pinData?.maintenance_pin ?? (screen.effective_maintenance_pin || screen.maintenance_pin)
+  const rawPin = pinData?.effective_maintenance_pin ?? pinData?.maintenance_pin ?? (screen.effective_maintenance_pin || screen.maintenance_pin)
+  const effectivePin = rawPin && /^\d{4}$/.test(String(rawPin).trim()) ? String(rawPin).trim() : null
   const isInherited = pinData ? (pinData.is_inherited ?? !pinData.uses_own_pin) : (!screen.effective_maintenance_pin || screen.effective_maintenance_pin === screen.maintenance_pin)
   const isSynced = pinData
     ? pinData.synced_credentials_version >= pinData.workspace_credentials_version

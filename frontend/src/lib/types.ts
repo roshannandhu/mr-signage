@@ -965,6 +965,14 @@ export interface SecurityAdmin {
   token_version: number
   last_login_at: string | null
   created_at: string | null
+  is_root_admin?: boolean
+}
+
+export interface CreateAdminInput {
+  email: string
+  full_name?: string
+  auth_method: 'google' | 'password_and_google'
+  password?: string
 }
 
 export interface AuthEventItem {
@@ -1004,6 +1012,7 @@ export interface SecurityOverview {
   require_super_admin_google_sso: boolean
   legacy_device_auth: boolean
   screens_without_secret: number
+  current_user_is_root_admin?: boolean
 }
 
 export interface PlatformHealthDetails {

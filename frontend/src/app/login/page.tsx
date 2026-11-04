@@ -204,7 +204,7 @@ export default function LoginPage() {
       </section>
 
       {/* Right Login Section */}
-      <section className="flex items-center justify-center bg-background px-6 py-12 sm:px-12">
+      <section className="flex items-center justify-center bg-background px-4 py-8 sm:px-12 overflow-x-hidden">
         <div className="w-full max-w-[440px]">
           {/* Mobile Brand Logo */}
           <div className="mb-8 flex items-center gap-3 lg:hidden">
@@ -226,17 +226,17 @@ export default function LoginPage() {
           {/* Active Session Notice */}
           {token && user && (
             <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-muted-foreground shadow-lg">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-emerald-400">Active session: {user.username}</p>
-                  <p className="text-[11px] text-muted-foreground">{user.organization_name || 'Organization'}</p>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-emerald-400 truncate">Active session: {user.username}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{user.organization_name || 'Organization'}</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <Button
                     type="button"
                     size="sm"
                     onClick={() => router.push(user.organization_status === 'pending_approval' ? '/dashboard/pending' : '/dashboard/screens')}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs h-8 px-3 rounded-lg"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs h-8 px-3 rounded-lg flex-1 sm:flex-none"
                   >
                     Open Dashboard
                   </Button>
@@ -245,7 +245,7 @@ export default function LoginPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => clearSession()}
-                    className="border-border bg-muted hover:bg-muted text-foreground text-xs h-8 px-2.5 rounded-lg"
+                    className="border-border bg-muted hover:bg-muted text-foreground text-xs h-8 px-2.5 rounded-lg shrink-0"
                   >
                     Sign Out
                   </Button>

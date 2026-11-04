@@ -503,6 +503,23 @@ class ScreenResponse(ScreenBase):
     network_type: Optional[str] = None
     timezone: Optional[str] = None
 
+    @field_validator("maintenance_pin", "effective_maintenance_pin", mode="before")
+    @classmethod
+    def sanitize_pin(cls, v: Any) -> Optional[str]:
+        if not v:
+            return None
+        s = str(v).strip()
+        if re.match(r"^\d{4}$", s):
+            return s
+        try:
+            from backend.pin_crypto import decrypt_pin
+            decrypted = decrypt_pin(s)
+            if decrypted and re.match(r"^\d{4}$", decrypted):
+                return decrypted
+        except Exception:
+            pass
+        return None
+
     model_config = ConfigDict(from_attributes=True)
 
 

@@ -7,18 +7,22 @@ import {
   Check,
   CheckCircle,
   Copy,
+  Crown,
   Eye,
   EyeOff,
   Globe,
   Key,
   KeyRound,
   LogOut,
+  Plus,
   RefreshCw,
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Tv,
   Unlock,
+  UserPlus,
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { PageHeader, StatCard } from '@/components/admin/admin-ui'
@@ -66,6 +70,42 @@ export default function AdminSecurityPage() {
     mutationFn: (userId: number) => adminApi.signOutEverywhere(userId),
     onSuccess: (res) => {
       toast.success(`User sessions invalidated (token version: ${res.token_version})`)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  // Add / Remove Admin state & mutations
+  const [addAdminModalOpen, setAddAdminModalOpen] = useState(false)
+  const [newAdminEmail, setNewAdminEmail] = useState('')
+  const [newAdminFullName, setNewAdminFullName] = useState('')
+  const [newAdminAuthMethod, setNewAdminAuthMethod] = useState<'google' | 'password_and_google'>('google')
+  const [newAdminPassword, setNewAdminPassword] = useState('')
+
+  const createAdminMutation = useMutation({
+    mutationFn: () =>
+      adminApi.createAdmin({
+        email: newAdminEmail.trim(),
+        full_name: newAdminFullName.trim() || undefined,
+        auth_method: newAdminAuthMethod,
+        password: newAdminAuthMethod === 'password_and_google' ? newAdminPassword : undefined,
+      }),
+    onSuccess: (res) => {
+      toast.success(`Super Administrator ${res.email} provisioned successfully`)
+      setAddAdminModalOpen(false)
+      setNewAdminEmail('')
+      setNewAdminFullName('')
+      setNewAdminPassword('')
+      setNewAdminAuthMethod('google')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  const removeAdminMutation = useMutation({
+    mutationFn: (adminId: number) => adminApi.removeAdmin(adminId),
+    onSuccess: () => {
+      toast.success('Super Administrator removed and sessions invalidated')
       queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
     },
     onError: (err: Error) => toast.error(err.message),
@@ -350,61 +390,110 @@ export default function AdminSecurityPage() {
 
         {/* Tab 1: Super Administrators */}
         {activeTab === 'admins' && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-sm">
-              <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
-                <tr>
-                  <th className="p-3 pl-4 text-left">Admin User</th>
-                  <th className="p-3 text-left">Email</th>
-                  <th className="p-3 text-left">Auth Method</th>
-                  <th className="p-3 text-left">Last Login</th>
-                  <th className="p-3 text-left">Token Version</th>
-                  <th className="p-3 pr-4 text-right">Emergency Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {superAdmins.map((admin) => (
-                  <tr key={admin.id} className="hover:bg-muted/20">
-                    <td className="p-3 pl-4 font-medium text-foreground">
-                      <div className="flex items-center gap-2">
-                        <Shield className="size-4 text-primary" />
-                        <span>{admin.username}</span>
-                        {admin.full_name && <span className="text-xs text-muted-foreground">({admin.full_name})</span>}
-                      </div>
-                    </td>
-                    <td className="p-3 text-xs text-foreground">{admin.email || '—'}</td>
-                    <td className="p-3">
-                      <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs capitalize text-foreground">
-                        {admin.auth_provider}
-                      </span>
-                    </td>
-                    <td className="p-3 text-xs text-muted-foreground">
-                      {admin.last_login_at ? new Date(admin.last_login_at).toLocaleString() : 'Never'}
-                    </td>
-                    <td className="p-3 font-mono text-xs text-muted-foreground">v{admin.token_version}</td>
-                    <td className="p-3 pr-4 text-right">
-                      <button
-                        onClick={async () => {
-                          const res = await confirm({
-                            title: `Revoke active sessions for ${admin.username}?`,
-                            description: `This will increment ${admin.username}'s session token version and immediately invalidate all active web browsers and sessions. They will be forced to log in again.`,
-                            confirmLabel: 'Sign Out Everywhere',
-                            destructive: true,
-                          })
-                          if (res) signOutMutation.mutate(admin.id)
-                        }}
-                        disabled={signOutMutation.isPending}
-                        title="Invalidates all active tokens by bumping token_version"
-                        className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
-                      >
-                        <LogOut className="size-3" />
-                        Sign Out Everywhere
-                      </button>
-                    </td>
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-1">
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">Platform Operators & Root Administrators</h4>
+                <p className="text-xs text-muted-foreground">
+                  Super administrators hold universal platform governance, tenant approvals, and fleet control authority.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddAdminModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground shadow hover:bg-primary/90 transition"
+              >
+                <UserPlus className="size-3.5" />
+                Add Super Administrator
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-sm">
+                <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="p-3 pl-4 text-left">Admin User</th>
+                    <th className="p-3 text-left">Email</th>
+                    <th className="p-3 text-left">Auth Method</th>
+                    <th className="p-3 text-left">Last Login</th>
+                    <th className="p-3 text-left">Token Version</th>
+                    <th className="p-3 pr-4 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {superAdmins.map((admin) => (
+                    <tr key={admin.id} className="hover:bg-muted/20">
+                      <td className="p-3 pl-4 font-medium text-foreground">
+                        <div className="flex items-center gap-2">
+                          <Shield className="size-4 text-primary" />
+                          <span>{admin.username}</span>
+                          {admin.full_name && <span className="text-xs text-muted-foreground">({admin.full_name})</span>}
+                          {admin.is_root_admin && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                              <Crown className="size-3" />
+                              Root Admin
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-xs text-foreground">{admin.email || '—'}</td>
+                      <td className="p-3">
+                        <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs capitalize text-foreground">
+                          {admin.auth_provider === 'google' ? 'Google SSO' : admin.auth_provider}
+                        </span>
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">
+                        {admin.last_login_at ? new Date(admin.last_login_at).toLocaleString() : 'Never'}
+                      </td>
+                      <td className="p-3 font-mono text-xs text-muted-foreground">v{admin.token_version}</td>
+                      <td className="p-3 pr-4 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              const res = await confirm({
+                                title: `Revoke active sessions for ${admin.username}?`,
+                                description: `This will increment ${admin.username}'s session token version and immediately invalidate all active web browsers and sessions. They will be forced to log in again.`,
+                                confirmLabel: 'Sign Out Everywhere',
+                                destructive: true,
+                              })
+                              if (res) signOutMutation.mutate(admin.id)
+                            }}
+                            disabled={signOutMutation.isPending}
+                            title="Invalidates all active tokens by bumping token_version"
+                            className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                          >
+                            <LogOut className="size-3" />
+                            Sign Out
+                          </button>
+
+                          {admin.is_root_admin ? (
+                            <span className="text-[11px] font-medium text-muted-foreground italic px-1">Protected</span>
+                          ) : data?.current_user_is_root_admin ? (
+                            <button
+                              onClick={async () => {
+                                const res = await confirm({
+                                  title: `Remove Super Administrator ${admin.username}?`,
+                                  description: `This will permanently revoke all super administrator permissions and invalidate all active sessions for ${admin.email || admin.username}.`,
+                                  confirmLabel: 'Remove Administrator',
+                                  destructive: true,
+                                })
+                                if (res) removeAdminMutation.mutate(admin.id)
+                              }}
+                              disabled={removeAdminMutation.isPending}
+                              title="Revoke super admin access"
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
+                            >
+                              <Trash2 className="size-3" />
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -782,6 +871,131 @@ export default function AdminSecurityPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Add Super Administrator Modal */}
+      {addAdminModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <div className="flex items-center gap-2">
+                <UserPlus className="size-5 text-primary" />
+                <h3 className="text-base font-semibold text-foreground">Add Super Administrator</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAddAdminModalOpen(false)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createAdminMutation.mutate()
+              }}
+              className="mt-4 space-y-4"
+            >
+              <div>
+                <label className="text-xs font-semibold text-foreground">
+                  Admin Email Address <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={newAdminEmail}
+                  onChange={(e) => setNewAdminEmail(e.target.value)}
+                  placeholder="e.g. operator@company.com"
+                  className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Google Workspace or Gmail account for platform access.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-foreground">Full Name (Optional)</label>
+                <input
+                  type="text"
+                  value={newAdminFullName}
+                  onChange={(e) => setNewAdminFullName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-foreground">Authentication Method</label>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewAdminAuthMethod('google')}
+                    className={`rounded-xl border p-2.5 text-left text-xs transition ${
+                      newAdminAuthMethod === 'google'
+                        ? 'border-primary bg-primary/10 font-semibold text-primary'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <div className="font-medium">Google SSO Only</div>
+                    <div className="text-[10px] opacity-75">No password stored</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewAdminAuthMethod('password_and_google')}
+                    className={`rounded-xl border p-2.5 text-left text-xs transition ${
+                      newAdminAuthMethod === 'password_and_google'
+                        ? 'border-primary bg-primary/10 font-semibold text-primary'
+                        : 'border-border bg-card text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    <div className="font-medium">Password + Google</div>
+                    <div className="text-[10px] opacity-75">Hybrid credentials</div>
+                  </button>
+                </div>
+              </div>
+
+              {newAdminAuthMethod === 'password_and_google' && (
+                <div>
+                  <label className="text-xs font-semibold text-foreground">
+                    Password <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    value={newAdminPassword}
+                    onChange={(e) => setNewAdminPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="mt-1 w-full rounded-xl border border-border bg-muted/40 p-2.5 text-xs text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="mt-6 flex justify-end gap-2 border-t border-border pt-4">
+                <button
+                  type="button"
+                  onClick={() => setAddAdminModalOpen(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    !newAdminEmail.trim() ||
+                    (newAdminAuthMethod === 'password_and_google' && (!newAdminPassword || newAdminPassword.length < 8)) ||
+                    createAdminMutation.isPending
+                  }
+                  className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {createAdminMutation.isPending ? 'Provisioning…' : 'Create Administrator'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

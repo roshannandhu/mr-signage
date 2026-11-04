@@ -2499,6 +2499,13 @@ def sign_out_everywhere(
     )
 
 
+PROTECTED_ROOT_ADMIN_EMAILS = {
+    "mrsignage1100@gmail.com",
+    "roshannandhu1100@gmail.com",
+    "mrmandhabudhi@gmail.com",
+}
+
+
 class SecurityAdminItem(BaseModel):
     id: int
     username: str
@@ -2508,6 +2515,7 @@ class SecurityAdminItem(BaseModel):
     token_version: int = 0
     last_login_at: Optional[str] = None
     created_at: Optional[str] = None
+    is_root_admin: bool = False
 
 
 class AuthEventItem(BaseModel):
@@ -2539,6 +2547,7 @@ class SecurityOverviewOut(BaseModel):
     require_super_admin_google_sso: bool
     legacy_device_auth: bool
     screens_without_secret: int
+    current_user_is_root_admin: bool = False
 
 
 @router.get("/security/overview", response_model=SecurityOverviewOut)
@@ -2557,6 +2566,10 @@ def get_security_overview(
             token_version=u.token_version or 0,
             last_login_at=_iso(u.last_login_at),
             created_at=_iso(u.created_at),
+            is_root_admin=(
+                (u.email or "").strip().lower() in PROTECTED_ROOT_ADMIN_EMAILS
+                or (u.username or "").strip().lower() in PROTECTED_ROOT_ADMIN_EMAILS
+            ),
         )
         for u in super_admins
     ]
@@ -2617,6 +2630,13 @@ def get_security_overview(
     )
     require_sso = sso_setting.value == "true" if sso_setting else False
 
+    caller_email = (scope.user.email or "").strip().lower()
+    caller_username = (scope.user.username or "").strip().lower()
+    caller_is_root = (
+        caller_email in PROTECTED_ROOT_ADMIN_EMAILS
+        or caller_username in PROTECTED_ROOT_ADMIN_EMAILS
+    )
+
     return SecurityOverviewOut(
         super_admins=admin_items,
         recent_sign_ins=auth_items,
@@ -2625,6 +2645,7 @@ def get_security_overview(
         require_super_admin_google_sso=require_sso,
         legacy_device_auth=legacy_device_auth_allowed(),
         screens_without_secret=screens_without_secret(db),
+        current_user_is_root_admin=caller_is_root,
     )
 
 
@@ -2762,6 +2783,152 @@ def update_security_policy(
     )
     db.commit()
     return {"status": "ok", "require_super_admin_google_sso": req.require_super_admin_google_sso}
+
+
+class CreateSuperAdminIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=150)
+    full_name: Optional[str] = Field(None, max_length=150)
+    auth_method: Literal["google", "password_and_google"] = "google"
+    password: Optional[str] = Field(None, max_length=72)
+
+
+@router.post("/security/admins", response_model=SecurityAdminItem)
+def create_super_admin(
+    req: CreateSuperAdminIn,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Create a new Super Administrator or promote an existing account."""
+    import secrets
+    from .auth import get_password_hash, get_or_create_default_organization
+
+    email = req.email.strip().lower()
+    if "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email address is required")
+
+    if req.auth_method == "password_and_google":
+        if not req.password or len(req.password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        hashed_pw = get_password_hash(req.password)
+    else:
+        hashed_pw = get_password_hash(secrets.token_hex(24))
+
+    user = (
+        db.query(models.User)
+        .filter(
+            (func.lower(models.User.email) == email)
+            | (func.lower(models.User.username) == email)
+        )
+        .first()
+    )
+
+    if user:
+        if user.role == "super_admin":
+            raise HTTPException(status_code=400, detail=f"User {email} is already a Super Administrator")
+        user.role = "super_admin"
+        if req.full_name:
+            user.full_name = req.full_name
+        if req.auth_method == "password_and_google":
+            user.hashed_password = hashed_pw
+        user.auth_provider = "google"
+        user.is_active = True
+        user.token_version = (user.token_version or 0) + 1
+    else:
+        default_org = get_or_create_default_organization(db)
+        user = models.User(
+            organization_id=default_org.id,
+            username=email,
+            email=email,
+            full_name=req.full_name or email.split("@")[0],
+            hashed_password=hashed_pw,
+            role="super_admin",
+            auth_provider="google",
+            is_active=True,
+            token_version=1,
+        )
+        db.add(user)
+
+    db.flush()
+    _audit(
+        db,
+        scope,
+        request,
+        "security.super_admin.create",
+        target_type="user",
+        target_id=user.id,
+        after={
+            "user_id": user.id,
+            "email": user.email,
+            "role": "super_admin",
+            "auth_method": req.auth_method,
+        },
+    )
+    db.commit()
+    db.refresh(user)
+
+    return SecurityAdminItem(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        full_name=user.full_name,
+        auth_provider=user.auth_provider,
+        token_version=user.token_version or 0,
+        last_login_at=_iso(user.last_login_at),
+        created_at=_iso(user.created_at),
+        is_root_admin=email in PROTECTED_ROOT_ADMIN_EMAILS,
+    )
+
+
+@router.delete("/security/admins/{admin_id}")
+def remove_super_admin(
+    admin_id: int,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Remove a Super Administrator. Only protected root administrators can perform this action."""
+    caller_email = (scope.user.email or "").strip().lower()
+    caller_username = (scope.user.username or "").strip().lower()
+    caller_is_root = (
+        caller_email in PROTECTED_ROOT_ADMIN_EMAILS
+        or caller_username in PROTECTED_ROOT_ADMIN_EMAILS
+    )
+    if not caller_is_root:
+        raise HTTPException(
+            status_code=403,
+            detail="Permission denied: Only primary root administrators (mrsignage1100@gmail.com, roshannandhu1100@gmail.com, mrmandhabudhi@gmail.com) can remove administrators."
+        )
+
+    target = db.query(models.User).filter(models.User.id == admin_id).first()
+    if not target or target.role != "super_admin":
+        raise HTTPException(status_code=404, detail="Super administrator not found")
+
+    target_email = (target.email or "").strip().lower()
+    target_username = (target.username or "").strip().lower()
+
+    if target_email in PROTECTED_ROOT_ADMIN_EMAILS or target_username in PROTECTED_ROOT_ADMIN_EMAILS:
+        raise HTTPException(status_code=400, detail="Cannot delete a protected root platform administrator")
+
+    if target.id == scope.user.id:
+        raise HTTPException(status_code=400, detail="You cannot remove your own administrator account")
+
+    target.role = "user"
+    target.is_active = False
+    target.token_version = (target.token_version or 0) + 1
+
+    _audit(
+        db,
+        scope,
+        request,
+        "security.super_admin.remove",
+        target_type="user",
+        target_id=target.id,
+        after={"user_id": target.id, "email": target.email, "role": "user", "is_active": False},
+    )
+    db.commit()
+
+    return {"status": "ok", "removed_admin_id": admin_id}
 
 
 # ------------------------------------------------------------------ System Settings (Phase E §4.18)

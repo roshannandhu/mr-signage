@@ -1,7 +1,7 @@
 import { useAuthStore } from './store'
 import type {
   FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, TransitionName, User,
-  SecurityOverview, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote
+  SecurityOverview, SecurityAdmin, CreateAdminInput, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote
 } from './types'
 
 const PROD_API_URL = 'https://mr-signage.onrender.com'
@@ -1088,6 +1088,18 @@ export const adminApi = {
       `/admin/users/${userId}/sign-out-everywhere`,
       { method: 'POST' },
     ),
+
+  createAdmin: (data: CreateAdminInput) =>
+    fetchWithAuth<SecurityAdmin>('/admin/security/admins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+
+  removeAdmin: (adminId: number) =>
+    fetchWithAuth<{ status: string; removed_admin_id: number }>(`/admin/security/admins/${adminId}`, {
+      method: 'DELETE',
+    }),
 
   getPlatformHealth: () => fetchWithAuth<PlatformHealthDetails>('/admin/platform-health'),
 

@@ -69,14 +69,14 @@ export default function SignupPage() {
   const plans = plansQuery.data ?? []
 
   return (
-    <main className="relative min-h-screen bg-background px-6 py-12 text-foreground">
+    <main className="relative min-h-screen bg-background px-4 py-8 sm:px-6 sm:py-12 text-foreground overflow-x-hidden">
       <div className="pointer-events-none absolute -left-32 -top-32 size-[500px] rounded-full bg-emerald-500/10 blur-[140px]" />
       <div className="pointer-events-none absolute -bottom-32 -right-32 size-[500px] rounded-full bg-teal-500/10 blur-[140px]" />
 
       <div className="relative mx-auto w-full max-w-6xl">
-        <header className="mb-10 flex items-center justify-between gap-4">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20">
+            <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20 shrink-0">
               <RadioTower className="size-5" />
             </div>
             <div>
@@ -85,7 +85,7 @@ export default function SignupPage() {
             </div>
           </div>
           <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            Already have an account? <span className="text-emerald-400">Sign in</span>
+            Already have an account? <span className="text-emerald-400 font-semibold">Sign in</span>
           </Link>
         </header>
 
