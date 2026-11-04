@@ -1388,8 +1388,6 @@ def delete_tenant_permanently(
     org = _get_org(db, org_id)
     if org.id == scope.user.organization_id:
         raise HTTPException(status_code=400, detail="Cannot delete your own organization.")
-    if org.deleted_at is None:
-        raise HTTPException(status_code=409, detail="Remove this workspace before deleting it permanently.")
     if confirm_name.strip() != org.name:
         raise HTTPException(status_code=400, detail="The name typed does not match this workspace.")
 

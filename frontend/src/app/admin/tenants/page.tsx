@@ -539,8 +539,28 @@ export default function AdminTenantsPage() {
                         }
                       }}
                     >
-                      <Trash2 className="size-4 text-rose-500" />
+                      <Trash2 className="size-4 text-amber-500" />
                       <span>Remove workspace</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      onClick={async () => {
+                        const result = await confirm({
+                          title: `Delete ${tenant.name} permanently?`,
+                          description:
+                            'Every screen, advert, playlist, user, and database row in Supabase and all media files in Cloudflare R2 will be permanently deleted immediately. This cannot be undone.',
+                          level: 3,
+                          confirmText: tenant.name,
+                          destructive: true,
+                          confirmLabel: 'Delete permanently now',
+                        })
+                        if (result) {
+                          deleteNow.mutate({ id: tenant.id, name: tenant.name, reason: result.reason })
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-4 text-rose-500" />
+                      <span>Delete permanently now</span>
                     </DropdownMenuItem>
                   </>
                 )}

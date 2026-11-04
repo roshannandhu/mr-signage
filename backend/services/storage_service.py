@@ -246,7 +246,55 @@ def delete_prefix(prefix: str) -> dict:
     # matches "tenants/Acme-30/...". Every key the app writes is "<prefix>/<file>".
     prefix = prefix.strip().rstrip("/") + "/"
 
+    from ..media_storage import _cf_credentials
     from ..media_urls import get_s3_config, is_s3_enabled, s3_client
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    creds = _cf_credentials()
+    if creds:
+        token, account_id, bucket = creds
+        deleted = 0
+        failed = 0
+        cursor = None
+        try:
+            while True:
+                list_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket}/objects?prefix={urllib.parse.quote(prefix)}&per_page=1000"
+                if cursor:
+                    list_url += f"&cursor={urllib.parse.quote(cursor)}"
+                req = urllib.request.Request(list_url, headers={"Authorization": f"Bearer {token}"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode())
+                res = data.get("result", [])
+                if not res:
+                    break
+                for item in res:
+                    k = item.get("key")
+                    if not k:
+                        continue
+                    del_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket}/objects/{urllib.parse.quote(k, safe='/')}"
+                    del_req = urllib.request.Request(del_url, headers={"Authorization": f"Bearer {token}"}, method="DELETE")
+                    try:
+                        with urllib.request.urlopen(del_req, timeout=20) as d_resp:
+                            if d_resp.status in (200, 204):
+                                deleted += 1
+                            else:
+                                failed += 1
+                    except urllib.error.HTTPError as he:
+                        if he.code == 404:
+                            deleted += 1
+                        else:
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                cursor = data.get("result_info", {}).get("cursor")
+                if not cursor:
+                    break
+            return {"deleted": deleted, "failed": failed, "error": None}
+        except Exception as exc:
+            logger.warning("Cloudflare R2 direct sweep of prefix %s failed: %s", prefix, exc)
 
     if not is_s3_enabled():
         return {"deleted": 0, "failed": 0, "error": "Object storage has no credentials."}
@@ -279,6 +327,79 @@ def delete_prefix(prefix: str) -> dict:
         return {"deleted": deleted, "failed": failed, "error": str(exc)}
 
     return {"deleted": deleted, "failed": failed, "error": None}
+
+
+def purge_tenant_r2_storage(org_id: int, known_prefixes: list[str]) -> dict:
+    """Purge every single object belonging to this workspace from R2.
+
+    Sweeps all known folder prefixes, followed by a backstop scan across the bucket to remove
+    any legacy or orphaned objects associated with this org_id.
+    """
+    total_deleted = 0
+    total_failed = 0
+    errors: list[str] = []
+
+    for prefix in known_prefixes:
+        if not prefix or not prefix.strip():
+            continue
+        res = delete_prefix(prefix)
+        total_deleted += res.get("deleted", 0)
+        total_failed += res.get("failed", 0)
+        if res.get("error"):
+            errors.append(res["error"])
+
+    # Backstop scan for any lingering keys containing the org ID pattern
+    from ..media_storage import _cf_credentials
+    import json
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    creds = _cf_credentials()
+    if creds:
+        token, account_id, bucket = creds
+        cursor = None
+        org_patterns = (f"-{org_id}/", f"/{org_id}/", f"org-{org_id}/")
+        try:
+            while True:
+                url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket}/objects?per_page=1000"
+                if cursor:
+                    url += f"&cursor={urllib.parse.quote(cursor)}"
+                req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode())
+                items = data.get("result", [])
+                if not items:
+                    break
+                for it in items:
+                    key = it.get("key", "")
+                    if any(pat in key for pat in org_patterns):
+                        del_url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket}/objects/{urllib.parse.quote(key, safe='/')}"
+                        del_req = urllib.request.Request(del_url, headers={"Authorization": f"Bearer {token}"}, method="DELETE")
+                        try:
+                            with urllib.request.urlopen(del_req, timeout=20) as d_resp:
+                                if d_resp.status in (200, 204):
+                                    total_deleted += 1
+                                else:
+                                    total_failed += 1
+                        except urllib.error.HTTPError as he:
+                            if he.code == 404:
+                                total_deleted += 1
+                            else:
+                                total_failed += 1
+                        except Exception:
+                            total_failed += 1
+                cursor = data.get("result_info", {}).get("cursor")
+                if not cursor:
+                    break
+        except Exception as exc:
+            logger.warning("Backstop R2 scan for org %s failed: %s", org_id, exc)
+
+    return {
+        "deleted": total_deleted,
+        "failed": total_failed,
+        "error": "; ".join(errors) if errors else None,
+    }
 
 
 def organization_id_from_prefix(prefix: str) -> int | None:

@@ -90,10 +90,8 @@ def mint_media_filename(original_name: str | None, ext: str, unique_stem: str) -
 
 
 def storage_prefix(organization) -> str:
-    """Safe, alphanumeric bucket key prefix for an organization."""
-    if not organization or getattr(organization, "id", None) is None:
-        return "shared"
-    return f"org-{organization.id}"
+    """Safe bucket key prefix for an organization. Defaults to the canonical tenant folder."""
+    return tenant_storage_root(organization)
 
 
 # Location only. Credentials are deliberately absent: this file is public, and a key

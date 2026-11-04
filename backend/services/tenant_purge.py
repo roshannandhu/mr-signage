@@ -28,12 +28,12 @@ import logging
 import os
 from datetime import timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from .. import media_storage, models
 from ..media_urls import is_s3_enabled, storage_prefix, tenant_storage_root
-from .storage_service import delete_prefix, forget_cached_usage
+from .storage_service import delete_prefix, forget_cached_usage, purge_tenant_r2_storage
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,17 @@ def _stored_urls(db: Session, org_id: int) -> list[str]:
     ).scalar()
     if logo:
         urls.append(logo)
+
+    # Any screenshot files stored for this organization
+    try:
+        for (s_url,) in db.execute(
+            text("SELECT file_url FROM screenshot_logs WHERE organization_id = :org_id"),
+            {"org_id": org_id},
+        ).fetchall():
+            if s_url:
+                urls.append(s_url)
+    except Exception:
+        pass
 
     # For an image the thumbnail IS the original, so the same key arrives twice. Deleting
     # it twice is harmless but logs a second miss for an object that already went.
@@ -142,18 +153,21 @@ def purge_organization(
 ) -> dict:
     """Destroy one workspace completely. The caller owns the transaction boundary.
 
-    Refuses anything not removed first, so a mistaken call site cannot turn this into a
-    delete-any-tenant function. Refuses anything not yet due unless `immediately` -- the
-    admin's "Delete permanently", which skips the rest of the 30 days on purpose.
+    Refuses anything not yet due unless `immediately` -- the admin's "Delete permanently",
+    which skips the 30-day grace period on purpose.
     """
     due = purge_due_at(organization)
-    if due is None:
+    if due is None and not immediately:
         raise ValueError(f"Organization {organization.id} was never removed")
-    if due > models.utcnow() and not immediately:
+    if due is not None and due > models.utcnow() and not immediately:
         raise ValueError(f"Organization {organization.id} is not due until {due.isoformat()}")
 
     org_id = organization.id
-    prefixes = list(dict.fromkeys([tenant_storage_root(organization), storage_prefix(organization)]))
+    prefixes = list(dict.fromkeys([
+        tenant_storage_root(organization),
+        f"tenants/org-{org_id}",
+        f"org-{org_id}",
+    ]))
     report = {
         "organization_id": org_id,
         "name": organization.name,
@@ -182,6 +196,31 @@ def purge_organization(
         else:
             report["objects_missed"] += 1
 
+    # Raw pre-cleanup of auxiliary and foreign-key constrained tables
+    try:
+        db.execute(
+            text("DELETE FROM auth_events WHERE user_id IN (SELECT id FROM users WHERE organization_id = :org_id)"),
+            {"org_id": org_id},
+        )
+    except Exception as exc:
+        logger.debug("auth_events cleanup: %s", exc)
+
+    try:
+        db.execute(
+            text("DELETE FROM screenshot_logs WHERE organization_id = :org_id"),
+            {"org_id": org_id},
+        )
+    except Exception as exc:
+        logger.debug("screenshot_logs cleanup: %s", exc)
+
+    try:
+        db.execute(
+            text("UPDATE screens SET leader_screen_id = NULL WHERE organization_id = :org_id"),
+            {"org_id": org_id},
+        )
+    except Exception as exc:
+        logger.debug("leader_screen_id nullify: %s", exc)
+
     for model, condition in _deletion_plan(org_id):
         removed = db.query(model).filter(condition).delete(synchronize_session=False)
         if removed:
@@ -192,30 +231,20 @@ def purge_organization(
     db.flush()
     report["rows"]["organizations"] = 1
 
-    # The backstop, once the rows are gone: whatever is still filed under this workspace
-    # was never in the database to be found by the loop above.
-    for prefix in prefixes:
-        swept = delete_prefix(prefix)
-        report["objects_deleted"] += swept["deleted"]
-        report["objects_missed"] += swept["failed"]
-        if swept.get("error"):
-            report["storage_error"] = swept["error"]
-            logger.warning("Prefix sweep for %s had storage error: %s", prefix, swept["error"])
-        # Objects before rows, honoured to the end: the rows above are only flushed, not
-        # committed, so raising here rolls them back and the workspace is retried on the
-        # next pass. Committing them with bytes still in the bucket would orphan those bytes
-        # for good -- nothing would remain that points at them. With no storage configured
-        # there is no bucket to sweep, which is not a failure.
-        #
-        # When `immediately=True` (an explicit permanent delete by an administrator), do not
-        # block deleting database records if object storage is down, credentials are expired/unauthorized,
-        # or the bucket returns an error. Log the warning and allow the permanent delete to finish.
-        if (swept.get("error") or swept["failed"]) and is_s3_enabled() and not immediately:
-            raise RuntimeError(
-                f"Storage sweep of {prefix} did not finish for workspace {org_id} "
-                f"({swept['failed']} objects refused, error: {swept.get('error')}); "
-                "keeping its rows so the purge can be retried."
-            )
+    # Backstop purge across R2: sweep all prefixes and any remaining keys for this org_id
+    swept = purge_tenant_r2_storage(org_id, prefixes)
+    report["objects_deleted"] += swept.get("deleted", 0)
+    report["objects_missed"] += swept.get("failed", 0)
+    if swept.get("error"):
+        report["storage_error"] = swept["error"]
+        logger.warning("R2 sweep for org %s had storage error: %s", org_id, swept["error"])
+
+    if (swept.get("error") or swept.get("failed")) and is_s3_enabled() and not immediately:
+        raise RuntimeError(
+            f"Storage sweep did not finish for workspace {org_id} "
+            f"({swept.get('failed')} objects refused, error: {swept.get('error')}); "
+            "keeping its rows so the purge can be retried."
+        )
 
     return report
 

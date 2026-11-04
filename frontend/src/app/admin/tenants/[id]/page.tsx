@@ -644,6 +644,34 @@ export default function AdminTenantDetailPage({
                 <LogIn className="size-4" />
                 Enter workspace
               </button>
+
+              <button
+                onClick={async () => {
+                  const result = await confirm({
+                    title: `Delete ${tenant.name} permanently?`,
+                    description:
+                      'Every screen, advert, playlist, user, and database row in Supabase and all media files in Cloudflare R2 will be permanently deleted immediately. This cannot be undone.',
+                    level: 3,
+                    confirmText: tenant.name,
+                    destructive: true,
+                    confirmLabel: 'Delete permanently now',
+                  })
+                  if (result) {
+                    try {
+                      await adminApi.deleteTenantPermanently(tenant.id, tenant.name, result.reason)
+                      toast.success(`${tenant.name} has been permanently deleted from Supabase and R2.`)
+                      router.push('/admin/tenants')
+                    } catch (err: any) {
+                      toast.error(err.message || 'Could not delete workspace')
+                    }
+                  }
+                }}
+                title="Permanently erase workspace from Supabase and Cloudflare R2"
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-500 transition-colors hover:bg-rose-500/20"
+              >
+                <Trash2 className="size-4" />
+                Delete workspace
+              </button>
             </div>
           </PageHeader>
 
