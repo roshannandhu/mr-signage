@@ -187,7 +187,8 @@ def purge_organization(
         if removed:
             report["rows"][model.__tablename__] = removed
 
-    db.delete(organization)
+    db.query(models.Organization).filter(models.Organization.id == org_id).delete(synchronize_session=False)
+    db.expire_all()
     db.flush()
     report["rows"]["organizations"] = 1
 
