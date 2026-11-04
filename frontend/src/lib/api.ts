@@ -12,7 +12,7 @@ export let API_HOST = configuredUrl
 if (typeof window !== 'undefined') {
   try {
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    if (isLocalhost) {
+    if (isLocalhost && process.env.NEXT_PUBLIC_API_URL?.includes('localhost')) {
       API_BASE = 'http://localhost:8000/api'
       API_HOST = 'http://localhost:8000'
     } else if (API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1')) {

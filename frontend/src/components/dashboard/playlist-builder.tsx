@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { assetOrientation, clipDuration, dateTimeLocal, loopDuration } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
+import { canEditTenantContent } from '@/lib/roles'
 import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 import type { ContentItem, Playlist, PlaylistItem, TransitionName } from '@/lib/types'
@@ -475,7 +476,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
 }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
-  const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const canEdit = canEditTenantContent(user)
   const hasTransitions = usePlanFeatures().has('transitions')
   const playlistKey = useMemo(() => ['playlist', playlistId], [playlistId])
   const playlistQuery = useQuery({ queryKey: playlistKey, queryFn: () => api.getPlaylist(playlistId), enabled: Number.isFinite(playlistId) })

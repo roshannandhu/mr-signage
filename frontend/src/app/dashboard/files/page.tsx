@@ -17,6 +17,7 @@ import { api } from '@/lib/api'
 import { bulkSummary, runBulk } from '@/lib/bulk'
 import { formatBytes, relativeTime } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
+import { canEditTenantContent } from '@/lib/roles'
 import type { ContentItem, Playlist } from '@/lib/types'
 
 type FileSort = 'largest' | 'smallest' | 'newest' | 'az'
@@ -38,7 +39,7 @@ const SORTS: SortOption<FileSort>[] = [
 export default function FileManagementPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
-  const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const canEdit = canEditTenantContent(user)
 
   const contentQuery = useQuery({ queryKey: ['content'], queryFn: api.getContent })
   const playlistsQuery = useQuery({ queryKey: ['playlists'], queryFn: api.getPlaylists })

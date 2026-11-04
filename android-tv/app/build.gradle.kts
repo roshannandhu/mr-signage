@@ -42,7 +42,7 @@ android {
             buildConfigField(
                 "String",
                 "API_BASE_URL",
-                quotedBuildConfig(configuredApiBaseUrl.orNull ?: "http://127.0.0.1:8000/")
+                quotedBuildConfig(configuredApiBaseUrl.orNull ?: "https://mr-signage.onrender.com/")
             )
         }
         create("production") {

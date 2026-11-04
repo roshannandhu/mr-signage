@@ -18,12 +18,13 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { canEditTenantContent } from '@/lib/roles'
 import type { Screen, ScreenGroup } from '@/lib/types'
 
 export default function GroupsPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
-  const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const canEdit = canEditTenantContent(user)
 
   const groupsQuery = useQuery({ queryKey: ['groups'], queryFn: api.getGroups })
   const screensQuery = useQuery({ queryKey: ['screens'], queryFn: api.getScreens })

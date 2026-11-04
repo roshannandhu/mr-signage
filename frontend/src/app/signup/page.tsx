@@ -82,22 +82,22 @@ export default function SignupPage() {
 
   return (
     <main className="relative min-h-screen bg-background px-4 py-8 sm:px-6 sm:py-12 text-foreground overflow-x-hidden">
-      <div className="pointer-events-none absolute -left-32 -top-32 size-[500px] rounded-full bg-emerald-500/10 blur-[140px]" />
-      <div className="pointer-events-none absolute -bottom-32 -right-32 size-[500px] rounded-full bg-teal-500/10 blur-[140px]" />
+      <div className="pointer-events-none absolute -left-32 -top-32 size-[500px] rounded-full bg-foreground/[0.03] blur-[140px]" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 size-[500px] rounded-full bg-foreground/[0.02] blur-[140px]" />
 
       <div className="relative mx-auto w-full max-w-6xl">
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20 shrink-0">
-              <RadioTower className="size-5" />
+            <div className="grid size-10 place-items-center rounded-xl border border-border bg-foreground text-background shadow-lg shadow-black/10 dark:shadow-white/5 shrink-0">
+              <RadioTower className="size-5 text-background" />
             </div>
             <div>
-              <p className="text-lg font-bold tracking-wider">MR <span className="font-medium text-emerald-400">SIGNAGE</span></p>
-              <p className="text-[10px] font-semibold text-emerald-400 tracking-wider">(Midhun-Roshan)</p>
+              <p className="text-lg font-bold tracking-wider">MR <span className="font-semibold text-muted-foreground">SIGNAGE</span></p>
+              <p className="text-[10px] font-medium text-muted-foreground tracking-wider">(Midhun-Roshan)</p>
             </div>
           </div>
           <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground">
-            Already have an account? <span className="text-emerald-400 font-semibold">Sign in</span>
+            Already have an account? <span className="text-foreground font-semibold underline underline-offset-4">Sign in</span>
           </Link>
         </header>
 
@@ -137,7 +137,7 @@ export default function SignupPage() {
               const features = Object.entries(plan.feature_flags).filter(([, on]) => on).map(([f]) => f)
               const free = plan.price_paise <= 0
               return (
-                <div key={plan.id} className="flex flex-col rounded-3xl border border-border bg-card p-6 shadow-xl backdrop-blur-xl">
+                <div key={plan.id} className="flex flex-col rounded-3xl border border-border bg-card p-6 shadow-sm backdrop-blur-xl">
                   <h3 className="text-lg font-semibold">{plan.name}</h3>
                   <p className="mt-3 text-3xl font-bold">
                     {free ? 'Free' : rupees(plan.price_paise)}
@@ -155,7 +155,7 @@ export default function SignupPage() {
                   <Button
                     onClick={() => startGoogle(String(plan.id))}
                     disabled={!googleEnabled || starting !== null}
-                    className="mt-6 h-11 w-full bg-emerald-500 font-semibold text-black hover:bg-emerald-400 disabled:opacity-50"
+                    className="mt-6 h-11 w-full bg-foreground font-semibold text-background hover:bg-foreground/90 disabled:opacity-50 transition"
                   >
                     {starting === String(plan.id) ? 'Redirecting…' : free ? 'Get started free' : 'Choose plan'}
                   </Button>
@@ -163,12 +163,10 @@ export default function SignupPage() {
               )
             })}
 
-            {/* Custom card: same shape as the dashboard/pending storefront's, since the request
-                form itself lives there -- this just gets the new account to it with the
-                custom form already open. */}
-            <div className="flex flex-col rounded-3xl border border-dashed border-emerald-500/30 bg-card p-6">
+            {/* Custom card */}
+            <div className="flex flex-col rounded-3xl border border-dashed border-border bg-card p-6">
               <div className="flex items-center gap-2">
-                <Sparkles className="size-4 text-emerald-400" />
+                <Sparkles className="size-4 text-foreground" />
                 <h3 className="text-lg font-semibold">Custom / Business</h3>
               </div>
               <p className="mt-3 text-sm text-muted-foreground">
@@ -178,7 +176,7 @@ export default function SignupPage() {
                 onClick={() => startGoogle('custom')}
                 disabled={!googleEnabled || starting !== null}
                 variant="outline"
-                className="mt-auto h-11 w-full border-emerald-500/40 bg-emerald-500/10 font-semibold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                className="mt-auto h-11 w-full border-border bg-muted/50 font-semibold text-foreground hover:bg-muted disabled:opacity-50 transition"
               >
                 {starting === 'custom' ? 'Redirecting…' : 'Sign up & request a custom plan'}
               </Button>
@@ -193,7 +191,7 @@ export default function SignupPage() {
 function Line({ children }: { children: React.ReactNode }) {
   return (
     <li className="flex items-center gap-2 capitalize">
-      <Check className="size-4 shrink-0 text-emerald-400" /> {children}
+      <Check className="size-4 shrink-0 text-foreground" /> {children}
     </li>
   )
 }

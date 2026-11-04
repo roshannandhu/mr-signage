@@ -2,6 +2,7 @@
   // Built by `npm run cf:build` into .open-next/. `name` is the Pages/Workers project.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "app",
+  "account_id": "e92ddadc9098dbcf44aadc5653e7a0d3",
   "main": ".open-next/worker.js",
   "compatibility_date": "2025-05-05",
   // Required by the adapter: the Next server bundle uses Node built-ins.

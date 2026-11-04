@@ -152,31 +152,31 @@ export default function LoginPage() {
       {/* Left Feature Showcase */}
       <section className="relative hidden flex-col justify-between overflow-hidden border-r border-border bg-card p-12 lg:flex xl:p-16">
         {/* Glow ambient spots */}
-        <div className="absolute -left-20 -top-20 size-96 rounded-full bg-emerald-500/15 blur-[120px] pointer-events-none" />
-        <div className="absolute -bottom-20 right-0 size-96 rounded-full bg-cyan-500/10 blur-[140px] pointer-events-none" />
+        <div className="absolute -left-20 -top-20 size-96 rounded-full bg-foreground/[0.03] blur-[120px] pointer-events-none" />
+        <div className="absolute -bottom-20 right-0 size-96 rounded-full bg-foreground/[0.02] blur-[140px] pointer-events-none" />
 
         {/* Brand Header */}
         <div className="relative flex items-center gap-3.5">
-          <div className="grid size-11 place-items-center rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black shadow-lg shadow-emerald-500/20">
-            <RadioTower className="size-6 text-black" />
+          <div className="grid size-11 place-items-center rounded-2xl border border-border bg-foreground text-background shadow-lg shadow-black/10 dark:shadow-white/5">
+            <RadioTower className="size-6 text-background" />
           </div>
           <div>
-            <p className="font-extrabold tracking-wider text-xl text-foreground">MR <span className="text-emerald-400 font-medium">SIGNAGE</span></p>
-            <p className="text-[11px] font-semibold tracking-wider text-emerald-400">(Midhun-Roshan)</p>
+            <p className="font-extrabold tracking-wider text-xl text-foreground">MR <span className="font-semibold text-muted-foreground">SIGNAGE</span></p>
+            <p className="text-[11px] font-medium tracking-wider text-muted-foreground">(Midhun-Roshan)</p>
             <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mt-0.5">Next-Gen TV Network Control</p>
           </div>
         </div>
 
         {/* Hero Copy & Live Badges */}
         <div className="relative max-w-xl py-8">
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-400 mb-6 backdrop-blur-md">
-            <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/70 px-3.5 py-1.5 text-xs font-semibold text-foreground mb-6 backdrop-blur-md">
+            <span className="size-2 rounded-full bg-foreground animate-pulse" />
             Active Fleet Engine · Multi-Tenant Cloud
           </div>
 
           <h1 className="text-balance text-5xl font-bold leading-[1.08] tracking-tight xl:text-6xl text-foreground">
             Manage 50+ Displays. <br />
-            <span className="bg-gradient-to-r from-emerald-400 via-teal-300 to-cyan-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-foreground via-foreground/80 to-muted-foreground bg-clip-text text-transparent">
               One Unified Signal.
             </span>
           </h1>
@@ -187,8 +187,8 @@ export default function LoginPage() {
 
           {/* Feature Highlights Grid */}
           <div className="mt-10 grid grid-cols-2 gap-4">
-            <div className="flex items-start gap-3 rounded-2xl border border-border bg-muted p-4 backdrop-blur-sm">
-              <div className="rounded-xl bg-emerald-500/15 p-2 text-emerald-400">
+            <div className="flex items-start gap-3 rounded-2xl border border-border bg-muted/40 p-4 backdrop-blur-sm">
+              <div className="rounded-xl border border-border bg-card p-2 text-foreground">
                 <WifiOff className="size-5" />
               </div>
               <div>
@@ -197,8 +197,8 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="flex items-start gap-3 rounded-2xl border border-border bg-muted p-4 backdrop-blur-sm">
-              <div className="rounded-xl bg-cyan-500/15 p-2 text-cyan-400">
+            <div className="flex items-start gap-3 rounded-2xl border border-border bg-muted/40 p-4 backdrop-blur-sm">
+              <div className="rounded-xl border border-border bg-card p-2 text-foreground">
                 <Tv className="size-5" />
               </div>
               <div>
@@ -213,7 +213,7 @@ export default function LoginPage() {
         <div className="relative flex items-center justify-between text-xs text-muted-foreground">
           <p>© 2026 MR Signage Systems Inc. • Developed by Legit Forge</p>
           <div className="flex items-center gap-2">
-            <ShieldCheck className="size-4 text-emerald-400" />
+            <ShieldCheck className="size-4 text-foreground" />
             <span>Encrypted End-to-End</span>
           </div>
         </div>
@@ -224,27 +224,27 @@ export default function LoginPage() {
         <div className="w-full max-w-[440px]">
           {/* Mobile Brand Logo */}
           <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <div className="grid size-10 place-items-center rounded-xl bg-emerald-500 text-black">
-              <RadioTower className="size-5" />
+            <div className="grid size-10 place-items-center rounded-xl border border-border bg-foreground text-background">
+              <RadioTower className="size-5 text-background" />
             </div>
             <div>
-              <span className="font-bold tracking-wider text-lg">MR SIGNAGE</span>
-              <p className="text-[10px] font-semibold text-emerald-400 tracking-wider">(Midhun-Roshan)</p>
+              <span className="font-bold tracking-wider text-lg text-foreground">MR SIGNAGE</span>
+              <p className="text-[10px] font-semibold text-muted-foreground tracking-wider">(Midhun-Roshan)</p>
             </div>
           </div>
 
           <div className="mb-8">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-400">Secure Access</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">Secure Access</p>
             <h2 className="mt-2 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">Sign in to your account</h2>
             <p className="mt-2 text-sm text-muted-foreground">Manage your digital signage screens, playlists, and analytics.</p>
           </div>
 
           {/* Active Session Notice */}
           {token && user && (
-            <div className="mb-6 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-muted-foreground shadow-lg">
+            <div className="mb-6 rounded-2xl border border-border bg-card p-4 text-xs text-muted-foreground shadow-sm">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="font-semibold text-emerald-400 truncate">Active session: {user.username}</p>
+                  <p className="font-semibold text-foreground truncate">Active session: {user.username}</p>
                   <p className="text-[11px] text-muted-foreground truncate">{user.organization_name || 'Organization'}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -252,7 +252,7 @@ export default function LoginPage() {
                     type="button"
                     size="sm"
                     onClick={() => router.push(user.organization_status === 'pending_approval' ? '/dashboard/pending' : '/dashboard/screens')}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-xs h-8 px-3 rounded-lg flex-1 sm:flex-none"
+                    className="bg-foreground hover:bg-foreground/90 text-background font-semibold text-xs h-8 px-3 rounded-lg flex-1 sm:flex-none shadow-sm"
                   >
                     Open Dashboard
                   </Button>
@@ -261,7 +261,7 @@ export default function LoginPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => clearSession()}
-                    className="border-border bg-muted hover:bg-muted text-foreground text-xs h-8 px-2.5 rounded-lg shrink-0"
+                    className="border-border bg-muted/60 hover:bg-muted text-foreground text-xs h-8 px-2.5 rounded-lg shrink-0"
                   >
                     Sign Out
                   </Button>
@@ -277,7 +277,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={startGoogle}
                 disabled={pending}
-                className="group relative flex h-12 w-full items-center justify-center gap-3.5 rounded-xl border border-[#dadce0] bg-white px-5 font-semibold text-[#1f1f1f] text-sm shadow-[0_1px_3px_rgba(0,0,0,0.12),0_1px_2px_rgba(0,0,0,0.24)] transition-all hover:bg-[#f8f9fa] hover:shadow-[0_2px_6px_rgba(0,0,0,0.15),0_1px_3px_rgba(0,0,0,0.2)] active:scale-[0.99] active:bg-[#eeeeee] disabled:opacity-60 cursor-pointer"
+                className="group relative flex h-12 w-full items-center justify-center gap-3.5 rounded-xl border border-border bg-card px-5 font-semibold text-foreground text-sm shadow-sm transition-all hover:bg-muted/60 active:scale-[0.99] disabled:opacity-60 cursor-pointer"
               >
                 <svg className="size-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -310,7 +310,7 @@ export default function LoginPage() {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="you@company.com"
                   required
-                  className="h-12 border-border bg-muted pl-10 text-foreground placeholder:text-muted-foreground focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
+                  className="h-12 border-border bg-muted/40 pl-10 text-foreground placeholder:text-muted-foreground focus-visible:border-foreground focus-visible:ring-foreground/20"
                 />
               </div>
             </div>
@@ -330,12 +330,12 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"
                   required
-                  className="h-12 border-border bg-muted pl-10 pr-10 text-foreground placeholder:text-muted-foreground focus-visible:border-emerald-500 focus-visible:ring-emerald-500/20"
+                  className="h-12 border-border bg-muted/40 pl-10 pr-10 text-foreground placeholder:text-muted-foreground focus-visible:border-foreground focus-visible:ring-foreground/20"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
@@ -354,7 +354,7 @@ export default function LoginPage() {
               type="submit"
               size="lg"
               disabled={pending}
-              className="h-12 w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 font-semibold text-black hover:from-emerald-400 hover:to-teal-400 shadow-lg shadow-emerald-500/20 active:scale-[0.99]"
+              className="h-12 w-full rounded-xl bg-foreground text-background font-semibold hover:bg-foreground/90 shadow-md active:scale-[0.99] transition-all cursor-pointer"
             >
               {pending ? 'Authenticating…' : (
                 <span className="flex items-center justify-center gap-2">
@@ -365,7 +365,7 @@ export default function LoginPage() {
 
             <p className="text-center text-sm text-muted-foreground">
               New here?{' '}
-              <Link href="/signup" className="font-medium text-emerald-400 hover:underline">
+              <Link href="/signup" className="font-semibold text-foreground underline underline-offset-4 hover:text-muted-foreground transition">
                 Create account
               </Link>
             </p>

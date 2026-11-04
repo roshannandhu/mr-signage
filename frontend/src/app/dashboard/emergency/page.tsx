@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/lib/store'
+import { canEditTenantContent } from '@/lib/roles'
 import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { EmergencyBroadcast } from '@/lib/types'
 
@@ -28,7 +29,7 @@ const targetLabels: Record<string, string> = {
 export default function EmergencyPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
-  const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const canEdit = canEditTenantContent(user)
 
   const [targetType, setTargetType] = useState('all')
   const [targetId, setTargetId] = useState('')

@@ -25,6 +25,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { assetOrientation, clipDuration, expiryLabel, relativeTime, rupees } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { canEditTenantContent } from '@/lib/roles'
 import type { ContentItem } from '@/lib/types'
 
 type QueuedUpload = {
@@ -41,7 +42,7 @@ const isSupported = (file: File) => file.type.startsWith('image/') || file.type.
 export default function ContentPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
-  const canEdit = user?.role === 'owner' || user?.role === 'editor'
+  const canEdit = canEditTenantContent(user)
 
   const contentQuery = useQuery({
     queryKey: ['content'],
@@ -361,13 +362,13 @@ export default function ContentPage() {
   const uploadDialog = (
     <Dialog open={uploadOpen} onOpenChange={closeUpload}>
       <DialogTrigger render={<Button />}><Upload data-icon="inline-start" /> Upload media</DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Upload media &amp; ad creatives</DialogTitle>
           <DialogDescription>Add advert creatives for clients or general signage content.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 pt-1">
+        <div className="space-y-4 pt-1 pb-3">
           {/* Mode Switcher */}
           <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-xl border border-border/40">
             <button
