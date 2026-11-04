@@ -2,11 +2,13 @@
 
 ## 1. Primary Cloudflare Production Account (CANONICAL)
 - **Account Email**: `mrsignage1100@gmail.com`
+- **Cloudflare Account Name**: `Mrsignage1100@gmail.com's Account`
 - **Cloudflare Account ID**: `e92ddadc9098dbcf44aadc5653e7a0d3`
 - **Subdomain**: `mrsignage.workers.dev`
 - **Production Dashboard App URL**: `https://app.mrsignage.workers.dev`
 - **Wrangler Project Name**: `app`
 - **Configuration File**: `frontend/wrangler.jsonc` (`account_id: "e92ddadc9098dbcf44aadc5653e7a0d3"`)
+- **CLI Authentication**: Loaded from `.env.cloudflare` (`CLOUDFLARE_API_TOKEN`).
 
 > [!IMPORTANT]
 > All official production frontend deployments MUST target this Cloudflare account (`e92ddadc9098dbcf44aadc5653e7a0d3`).
@@ -14,7 +16,17 @@
 
 ---
 
-## 2. Distinction Between Accounts
+## 2. Cloudflare R2 Object Storage Credentials
+Used by the FastAPI backend (`backend/.env`):
+- **S3 Bucket Name**: `mr-signage-media`
+- **S3 Endpoint URL**: `https://e92ddadc9098dbcf44aadc5653e7a0d3.r2.cloudflarestorage.com`
+- **Access Key ID**: `74220dbba6eda48ca020c44fdbabb20b`
+- **Secret Access Key**: Configured in `backend/.env` as `AWS_SECRET_ACCESS_KEY`
+- **Public R2 Base URL**: `https://pub-c710b0b839fa4d3c84211215f176f8b6.r2.dev`
+
+---
+
+## 3. Account Roles & Separation
 
 | Account Email | Role / Purpose | Infrastructure / Scope |
 | :--- | :--- | :--- |
@@ -24,24 +36,12 @@
 
 ---
 
-## 3. How to Deploy to Production
+## 4. How to Deploy to Production
 
-1. Ensure `frontend/wrangler.jsonc` has:
-   ```jsonc
-   {
-     "name": "app",
-     "account_id": "e92ddadc9098dbcf44aadc5653e7a0d3",
-     "main": ".open-next/worker.js"
-   }
-   ```
-2. When logging in via Wrangler CLI:
-   ```bash
-   cd frontend
-   npx wrangler login
-   ```
-   Select / authorize **`mrsignage1100@gmail.com`** in the browser.
-3. Deploy:
-   ```bash
-   npm run cf:deploy
-   ```
-   This deploys directly to `https://app.mrsignage.workers.dev`.
+Run the following in PowerShell:
+```powershell
+Get-Content .env.cloudflare | ForEach-Object { if ($_ -match '^([^#=]+)=(.*)$') { [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2]) } }
+cd frontend
+npm run cf:deploy
+```
+This builds with OpenNext and deploys directly to `https://app.mrsignage.workers.dev`.
