@@ -22,16 +22,37 @@ import {
 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { PageHeader, StatCard } from '@/components/admin/admin-ui'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
 import { toast } from 'sonner'
 
 export default function AdminSecurityPage() {
   const queryClient = useQueryClient()
+  const confirm = useConfirm()
   const [activeTab, setActiveTab] = useState<'admins' | 'sign_ins' | 'kiosk_unlocks' | 'act_as'>('admins')
 
-  // Maintenance PIN reveal state
+  // Maintenance PIN reveal & rotate state
   const [revealedPin, setRevealedPin] = useState<string | null>(null)
   const [revealModalOpen, setRevealModalOpen] = useState(false)
   const [revealReason, setRevealReason] = useState('')
+  const [rotatePinModalOpen, setRotatePinModalOpen] = useState(false)
+  const [newPinValue, setNewPinValue] = useState('')
+
+  const setPinMutation = useMutation({
+    mutationFn: (newPin: string) => adminApi.setMaintenancePin(newPin),
+    onSuccess: (res) => {
+      toast.success(
+        res.pin
+          ? `Master fleet maintenance PIN set to ${res.pin}`
+          : 'Master fleet maintenance PIN cleared',
+      )
+      setRotatePinModalOpen(false)
+      setNewPinValue('')
+      setRevealedPin(null)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'security', 'overview'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'maintenance-pin'] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
 
   // Query security overview
   const { data, isFetching } = useQuery({
@@ -221,23 +242,39 @@ export default function AdminSecurityPage() {
               </span>
             </div>
 
-            {revealedPin ? (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setRevealedPin(null)}
-                className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                type="button"
+                onClick={() => {
+                  setNewPinValue('')
+                  setRotatePinModalOpen(true)
+                }}
+                className="flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
               >
-                <EyeOff className="size-3.5" />
-                Hide
+                <KeyRound className="size-3.5 text-amber-500" />
+                Rotate PIN
               </button>
-            ) : (
-              <button
-                onClick={() => setRevealModalOpen(true)}
-                className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
-              >
-                <Eye className="size-3.5" />
-                Unmask PIN
-              </button>
-            )}
+
+              {revealedPin ? (
+                <button
+                  type="button"
+                  onClick={() => setRevealedPin(null)}
+                  className="flex items-center gap-1.5 rounded-xl border border-border bg-muted/60 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  <EyeOff className="size-3.5" />
+                  Hide
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRevealModalOpen(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
+                >
+                  <Eye className="size-3.5" />
+                  Unmask PIN
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -347,7 +384,15 @@ export default function AdminSecurityPage() {
                     <td className="p-3 font-mono text-xs text-muted-foreground">v{admin.token_version}</td>
                     <td className="p-3 pr-4 text-right">
                       <button
-                        onClick={() => signOutMutation.mutate(admin.id)}
+                        onClick={async () => {
+                          const res = await confirm({
+                            title: `Revoke active sessions for ${admin.username}?`,
+                            description: `This will increment ${admin.username}'s session token version and immediately invalidate all active web browsers and sessions. They will be forced to log in again.`,
+                            confirmLabel: 'Sign Out Everywhere',
+                            destructive: true,
+                          })
+                          if (res) signOutMutation.mutate(admin.id)
+                        }}
                         disabled={signOutMutation.isPending}
                         title="Invalidates all active tokens by bumping token_version"
                         className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-500/20 disabled:opacity-50"
@@ -537,6 +582,78 @@ export default function AdminSecurityPage() {
               >
                 {revealMutation.isPending ? 'Logging…' : 'Confirm & Reveal'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rotate / Set Master Fleet Maintenance PIN Modal */}
+      {rotatePinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <KeyRound className="size-5 text-amber-500" />
+              <h3 className="text-base font-semibold text-foreground">Rotate Master Maintenance PIN</h3>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Configure the 4-digit master maintenance PIN used across all fleet screens that lack a tenant-specific PIN.
+            </p>
+
+            <div className="mt-5 flex flex-col items-center gap-3">
+              <label className="text-xs font-medium text-foreground">
+                Enter New 4-Digit Numeric PIN
+              </label>
+              <input
+                value={newPinValue}
+                onChange={(e) => setNewPinValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="••••"
+                inputMode="numeric"
+                maxLength={4}
+                className="w-48 rounded-xl border border-border bg-muted px-4 py-2.5 text-center font-mono text-2xl tracking-[0.4em] text-foreground placeholder:tracking-normal placeholder:text-muted-foreground/40 focus:border-amber-500 focus:outline-none"
+              />
+              <span className="text-[11px] text-muted-foreground">
+                Must be exactly 4 numeric digits (0000–9999)
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={async () => {
+                  const res = await confirm({
+                    title: 'Clear Master Maintenance PIN?',
+                    description: 'Removing the master PIN means screens without an individual PIN can only be serviced via remote unlock or factory reset.',
+                    confirmLabel: 'Clear Master PIN',
+                    destructive: true,
+                  })
+                  if (res) setPinMutation.mutate('')
+                }}
+                disabled={setPinMutation.isPending}
+                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-700 dark:text-rose-400 hover:bg-rose-500/20"
+              >
+                Clear Master PIN
+              </button>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRotatePinModalOpen(false)
+                    setNewPinValue('')
+                  }}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPinMutation.mutate(newPinValue)}
+                  disabled={!/^\d{4}$/.test(newPinValue) || setPinMutation.isPending}
+                  className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+                >
+                  {setPinMutation.isPending ? 'Saving…' : 'Save New PIN'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

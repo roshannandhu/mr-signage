@@ -93,20 +93,20 @@ export default function LoginPage() {
     setError('')
     const redirectUri = `${window.location.origin}/login`
 
-    // The server owns this decision, because only it holds the client secret. The final
-    // `else` here used to send the browser to /api/auth/google/oauth-page -- a local page
-    // that rendered a Google-looking account chooser built from real rows in the users
-    // table, listing six people's names and email addresses to anyone who asked. That
-    // route is gone, and so is this fallback.
     try {
-      const { url } = await api.googleAuthUrl(redirectUri)
-      if (url) {
-        window.location.href = url
+      let res = await api.googleAuthUrl(redirectUri).catch(() => null)
+      if (!res?.url) {
+        // Retry once after a brief pause in case the backend server was spinning up from sleep
+        await new Promise((r) => setTimeout(r, 2000))
+        res = await api.googleAuthUrl(redirectUri).catch(() => null)
+      }
+      if (res?.url) {
+        window.location.href = res.url
         return
       }
       setError('Google sign-in is not enabled on this server. Use your email and password.')
     } catch {
-      setError('Could not reach the sign-in service. Check your connection and try again.')
+      setError('Could not reach the sign-in service. The backend server may be waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } finally {
       setPending(false)
     }

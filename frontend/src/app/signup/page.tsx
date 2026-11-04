@@ -49,14 +49,18 @@ export default function SignupPage() {
     setError('')
     try {
       const redirectUri = `${window.location.origin}/login`
-      const { url } = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`)
-      if (url) {
-        window.location.href = url
+      let res = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`).catch(() => null)
+      if (!res?.url) {
+        await new Promise((r) => setTimeout(r, 2000))
+        res = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`).catch(() => null)
+      }
+      if (res?.url) {
+        window.location.href = res.url
         return
       }
       setError('Google sign-in is not enabled on this server.')
     } catch {
-      setError('Could not reach the sign-in service. Check your connection and try again.')
+      setError('Could not reach the sign-in service. The backend server may be waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } finally {
       setStarting(null)
     }

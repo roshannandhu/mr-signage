@@ -172,6 +172,27 @@ export default function AdminTenantDetailPage({
     onError: (e: Error) => toast.error(e.message),
   })
 
+  const updateUserRoleMutation = useMutation({
+    mutationFn: ({
+      userId,
+      role,
+      confirmUsername,
+    }: {
+      userId: number
+      role: 'super_admin' | 'owner' | 'editor' | 'viewer'
+      confirmUsername?: string
+    }) =>
+      adminApi.updateUserRole(userId, role, {
+        confirmUsername,
+        reason: `Role changed via Admin Tenant Deep-Dive for tenant #${tenantId}`,
+      }),
+    onSuccess: () => {
+      toast.success('User role updated successfully')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tenant', tenantId, 'team'] })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+
   const notesQuery = useQuery({
     queryKey: ['admin', 'tenant', tenantId, 'notes'],
     queryFn: () => adminApi.listTenantNotes(tenantId),
@@ -406,6 +427,39 @@ export default function AdminTenantDetailPage({
         <span className="font-mono text-xs text-muted-foreground">
           {row.created_at ? new Date(row.created_at).toLocaleDateString() : '—'}
         </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Role Action',
+      width: 'w-44',
+      cell: ({ row }) => (
+        <select
+          value={row.role}
+          disabled={updateUserRoleMutation.isPending}
+          onChange={async (e) => {
+            const newRole = e.target.value as 'super_admin' | 'owner' | 'editor' | 'viewer'
+            if (newRole === row.role) return
+            const res = await confirm({
+              title: `Change role for ${row.username}?`,
+              description: `Update role from "${row.role}" to "${newRole}". This immediately adjusts what permissions they have in this workspace.`,
+              confirmLabel: `Change to ${newRole}`,
+            })
+            if (res) {
+              updateUserRoleMutation.mutate({
+                userId: row.id,
+                role: newRole,
+                confirmUsername: newRole === 'super_admin' ? row.username : undefined,
+              })
+            }
+          }}
+          className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:border-primary focus:outline-none"
+        >
+          <option value="owner">Owner</option>
+          <option value="editor">Editor</option>
+          <option value="viewer">Viewer</option>
+          <option value="super_admin">Super Admin</option>
+        </select>
       ),
     },
   ]

@@ -720,9 +720,29 @@ export default function AdminPackagesPage() {
                   ))}
               </ul>
 
-              <button className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm">
-                Get Started
-              </button>
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `/signup?plan=${encodeURIComponent(previewPlan.slug)}`
+                    window.open(url, '_blank')
+                  }}
+                  className="w-full rounded-xl bg-primary py-2.5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 transition-opacity"
+                >
+                  Test Storefront Signup Flow ↗
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = previewPlan
+                    setPreviewPlan(null)
+                    openEditDrawer(target)
+                  }}
+                  className="w-full rounded-xl border border-border bg-muted/40 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  Edit This Package
+                </button>
+              </div>
             </div>
           </div>
         </div>
