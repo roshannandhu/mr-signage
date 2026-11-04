@@ -43,6 +43,7 @@ export default function LoginPage() {
     api.authMethods()
       .then((methods) => setGoogleEnabled(methods.google ?? true))
       .catch(() => setGoogleEnabled(true))
+    api.health().catch(() => {})
   }, [])
 
   // Google OAuth redirect handler.
@@ -94,17 +95,27 @@ export default function LoginPage() {
     const redirectUri = `${window.location.origin}/login`
 
     try {
-      let res = await api.googleAuthUrl(redirectUri).catch(() => null)
-      if (!res?.url) {
-        // Retry once after a brief pause in case the backend server was spinning up from sleep
-        await new Promise((r) => setTimeout(r, 2000))
-        res = await api.googleAuthUrl(redirectUri).catch(() => null)
+      let url: string | null = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await api.googleAuthUrl(redirectUri)
+          if (res?.url) {
+            url = res.url
+            break
+          }
+        } catch {
+          // Retry on sleep/cold start
+        }
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt))
+        }
       }
-      if (res?.url) {
-        window.location.href = res.url
+
+      if (url) {
+        window.location.href = url
         return
       }
-      setError('Google sign-in is not enabled on this server. Use your email and password.')
+      setError('The authentication service is waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } catch {
       setError('Could not reach the sign-in service. The backend server may be waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } finally {
@@ -125,7 +136,12 @@ export default function LoginPage() {
       setSession(session.access_token, session.user)
       router.replace(destinationFor(session.user))
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Incorrect email or password. Please try again.')
+      const msg = reason instanceof Error ? reason.message : ''
+      if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
+        setError('Could not reach the sign-in service. The backend server may be waking up (Render free tier cold start). Please wait 10 seconds and try again.')
+      } else {
+        setError(msg || 'Incorrect email or password. Please try again.')
+      }
     } finally {
       setPending(false)
     }

@@ -42,6 +42,7 @@ export default function SignupPage() {
 
   useEffect(() => {
     api.authMethods().then((methods) => setGoogleEnabled(methods.google ?? true)).catch(() => setGoogleEnabled(true))
+    api.health().catch(() => {})
   }, [])
 
   const startGoogle = async (intent: string) => {
@@ -49,16 +50,27 @@ export default function SignupPage() {
     setError('')
     try {
       const redirectUri = `${window.location.origin}/login`
-      let res = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`).catch(() => null)
-      if (!res?.url) {
-        await new Promise((r) => setTimeout(r, 2000))
-        res = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`).catch(() => null)
+      let url: string | null = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await api.googleAuthUrl(redirectUri, `${STATE_PREFIX}${intent}`)
+          if (res?.url) {
+            url = res.url
+            break
+          }
+        } catch {
+          // Retry on sleep/cold start
+        }
+        if (attempt < 3) {
+          await new Promise((r) => setTimeout(r, 1500 * attempt))
+        }
       }
-      if (res?.url) {
-        window.location.href = res.url
+
+      if (url) {
+        window.location.href = url
         return
       }
-      setError('Google sign-in is not enabled on this server.')
+      setError('The authentication service is waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } catch {
       setError('Could not reach the sign-in service. The backend server may be waking up (Render free tier cold start). Please wait 10 seconds and try again.')
     } finally {
