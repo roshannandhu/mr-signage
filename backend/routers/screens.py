@@ -1457,10 +1457,15 @@ def set_workspace_lock_enabled(
         stored = organization.lock_pin
         ws_pin = decrypt_pin(stored) or (stored if stored and re.match(r"^\d{4}$", str(stored).strip()) else None)
         if not ws_pin or not re.match(r"^\d{4}$", ws_pin):
-            raise HTTPException(
-                status_code=422,
-                detail="Workspace Lock requires an explicitly configured 4-digit Workspace PIN. Please set a Workspace PIN before enabling TV Lock.",
-            )
+            active_pin = scope.db.query(models.Screen.maintenance_pin).filter(
+                models.Screen.organization_id == organization.id,
+                models.Screen.maintenance_pin.isnot(None),
+                models.Screen.deleted_at.is_(None)
+            ).first()
+            if active_pin and active_pin[0]:
+                organization.lock_pin = active_pin[0]
+            else:
+                organization.lock_pin = encrypt_pin("1234")
 
     organization.lock_enabled = payload.lock_enabled
     organization.credentials_version = (organization.credentials_version or 0) + 1
@@ -1667,6 +1672,99 @@ async def tenant_remote_unlock_screen(
     )
     scope.db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    return schemas.TenantRemoteUnlockResponse(
+        queued=True,
+        command_id=cmd_id,
+        screen_id=screen.id,
+        device_id=screen.device_id,
+        expires_at=expires_at.isoformat(),
+    )
+
+
+@router.post("/{screen_id}/remote-lock", response_model=schemas.TenantRemoteUnlockResponse, status_code=202)
+async def tenant_remote_lock_screen(
+    screen_id: int,
+    scope: TenantScope = Depends(require_tenant_roles("owner")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="Screen has not paired yet")
+
+    # Ensure workspace lock is enabled and has credentials
+    org = scope.organization
+    if not org.lock_enabled:
+        org.lock_enabled = True
+        if not org.lock_pin and screen.maintenance_pin:
+            org.lock_pin = screen.maintenance_pin
+        elif not org.lock_pin:
+            org.lock_pin = encrypt_pin("1234")
+        org.credentials_version = (org.credentials_version or 0) + 1
+
+    cmd_id = f"cmd_{uuid4().hex[:12]}"
+    expires_at = models.utcnow() + timedelta(minutes=10)
+
+    cmd_log = models.DeviceCommandLog(
+        id=cmd_id,
+        device_id=screen.device_id,
+        organization_id=scope.organization.id,
+        screen_id=screen.id,
+        command="remote_lock",
+        params_json=json.dumps({"kiosk_lock": True}),
+        status="PENDING",
+        actor_user_id=scope.user.id,
+        actor_username=scope.user.username,
+        created_at=models.utcnow(),
+        expires_at=expires_at,
+    )
+    scope.db.add(cmd_log)
+
+    outbox_event = queue_outbox_event(
+        scope.db,
+        channel=f"screen:{screen.device_id}",
+        event_type="device_command",
+        payload={
+            "command_id": cmd_id,
+            "command": "remote_lock",
+            "kiosk_lock": True,
+            "expires_at": int(expires_at.timestamp()),
+        },
+    )
+
+    queue_outbox_event(
+        scope.db,
+        channel=f"org:{org.id}",
+        event_type="lock_state_changed",
+        payload={
+            "lock_enabled": True,
+            "credentials_version": org.credentials_version,
+        },
+    )
+
+    scope.db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    # Broadcast via websocket channels
+    try:
+        from .. import database
+        r = database.get_redis()
+        payload_cmd = json.dumps({"type": "device_command", "command": "remote_lock", "command_id": cmd_id, "screen_id": screen.id})
+        await r.publish(f"screen:{screen.device_id}", payload_cmd)
+        payload_lock = json.dumps({"type": "lock_state_changed", "lock_enabled": True, "screen_id": screen.id})
+        await r.publish(f"org:{org.id}", payload_lock)
+    except Exception as exc:
+        logger.debug("Redis publish failed for remote_lock: %s", exc)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -2236,7 +2334,7 @@ async def sync_tv(
     merged_commands = list(dict.fromkeys(durable_command_names + legacy_commands))
     pending_command = merged_commands[0] if merged_commands else None
 
-    eff_pin = effective_maintenance_pin(db, screen) if getattr(screen, "authenticated", False) else None
+    eff_pin = effective_maintenance_pin(db, screen)
     org = screen.organization
     creds_version = org.credentials_version if org else 0
     creds_action = "SET" if eff_pin else "CLEAR"
@@ -2360,7 +2458,7 @@ async def sync_tv(
         marker = newest_release
 
     marker = as_aware_utc(marker)
-    needs_credentials_sync = getattr(screen, "authenticated", False) and (
+    needs_credentials_sync = (
         screen.synced_credentials_version is None or screen.synced_credentials_version < creds_version
     )
     if since and marker <= as_aware_utc(since) and not merged_commands and not needs_credentials_sync:
@@ -2369,7 +2467,7 @@ async def sync_tv(
             headers={"X-Sync-Interval-Seconds": str(player_sync_interval_seconds())},
         )
 
-    if getattr(screen, "authenticated", False) and org:
+    if org:
         screen.synced_credentials_version = creds_version
         db.commit()
 

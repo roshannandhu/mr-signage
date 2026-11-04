@@ -200,6 +200,15 @@ class PlaybackService : Service() {
                     emitCommand(ServiceCommandEvent.RemoteUnlock(commandId))
                     launchPlayer()
                 }
+                command == "remote_lock" || (type == "device_command" && msg.optString("command") == "remote_lock") -> {
+                    val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
+                    Log.i(TAG, "Received WS remote_lock command (id=$commandId)")
+                    getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+                        .edit().putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, false).apply()
+                    MainActivity.onKioskLockChanged(this@PlaybackService, true)
+                    emitCommand(ServiceCommandEvent.KioskLockChanged(true))
+                    launchPlayer()
+                }
                 type in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") ||
                     command in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") -> {
                     android.util.Log.i("PlaybackService", "Received WS sync event (type=$type command=$command); triggering immediate sync")

@@ -192,6 +192,15 @@ class PlaylistSynchronizer(context: Context) {
                                 com.olrac.signage.service.ServiceCommandEvent.RemoteUnlock(cmdId)
                             )
                             com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 200L, reason = "remote_unlock")
+                        } else if (cmdName == "remote_lock") {
+                            appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
+                                .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, false)
+                                .putBoolean(KEY_KIOSK_LOCK, true).apply()
+                            com.olrac.signage.MainActivity.onKioskLockChanged(appContext, true)
+                            com.olrac.signage.service.PlaybackService.emitCommand(
+                                com.olrac.signage.service.ServiceCommandEvent.KioskLockChanged(true)
+                            )
+                            com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 200L, reason = "remote_lock")
                         } else if (cmdName == "check_update") {
                             UpdateManager.requestUpdateCheck(appContext)
                         } else if ((cmdName == "bring_to_front" || cmdName == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
@@ -229,6 +238,13 @@ class PlaylistSynchronizer(context: Context) {
                             .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
                         android.util.Log.i("PlaylistSynchronizer", "Received remote_unlock command from sync")
                         com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "remote_unlock")
+                    } else if (cmd == "remote_lock") {
+                        appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, false)
+                            .putBoolean(KEY_KIOSK_LOCK, true).apply()
+                        android.util.Log.i("PlaylistSynchronizer", "Received remote_lock command from sync")
+                        com.olrac.signage.MainActivity.onKioskLockChanged(appContext, true)
+                        com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "remote_lock")
                     }
                     if ((cmd == "bring_to_front" || cmd == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
                         android.util.Log.i("PlaylistSynchronizer", "Received $cmd command from sync; bringing app to front")

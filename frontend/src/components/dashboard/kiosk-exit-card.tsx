@@ -12,6 +12,7 @@ import {
   Send,
   ShieldCheck,
   Unlock,
+  Lock,
   CheckCircle2,
   Clock,
 } from 'lucide-react'
@@ -20,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api'
 import type { Screen } from '@/lib/types'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 
 /**
  * How to get out of kiosk on this screen, the code that does it, and remote unlock controls.
@@ -32,11 +34,18 @@ import type { Screen } from '@/lib/types'
 export function KioskExitCard({ screen }: { screen: Screen }) {
   const queryClient = useQueryClient()
 
+  const hasKioskLock = usePlanFeatures().has('kiosk_lock')
+
   // Real-time maintenance PIN & sync telemetry
   const pinQuery = useQuery({
     queryKey: ['screen-maintenance-pin', screen.id],
     queryFn: () => api.getScreenMaintenancePin(screen.id),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
+  })
+
+  const lockEnabledQuery = useQuery({
+    queryKey: ['workspace-lock-enabled'],
+    queryFn: api.getWorkspaceLockEnabled,
   })
 
   const [pinDraft, setPinDraft] = useState('')
@@ -50,11 +59,13 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
   const isSynced = pinData
     ? pinData.synced_credentials_version >= pinData.workspace_credentials_version
     : true
+  const isKioskLocked = lockEnabledQuery.data?.lock_enabled ?? false
 
   // Set custom PIN mutation
   const setPinMutation = useMutation({
     mutationFn: (newPin: string) => api.setScreenMaintenancePin(screen.id, newPin),
     onSuccess: (res) => {
+      queryClient.setQueryData(['screen-maintenance-pin', screen.id], res)
       queryClient.invalidateQueries({ queryKey: ['screen-maintenance-pin', screen.id] })
       queryClient.invalidateQueries({ queryKey: ['screens'] })
       setPinDraft('')
@@ -66,7 +77,8 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
   // Reset to Workspace PIN mutation
   const resetPinMutation = useMutation({
     mutationFn: () => api.resetScreenMaintenancePin(screen.id),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      queryClient.setQueryData(['screen-maintenance-pin', screen.id], res)
       queryClient.invalidateQueries({ queryKey: ['screen-maintenance-pin', screen.id] })
       queryClient.invalidateQueries({ queryKey: ['screens'] })
       toast.success('Screen reset to inherit the Workspace PIN')
@@ -74,14 +86,39 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
     onError: (err: Error) => toast.error(err.message),
   })
 
+  // Toggle Workspace Kiosk Lock
+  const toggleLockMutation = useMutation({
+    mutationFn: (enabled: boolean) => api.setWorkspaceLockEnabled(enabled),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['workspace-lock-enabled'], updated)
+      queryClient.invalidateQueries({ queryKey: ['workspace-lock-enabled'] })
+      queryClient.invalidateQueries({ queryKey: ['screen-maintenance-pin', screen.id] })
+      queryClient.invalidateQueries({ queryKey: ['screens'] })
+      toast.success(updated.lock_enabled ? 'TV Kiosk Lock enabled' : 'TV Kiosk Lock disabled')
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
   // Remote Unlock mutation
   const remoteUnlockMutation = useMutation({
     mutationFn: (reason: string) => api.remoteUnlockScreen(screen.id, reason),
-    onSuccess: (res) => {
+    onSuccess: () => {
       setUnlockModalOpen(false)
       setUnlockReason('')
       toast.success('Remote unlock command dispatched to TV (expires in 10m)')
       queryClient.invalidateQueries({ queryKey: ['screen-maintenance-pin', screen.id] })
+    },
+    onError: (err: Error) => toast.error(err.message),
+  })
+
+  // Remote Lock mutation
+  const remoteLockMutation = useMutation({
+    mutationFn: () => api.remoteLockScreen(screen.id),
+    onSuccess: () => {
+      toast.success('Remote lock command dispatched: TV locked in kiosk playback')
+      queryClient.invalidateQueries({ queryKey: ['screen-maintenance-pin', screen.id] })
+      queryClient.invalidateQueries({ queryKey: ['workspace-lock-enabled'] })
+      queryClient.invalidateQueries({ queryKey: ['screens'] })
     },
     onError: (err: Error) => toast.error(err.message),
   })
@@ -190,23 +227,69 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
           </div>
         </div>
 
-        {/* Remote Unlock Trigger */}
-        <div className="flex items-center justify-between rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-          <div>
-            <h4 className="text-sm font-medium text-rose-700 dark:text-rose-400">Remote Kiosk Unlock</h4>
-            <p className="text-xs text-muted-foreground">
-              Immediately opens the maintenance screen on the online TV without entering a PIN on-site.
-            </p>
+        {/* Kiosk Lock Setting & Remote Lock/Unlock Controls */}
+        <div className="space-y-4 rounded-xl border border-border bg-muted/20 p-4">
+          {hasKioskLock && (
+            <div className="flex items-center justify-between pb-3 border-b border-border/60">
+              <div className="flex items-center gap-2.5">
+                <span className="bg-primary/10 text-primary dark:text-brand grid size-8 shrink-0 place-items-center rounded-lg">
+                  <ShieldCheck className="size-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-foreground">TV Kiosk Lock</h4>
+                    <Badge variant={isKioskLocked ? 'default' : 'outline'} className="text-[10px]">
+                      {isKioskLocked ? 'Active' : 'Disabled'}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Block Home and Back buttons on-site during playback.
+                  </p>
+                </div>
+              </div>
+              <label className="relative inline-flex shrink-0 cursor-pointer items-center">
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={isKioskLocked}
+                  disabled={toggleLockMutation.isPending}
+                  onChange={(e) => toggleLockMutation.mutate(e.target.checked)}
+                />
+                <div className="bg-muted peer-checked:bg-primary h-6 w-11 rounded-full transition-colors" />
+                <div className="absolute left-1 size-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+              </label>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-medium text-foreground">Remote Screen Controls</h4>
+              <p className="text-xs text-muted-foreground">
+                Lock screen back into advertisement loop or unlock to maintenance screen.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={remoteLockMutation.isPending}
+                onClick={() => remoteLockMutation.mutate()}
+                className="border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 dark:text-emerald-400"
+              >
+                <Lock className="mr-1.5 size-3.5" />
+                {remoteLockMutation.isPending ? 'Locking…' : 'Remote Lock'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUnlockModalOpen(true)}
+                className="border-rose-500/30 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
+              >
+                <Unlock className="mr-1.5 size-3.5" />
+                Remote Unlock
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setUnlockModalOpen(true)}
-            className="border-rose-500/30 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400"
-          >
-            <Unlock className="mr-1.5 size-3.5" />
-            Remote Unlock
-          </Button>
         </div>
 
         {/* Remote Unlock Confirmation Modal */}

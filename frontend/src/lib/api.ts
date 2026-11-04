@@ -280,6 +280,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason }),
     }),
+  remoteLockScreen: (screenId: number) =>
+    fetchWithAuth<{
+      status: string
+      command_id: string
+      expires_at: string
+    }>(`/screens/${screenId}/remote-lock`, {
+      method: 'POST',
+    }),
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
   }),
