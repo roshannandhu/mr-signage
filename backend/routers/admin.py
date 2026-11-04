@@ -770,10 +770,10 @@ def get_tenant_content(
             id=c.id,
             name=c.name,
             type=c.type,
-            mime_type=c.mime_type,
+            mime_type=c.type,
             status=c.status,
             file_size_bytes=c.file_size_bytes or 0,
-            duration_seconds=c.duration_seconds,
+            duration_seconds=(c.duration_ms // 1000) if c.duration_ms is not None else None,
             uploaded_at=_iso(c.uploaded_at),
             thumbnail=resolve_media_url(c.thumbnail),
         )
@@ -2585,7 +2585,7 @@ def get_security_overview(
             method=u.method,
             success=u.success,
             actor_user_id=u.actor_user_id,
-            occurred_at=_iso(u.created_at),
+            occurred_at=_iso(u.occurred_at),
         )
         for u in unlocks
     ]
