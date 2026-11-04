@@ -1,0 +1,258 @@
+[
+  {
+    "test_name": "Owner Password Authentication",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 2681,
+    "details": "User tenant_admin_99 (Org 99) authenticated",
+    "defect": null
+  },
+  {
+    "test_name": "Read Profile (/api/auth/me)",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 541,
+    "details": "User ID 59, Role: owner",
+    "defect": null
+  },
+  {
+    "test_name": "Update Profile (/api/auth/me)",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 929,
+    "details": "Updated full_name to Operations Lead (E2E)",
+    "defect": null
+  },
+  {
+    "test_name": "Create Editor Team Member",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 2866,
+    "details": "Created editor user ID 65",
+    "defect": null
+  },
+  {
+    "test_name": "List Team Members (/api/users/)",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 616,
+    "details": "Retrieved 2 team members",
+    "defect": null
+  },
+  {
+    "test_name": "RBAC Isolation: Editor Blocked from User Management",
+    "phase": "Phase 1: Tenant Auth & RBAC",
+    "status": "PASS",
+    "latency_ms": 551,
+    "details": "Correctly rejected with 403 Forbidden",
+    "defect": null
+  },
+  {
+    "test_name": "List Tenant Screens (/api/screens/)",
+    "phase": "Phase 2: Screen Pairing & Hardware",
+    "status": "PASS",
+    "latency_ms": 858,
+    "details": "Found 4 screens in Org 99",
+    "defect": null
+  },
+  {
+    "test_name": "Screen 9 Target Identified",
+    "phase": "Phase 2: Screen Pairing & Hardware",
+    "status": "PASS",
+    "latency_ms": 0,
+    "details": "Screen 9 Name: 'Lenovo Tablet E2E Lab', Status: 'online'",
+    "defect": null
+  },
+  {
+    "test_name": "Configure Screen Settings (/api/screens/9)",
+    "phase": "Phase 2: Screen Pairing & Hardware",
+    "status": "PASS",
+    "latency_ms": 1133,
+    "details": "Updated name, orientation=0, fit_mode=contain, tags",
+    "defect": null
+  },
+  {
+    "test_name": "ADB App Foreground Focus Check",
+    "phase": "Phase 2: Screen Pairing & Hardware",
+    "status": "PASS",
+    "latency_ms": 50,
+    "details": "Foreground app: mCurrentFocus=Window{c2a01f8 u0 com.olrac.signage/com.olrac.signage.MainActivity}",
+    "defect": null
+  },
+  {
+    "test_name": "ADB App Memory Consumption",
+    "phase": "Phase 2: Screen Pairing & Hardware",
+    "status": "PASS",
+    "latency_ms": 40,
+    "details": "App RAM footprint: TOTAL    87088    75758      900       61   197894    28352    14150     8777\n           TOTAL PSS:    87088            TOTAL RSS:   197894       TOTAL SWAP PSS:       61",
+    "defect": null
+  },
+  {
+    "test_name": "Upload Media to Library (/api/content/upload)",
+    "phase": "Phase 3: Media Upload & Storage",
+    "status": "PASS",
+    "latency_ms": 1408,
+    "details": "Uploaded media ID 4, URL: https://mr-signage.onrender.com/uploads/tenants/Test-Tenant-...",
+    "defect": null
+  },
+  {
+    "test_name": "Fetch Media Metadata (/api/content/{id})",
+    "phase": "Phase 3: Media Upload & Storage",
+    "status": "PASS",
+    "latency_ms": 840,
+    "details": "Type: image, Status: ready",
+    "defect": null
+  },
+  {
+    "test_name": "Media Stream Reachability (HTTP HEAD)",
+    "phase": "Phase 3: Media Upload & Storage",
+    "status": "PASS",
+    "latency_ms": 120,
+    "details": "HTTP 200, Type: image/png",
+    "defect": null
+  },
+  {
+    "test_name": "Create Playlist (/api/playlists/)",
+    "phase": "Phase 4: Playlist Builder & Transitions",
+    "status": "PASS",
+    "latency_ms": 1059,
+    "details": "Created Playlist ID 10: 'E2E Automated Showcase 1793733316'",
+    "defect": null
+  },
+  {
+    "test_name": "Add Content Item to Playlist",
+    "phase": "Phase 4: Playlist Builder & Transitions",
+    "status": "PASS",
+    "latency_ms": 1873,
+    "details": "Added content 4 (Item ID 11)",
+    "defect": null
+  },
+  {
+    "test_name": "Configure Playlist Transitions (/api/playlists/{id}/transitions)",
+    "phase": "Phase 4: Playlist Builder & Transitions",
+    "status": "PASS",
+    "latency_ms": 2152,
+    "details": "Configured 'fade' transition at 750ms",
+    "defect": null
+  },
+  {
+    "test_name": "Assign Playlist to Screen 9 (/api/screens/9/assign/{id})",
+    "phase": "Phase 4: Playlist Builder & Transitions",
+    "status": "PASS",
+    "latency_ms": 1651,
+    "details": "Assigned playlist 10 to Screen 9",
+    "defect": null
+  },
+  {
+    "test_name": "Device Sync Protocol (/api/screens/{device_id}/sync)",
+    "phase": "Phase 5: Hardware Sync & ExoPlayer Playback",
+    "status": "PASS",
+    "latency_ms": 1720,
+    "details": "Screen 9 synced Playlist ID 10, Items: 1",
+    "defect": null
+  },
+  {
+    "test_name": "Inspect Local Media Cache Directory",
+    "phase": "Phase 5: Hardware Sync & ExoPlayer Playback",
+    "status": "PASS",
+    "latency_ms": 60,
+    "details": "Cache contents:\ntotal 28\ndrwxrwx--x 2 u0_a424 u0_a424  4096 2026-11-03 07:44 .\ndrwx------ 7 u0_a424 u0_a424  4096 2026-11-03 07:44 ..\n-rw------- 1 u0_a424 u0_a424 10328 2026-11-03 07:44 content-1.png\n-rw------- 1 u0_a424 u0_a424    24 2026-11-03 07:44 profileInstalled",
+    "defect": null
+  },
+  {
+    "test_name": "ADB ExoPlayer Subsystem Status",
+    "phase": "Phase 5: Hardware Sync & ExoPlayer Playback",
+    "status": "PASS",
+    "latency_ms": 80,
+    "details": "ExoPlayer status: Player active in surface view",
+    "defect": null
+  },
+  {
+    "test_name": "Trigger Emergency Broadcast Override (/api/emergency/broadcast)",
+    "phase": "Phase 6: Emergency Broadcast Override",
+    "status": "PASS",
+    "latency_ms": 1305,
+    "details": "Emergency broadcast override active for all screens",
+    "defect": null
+  },
+  {
+    "test_name": "Query Active Emergency Broadcasts (/api/emergency/active)",
+    "phase": "Phase 6: Emergency Broadcast Override",
+    "status": "PASS",
+    "latency_ms": 705,
+    "details": "Active emergency count: 1",
+    "defect": null
+  },
+  {
+    "test_name": "Cancel Emergency Broadcast (/api/emergency/cancel)",
+    "phase": "Phase 6: Emergency Broadcast Override",
+    "status": "PASS",
+    "latency_ms": 1268,
+    "details": "Emergency broadcast successfully cleared",
+    "defect": null
+  },
+  {
+    "test_name": "Set Screen Security PIN (/api/screens/9 PATCH)",
+    "phase": "Phase 7: Remote Security PIN & Kiosk Lock",
+    "status": "PASS",
+    "latency_ms": 1230,
+    "details": "Assigned PIN '8520' via PATCH",
+    "defect": null
+  },
+  {
+    "test_name": "Read Back Decrypted PIN",
+    "phase": "Phase 7: Remote Security PIN & Kiosk Lock",
+    "status": "WARN",
+    "latency_ms": 192,
+    "details": "Status 404",
+    "defect": null
+  },
+  {
+    "test_name": "Database Stored PIN Verification",
+    "phase": "Phase 7: Remote Security PIN & Kiosk Lock",
+    "status": "PASS",
+    "latency_ms": 50,
+    "details": "Database maintenance_pin: 8520...",
+    "defect": null
+  },
+  {
+    "test_name": "Batch Upload Play Logs (/api/screens/play-logs/batch)",
+    "phase": "Phase 8: Proof-of-Play (PoP) Telemetry",
+    "status": "PASS",
+    "latency_ms": 1010,
+    "details": "Ingested play event batch (inserted: 1)",
+    "defect": null
+  },
+  {
+    "test_name": "Create Screen Group (/api/groups/)",
+    "phase": "Phase 9: Screen Groups & Mass Ops",
+    "status": "PASS",
+    "latency_ms": 1130,
+    "details": "Created group ID 3: 'Tablet Labs 1793733333'",
+    "defect": null
+  },
+  {
+    "test_name": "Assign Screen to Group (/api/groups/{id}/screens)",
+    "phase": "Phase 9: Screen Groups & Mass Ops",
+    "status": "PASS",
+    "latency_ms": 1418,
+    "details": "Added Screen 9 to group 3",
+    "defect": null
+  },
+  {
+    "test_name": "Offline Fault Injection (WiFi Disabled)",
+    "phase": "Phase 10: Network Fault & Offline Recovery",
+    "status": "PASS",
+    "latency_ms": 100,
+    "details": "App remains in active foreground during offline state: mCurrentFocus=Window{c2a01f8 u0 com.olrac.signage/com.olrac.signage.MainActivity}",
+    "defect": null
+  },
+  {
+    "test_name": "Restore Network Connectivity",
+    "phase": "Phase 10: Network Fault & Offline Recovery",
+    "status": "PASS",
+    "latency_ms": 50,
+    "details": "WiFi interface restored, link re-established",
+    "defect": null
+  }
+]

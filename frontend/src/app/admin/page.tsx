@@ -152,7 +152,7 @@ export default function AdminOverviewPage() {
     : []
 
   return (
-    <div className="space-y-6 p-4 text-foreground sm:p-6 lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       {/* Header bar */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>

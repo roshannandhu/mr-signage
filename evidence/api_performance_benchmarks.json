@@ -1,0 +1,56 @@
+{
+  "GET /api/screens/lock-pin (Tenant PIN lookup)": {
+    "p50_ms": 11.76,
+    "p95_ms": 13.0,
+    "p99_ms": 15.0,
+    "avg_ms": 11.74,
+    "min_ms": 9.45,
+    "max_ms": 15.0,
+    "success_rate": 100.0
+  },
+  "PUT /api/screens/lock-pin (Tenant PIN update)": {
+    "p50_ms": 15.45,
+    "p95_ms": 17.5,
+    "p99_ms": 18.63,
+    "avg_ms": 15.37,
+    "min_ms": 11.95,
+    "max_ms": 18.63,
+    "success_rate": 100.0
+  },
+  "PUT /api/screens/lock-enabled (Toggle Workspace Lock)": {
+    "p50_ms": 15.6,
+    "p95_ms": 17.52,
+    "p99_ms": 43.26,
+    "avg_ms": 16.08,
+    "min_ms": 12.88,
+    "max_ms": 43.26,
+    "success_rate": 100.0
+  },
+  "GET /api/screens/{device_id}/sync (Device Sync HTTP Fallback)": {
+    "p50_ms": 19.04,
+    "p95_ms": 21.73,
+    "p99_ms": 22.95,
+    "avg_ms": 19.26,
+    "min_ms": 17.51,
+    "max_ms": 22.95,
+    "success_rate": 100.0
+  },
+  "POST /api/screens/{id}/remote-unlock (Remote Unlock Command Dispatch)": {
+    "p50_ms": 17.33,
+    "p95_ms": 22.14,
+    "p99_ms": 33.77,
+    "avg_ms": 18.56,
+    "min_ms": 15.24,
+    "max_ms": 33.77,
+    "success_rate": 100.0
+  },
+  "POST /api/admin/security/challenge-response (Dynamic Challenge HMAC Gen)": {
+    "p50_ms": 216.66,
+    "p95_ms": 221.54,
+    "p99_ms": 223.77,
+    "avg_ms": 216.89,
+    "min_ms": 213.34,
+    "max_ms": 223.77,
+    "success_rate": 100.0
+  }
+}

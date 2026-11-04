@@ -32,7 +32,7 @@ export default function AdminStoragePage() {
   const orphanBytes = unattributed.reduce((sum, t) => sum + t.bucket_bytes, 0)
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Storage"
         description="What the bucket actually holds, and which workspace it belongs to"
@@ -42,7 +42,7 @@ export default function AdminStoragePage() {
             await adminApi.getStorage(true)
             queryClient.invalidateQueries({ queryKey: ['admin', 'storage'] })
           }}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground transition-all hover:bg-muted"
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-1.5 text-xs sm:text-sm text-muted-foreground transition-all hover:bg-muted"
         >
           <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           Recount
@@ -83,7 +83,7 @@ export default function AdminStoragePage() {
         <p className="p-10 text-center text-sm text-muted-foreground">Counting the bucket…</p>
       ) : data ? (
         <>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
             <StatCard label="Stored in bucket" value={formatBytes(data.total_bytes)} icon={HardDrive} accent="violet" />
             <StatCard label="Objects" value={data.object_count} icon={Layers} accent="cyan" />
             <StatCard label="Promised to tenants" value={formatBytes(data.committed_quota_bytes)} icon={Database} accent="emerald" />

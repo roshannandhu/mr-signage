@@ -1,0 +1,112 @@
+{
+  "testedAt": "2026-11-03T09:54:05.035Z",
+  "viewports": [
+    {
+      "name": "desktop_1920x1080",
+      "width": 1920,
+      "height": 1080,
+      "category": "Desktop",
+      "securityLoadMs": 795,
+      "screensLoadMs": 742,
+      "screenDetailLoadMs": 1041,
+      "hasOverflow": false
+    },
+    {
+      "name": "laptop_1366x768",
+      "width": 1366,
+      "height": 768,
+      "category": "Laptop",
+      "securityLoadMs": 725,
+      "screensLoadMs": 696,
+      "screenDetailLoadMs": 988,
+      "hasOverflow": false
+    },
+    {
+      "name": "tablet_landscape_1024x768",
+      "width": 1024,
+      "height": 768,
+      "category": "Tablet Landscape",
+      "securityLoadMs": 740,
+      "screensLoadMs": 716,
+      "screenDetailLoadMs": 996,
+      "hasOverflow": false
+    },
+    {
+      "name": "tablet_portrait_768x1024",
+      "width": 768,
+      "height": 1024,
+      "category": "Tablet Portrait",
+      "securityLoadMs": 757,
+      "screensLoadMs": 699,
+      "screenDetailLoadMs": 1007,
+      "hasOverflow": false
+    },
+    {
+      "name": "mobile_large_430x932",
+      "width": 430,
+      "height": 932,
+      "category": "Mobile Large (iPhone 14 Pro Max)",
+      "securityLoadMs": 752,
+      "screensLoadMs": 668,
+      "screenDetailLoadMs": 1037,
+      "hasOverflow": false
+    },
+    {
+      "name": "mobile_standard_360x800",
+      "width": 360,
+      "height": 800,
+      "category": "Mobile Standard (Android 360x800)",
+      "securityLoadMs": 767,
+      "screensLoadMs": 679,
+      "screenDetailLoadMs": 1135,
+      "hasOverflow": false
+    }
+  ],
+  "overflowIssues": [],
+  "workflowResults": {
+    "challenge_gen_desktop_1920x1080": true,
+    "workspace_lock_cards_desktop_1920x1080": true,
+    "kiosk_exit_card_desktop_1920x1080": true,
+    "remote_unlock_desktop_1920x1080": true,
+    "challenge_gen_laptop_1366x768": true,
+    "workspace_lock_cards_laptop_1366x768": true,
+    "kiosk_exit_card_laptop_1366x768": true,
+    "remote_unlock_laptop_1366x768": true,
+    "challenge_gen_tablet_landscape_1024x768": true,
+    "workspace_lock_cards_tablet_landscape_1024x768": true,
+    "kiosk_exit_card_tablet_landscape_1024x768": true,
+    "remote_unlock_tablet_landscape_1024x768": true,
+    "challenge_gen_tablet_portrait_768x1024": true,
+    "workspace_lock_cards_tablet_portrait_768x1024": true,
+    "kiosk_exit_card_tablet_portrait_768x1024": true,
+    "remote_unlock_tablet_portrait_768x1024": true,
+    "challenge_gen_mobile_large_430x932": true,
+    "workspace_lock_cards_mobile_large_430x932": true,
+    "kiosk_exit_card_mobile_large_430x932": true,
+    "remote_unlock_mobile_large_430x932": true,
+    "challenge_gen_mobile_standard_360x800": true,
+    "workspace_lock_cards_mobile_standard_360x800": true,
+    "kiosk_exit_card_mobile_standard_360x800": true,
+    "remote_unlock_mobile_standard_360x800": true
+  },
+  "pagePerformance": {
+    "security_center_desktop_1920x1080": 795,
+    "screens_desktop_1920x1080": 742,
+    "screen_detail_desktop_1920x1080": 1041,
+    "security_center_laptop_1366x768": 725,
+    "screens_laptop_1366x768": 696,
+    "screen_detail_laptop_1366x768": 988,
+    "security_center_tablet_landscape_1024x768": 740,
+    "screens_tablet_landscape_1024x768": 716,
+    "screen_detail_tablet_landscape_1024x768": 996,
+    "security_center_tablet_portrait_768x1024": 757,
+    "screens_tablet_portrait_768x1024": 699,
+    "screen_detail_tablet_portrait_768x1024": 1007,
+    "security_center_mobile_large_430x932": 752,
+    "screens_mobile_large_430x932": 668,
+    "screen_detail_mobile_large_430x932": 1037,
+    "security_center_mobile_standard_360x800": 767,
+    "screens_mobile_standard_360x800": 679,
+    "screen_detail_mobile_standard_360x800": 1135
+  }
+}

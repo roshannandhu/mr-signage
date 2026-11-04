@@ -61,6 +61,7 @@ function SettingsForm({ initialSettings }: { initialSettings: SystemSettings }) 
     onSuccess: () => {
       toast.success('System settings saved and audited')
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'demo-video'] })
     },
     onError: (err: Error) => toast.error(`Failed to save settings: ${err.message}`),
   })
@@ -82,7 +83,7 @@ function SettingsForm({ initialSettings }: { initialSettings: SystemSettings }) 
   }
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="System Settings & Policy Governance"
         description="Configure platform contact identities, SMTP test verification, retention cycles, and automated attention thresholds"

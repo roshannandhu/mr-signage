@@ -83,7 +83,7 @@ export default function AdminProvisioningPage() {
   }
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <div className="print:hidden">
         <PageHeader
           title="Zero-Touch Setup Studio"

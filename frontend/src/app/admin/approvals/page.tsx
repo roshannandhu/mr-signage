@@ -133,15 +133,29 @@ export default function AdminApprovalsPage() {
     if (!result) return
 
     let approvedCount = 0
+    const failures: { id: number; name: string; error: string }[] = []
     for (const id of selectedTenantIds) {
+      const tenant = pending.find((t) => t.id === id)
+      const name = tenant?.name || `Org #${id}`
       try {
         await adminApi.approveTenant(id, bulkPlanId === '' ? {} : { plan_id: bulkPlanId })
         approvedCount++
       } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Unknown error'
+        failures.push({ id, name, error: errorMsg })
         console.error(`Failed to approve tenant ${id}:`, err)
       }
     }
-    setMessage(`Successfully bulk approved ${approvedCount} workspace(s).`)
+    if (failures.length > 0) {
+      setError(
+        `Failed to approve ${failures.length} workspace(s): ${failures.map((f) => `${f.name} (${f.error})`).join(', ')}`
+      )
+    } else {
+      setError('')
+    }
+    if (approvedCount > 0) {
+      setMessage(`Successfully bulk approved ${approvedCount} workspace(s).`)
+    }
     setSelectedTenantIds([])
     refresh()
   }
@@ -207,6 +221,7 @@ export default function AdminApprovalsPage() {
       id: 'actor',
       header: 'Operator',
       width: 'w-36',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-foreground">{row.actor_username ?? 'System'}</span>
       ),
@@ -222,6 +237,7 @@ export default function AdminApprovalsPage() {
     {
       id: 'reason',
       header: 'Stated Reason',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
           {row.reason ? decodeURIComponent(row.reason) : 'No reason recorded'}
@@ -231,16 +247,23 @@ export default function AdminApprovalsPage() {
   ]
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Review Center"
         description="Unified decisions inbox for workspace signups, bespoke custom requests and approval history"
       />
 
-      <Feedback ok={message} error={error} />
+      <Feedback
+        ok={message}
+        error={error}
+        onDismiss={() => {
+          setMessage('')
+          setError('')
+        }}
+      />
 
       {/* Navigation tabs */}
-      <div className="flex border-b border-border text-sm">
+      <div className="flex overflow-x-auto border-b border-border text-sm scrollbar-none">
         <button
           onClick={() => setActiveTab('signups')}
           className={`flex items-center gap-2 border-b-2 px-4 py-2.5 font-medium transition-colors ${

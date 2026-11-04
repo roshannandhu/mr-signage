@@ -28,14 +28,14 @@ export default function AdminHealthPage() {
   const isHealthy = data?.status === 'ok'
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Platform Diagnostics & Infrastructure Health"
         description="Continuous operational telemetry, background task heartbeats, persistence monitoring, and database round-trip checks"
       >
         <button
           onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'platform-health'] })}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80"
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-1.5 text-xs sm:text-sm text-muted-foreground hover:bg-muted/80"
         >
           <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           Refresh
@@ -54,7 +54,7 @@ export default function AdminHealthPage() {
       )}
 
       {/* Primary Infrastructure Status Grid */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard
           label="Overall Platform Status"
           value={data?.status ? data.status.toUpperCase() : 'CHECKING'}

@@ -2,9 +2,10 @@
 
 import { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Calendar,
+  CalendarPlus,
   Download,
   ExternalLink,
   IndianRupee,
@@ -17,6 +18,8 @@ import {
 import { adminApi } from '@/lib/api'
 import type { PlatformPayment, TenantSummary } from '@/lib/types'
 import { PageHeader, StatCard, formatPaise } from '@/components/admin/admin-ui'
+import { useConfirm } from '@/components/admin/kit/confirm-dialog'
+import { toast } from 'sonner'
 import {
   AdminDataTable,
   type DataTableColumn,
@@ -69,12 +72,42 @@ function exportPaymentsToCsv(payments: PlatformPayment[]) {
 }
 
 export default function AdminBillingPage() {
+  const queryClient = useQueryClient()
+  const confirm = useConfirm()
+
   const [activeTab, setActiveTab] = useState<'payments' | 'renewals' | 'custom'>('payments')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [kindFilter, setKindFilter] = useState<string>('all')
   const [providerFilter, setProviderFilter] = useState<string>('all')
   const [selectedPayment, setSelectedPayment] = useState<PlatformPayment | null>(null)
+
+  const extendMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
+      adminApi.updateSubscription(id, { extend_days: 30 }, reason),
+    onSuccess: (tenant) => {
+      toast.success(`${tenant.name} extended by 30 days`)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tenants'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'overview'] })
+    },
+    onError: (err: Error) => {
+      toast.error(`Extension failed: ${err.message}`)
+    },
+  })
+
+  const handleQuickExtend = async (tenant: TenantSummary) => {
+    const res = await confirm({
+      title: `Extend ${tenant.name} by 30 Days?`,
+      description: `Adds 30 days to the subscription period for ${tenant.name}. The action is recorded to the platform audit log.`,
+      level: 2,
+      confirmLabel: 'Extend +30 Days',
+    })
+    if (!res) return
+    extendMutation.mutate({
+      id: tenant.id,
+      reason: res.reason || 'Manual extension from billing renewals queue',
+    })
+  }
 
   // Overview metrics (30d)
   const { data: overview } = useQuery({
@@ -254,14 +287,25 @@ export default function AdminBillingPage() {
       id: 'actions',
       header: '',
       align: 'right',
-      width: 'w-28',
+      width: 'w-44',
       cell: ({ row }) => (
-        <Link
-          href={`/admin/tenants/${row.id}`}
-          className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted"
-        >
-          Manage
-        </Link>
+        <div className="flex items-center justify-end gap-1.5">
+          <button
+            onClick={() => handleQuickExtend(row)}
+            disabled={extendMutation.isPending}
+            title="Extend subscription by 30 days"
+            className="flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
+          >
+            <CalendarPlus className="size-3" />
+            +30d
+          </button>
+          <Link
+            href={`/admin/tenants/${row.id}`}
+            className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-muted"
+          >
+            Manage
+          </Link>
+        </div>
       ),
     },
   ]

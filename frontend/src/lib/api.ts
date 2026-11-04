@@ -84,7 +84,8 @@ function saveBlob(blob: Blob, filename: string): void {
 }
 
 async function authFetch(endpoint: string, options: RequestInit = {}): Promise<Response> {
-  let { token, acting } = useAuthStore.getState()
+  const { acting } = useAuthStore.getState()
+  let { token } = useAuthStore.getState()
   if (!token && typeof window !== 'undefined') {
     token = localStorage.getItem('token')
   }

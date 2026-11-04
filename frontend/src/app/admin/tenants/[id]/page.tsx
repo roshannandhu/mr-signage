@@ -253,6 +253,7 @@ export default function AdminTenantDetailPage({
     {
       id: 'location',
       header: 'Location',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">{row.location ?? '—'}</span>
       ),
@@ -261,6 +262,7 @@ export default function AdminTenantDetailPage({
       id: 'version',
       header: 'App Version',
       width: 'w-28',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {row.app_version ?? 'Legacy'}
@@ -271,6 +273,7 @@ export default function AdminTenantDetailPage({
       id: 'last_seen',
       header: 'Last Heartbeat',
       width: 'w-36',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {row.last_seen ? new Date(row.last_seen).toLocaleString() : 'Never'}
@@ -325,6 +328,7 @@ export default function AdminTenantDetailPage({
       id: 'duration',
       header: 'Duration',
       width: 'w-24',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
           {row.duration_seconds ? `${row.duration_seconds}s` : 'Static'}
@@ -335,6 +339,7 @@ export default function AdminTenantDetailPage({
       id: 'size',
       header: 'File Size',
       width: 'w-24',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">{formatBytes(row.file_size_bytes)}</span>
       ),
@@ -343,6 +348,7 @@ export default function AdminTenantDetailPage({
       id: 'uploaded',
       header: 'Uploaded',
       width: 'w-36',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {row.uploaded_at ? new Date(row.uploaded_at).toLocaleDateString() : '—'}
@@ -379,6 +385,7 @@ export default function AdminTenantDetailPage({
       id: 'active',
       header: 'State',
       width: 'w-24',
+      hideOnMobile: true,
       cell: ({ row }) => (
         <span
           className={`inline-block rounded-md border px-2 py-0.5 text-xs font-medium ${
@@ -517,7 +524,7 @@ export default function AdminTenantDetailPage({
   ]
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <Link
         href="/admin/tenants"
         className="inline-flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"

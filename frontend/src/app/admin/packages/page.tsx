@@ -207,12 +207,12 @@ export default function AdminPackagesPage() {
   }, [canonicalFeatures])
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Feature Control Studio"
         description="Configure commercial packages, hardware quotas, feature tiers and tenant pricing"
       >
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setViewMode(viewMode === 'cards' ? 'matrix' : 'cards')}
             className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm text-foreground transition-all hover:bg-muted"

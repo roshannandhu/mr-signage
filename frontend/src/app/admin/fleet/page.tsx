@@ -19,7 +19,6 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
-  Tv,
   Unlock,
   X,
 } from 'lucide-react'

@@ -54,14 +54,14 @@ export default function AdminSupportPage() {
   const infoCount = queue.filter((i) => i.severity === 'info').length
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Operations Support & Attention Center"
         description="Proactive automated anomaly detection, device offline escalation, and SLA health enforcement"
       >
         <button
           onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'attention-queue'] })}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80"
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-1.5 text-xs sm:text-sm text-muted-foreground hover:bg-muted/80"
         >
           <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           Refresh Queue
@@ -69,7 +69,7 @@ export default function AdminSupportPage() {
       </PageHeader>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Total Attention Items" value={queue.length} icon={LifeBuoy} accent="violet" />
         <StatCard label="Critical Escalations" value={criticalCount} icon={ShieldAlert} accent="rose" />
         <StatCard label="Warnings & Offline" value={warningCount} icon={AlertTriangle} accent="amber" />

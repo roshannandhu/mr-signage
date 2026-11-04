@@ -1,0 +1,9 @@
+{
+  "testedAt": "2026-11-03T10:43:01.717Z",
+  "workspacePinSet": "7712",
+  "screen1EffectiveBefore": "7712",
+  "screen1CustomPinSet": "3849",
+  "screen1EffectiveAfterCustom": "3849",
+  "screen1EffectiveAfterRevert": "7712",
+  "verificationPass": true
+}

@@ -12,7 +12,6 @@ import {
   Globe,
   Key,
   KeyRound,
-  Lock,
   LogOut,
   RefreshCw,
   Shield,
@@ -117,14 +116,14 @@ export default function AdminSecurityPage() {
   const actAsEvents = data?.act_as_events ?? []
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Security & Trust Operations Center"
         description="Operator privilege administration, session revocation, sign-in monitoring, and kiosk lockdown governance"
       >
         <button
           onClick={() => queryClient.invalidateQueries({ queryKey: ['admin', 'security'] })}
-          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80"
+          className="flex items-center gap-2 rounded-xl border border-border bg-muted px-3.5 py-1.5 text-xs sm:text-sm text-muted-foreground hover:bg-muted/80"
         >
           <RefreshCw className={`size-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           Refresh
@@ -132,7 +131,7 @@ export default function AdminSecurityPage() {
       </PageHeader>
 
       {/* Top metrics grid */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
         <StatCard label="Super Administrators" value={superAdmins.length} icon={ShieldCheck} accent="violet" />
         <StatCard
           label="Google SSO Enforced"
@@ -575,7 +574,7 @@ export default function AdminSecurityPage() {
                   </button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Valid for {challengeResult.validity_window_seconds}s (expires: {new Date(challengeResult.expires_at).toLocaleTimeString()})
+                  Valid for {challengeResult.validity_window_seconds ?? 300}s (expires: {new Date(challengeResult.expires_at).toLocaleTimeString()})
                 </p>
 
                 <div className="pt-2">

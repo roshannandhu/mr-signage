@@ -89,7 +89,7 @@ export default function AdminReleasesPage() {
   const isShaValid = /^[0-9a-fA-F]{64}$/.test(sha256.trim())
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Deployment Studio & OTA Rollouts"
         description="Release Android TV player APK builds with phased rollout rings and automated device convergence"

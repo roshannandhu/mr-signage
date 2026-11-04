@@ -34,6 +34,7 @@ export default function AdminDemoVideoPage() {
     setError('')
     setMessage(text)
     queryClient.invalidateQueries({ queryKey: ['admin', 'demo-video'] })
+    queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
   }
   const failed = (e: Error) => { setMessage(''); setError(e.message) }
 
@@ -50,7 +51,7 @@ export default function AdminDemoVideoPage() {
   })
 
   return (
-    <div className="space-y-6 p-6 text-foreground lg:p-8">
+    <div className="space-y-6 p-3.5 sm:p-6 lg:p-8 text-foreground">
       <PageHeader
         title="Universal Demo Reel"
         description="What every TV plays while its company is still awaiting approval"
