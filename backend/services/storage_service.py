@@ -36,8 +36,10 @@ STORAGE_SETTING_KEYS = {
     "AWS_SECRET_ACCESS_KEY": "storage.aws_secret_access_key",
     "S3_ENDPOINT_URL": "storage.s3_endpoint_url",
     "S3_BUCKET_NAME": "storage.s3_bucket_name",
+    "CLOUDFLARE_API_TOKEN": "storage.cloudflare_api_token",
+    "CLOUDFLARE_ACCOUNT_ID": "storage.cloudflare_account_id",
 }
-SECRET_SETTINGS = {"AWS_SECRET_ACCESS_KEY"}
+SECRET_SETTINGS = {"AWS_SECRET_ACCESS_KEY", "CLOUDFLARE_API_TOKEN"}
 
 
 def load_storage_overrides(db: Session) -> dict[str, str]:

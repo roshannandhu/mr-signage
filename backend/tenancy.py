@@ -6,7 +6,6 @@ from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Query, Session
 
 from . import database, models
-from .routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +252,9 @@ def note_act_as_write(request: Request, user: models.User, acting: int | None) -
 
 def _read_only_view_requested(acting: int | None, mode_header: str | None) -> bool:
     return acting is not None and (mode_header or "").strip().lower() == "read"
+
+
+from .routers.auth import get_current_user
 
 
 def get_tenant_scope(

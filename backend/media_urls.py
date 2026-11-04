@@ -18,6 +18,10 @@ _env_path = pathlib.Path(__file__).parent / ".env"
 if _env_path.exists():
     load_dotenv(dotenv_path=_env_path)
 
+_cf_env = pathlib.Path(__file__).parent.parent / ".env.cloudflare"
+if _cf_env.exists():
+    load_dotenv(dotenv_path=_cf_env)
+
 
 # Characters that must never reach a storage key. "/" would invent a nested folder and
 # ".." a parent one; whitespace and control characters break the URLs built from the key.
@@ -96,9 +100,11 @@ def storage_prefix(organization) -> str:
 # committed here is a key that has to be rotated. Missing credentials must surface as
 # "object storage is not configured", never as a silent fall back to a baked-in one.
 _S3_DEFAULTS = {
-    "S3_ENDPOINT_URL": "https://3fe4487a2b8fd1e2e541bf0e0f4c7c42.r2.cloudflarestorage.com",
-    "S3_BUCKET_NAME": "olrac",
+    "S3_ENDPOINT_URL": "https://e92ddadc9098dbcf44aadc5653e7a0d3.r2.cloudflarestorage.com",
+    "S3_BUCKET_NAME": "mr-signage-media",
     "AWS_REGION": "auto",
+    "CLOUDFLARE_ACCOUNT_ID": "e92ddadc9098dbcf44aadc5653e7a0d3",
+    "R2_PUBLIC_BASE_URL": "https://pub-c710b0b839fa4d3c84211215f176f8b6.r2.dev",
 }
 
 
@@ -125,6 +131,10 @@ def _credential_shaped(name: str, value: str) -> bool:
         return value.isalnum() and 16 <= len(value) <= 128
     if name == "AWS_SECRET_ACCESS_KEY":
         return len(value) >= 20 and all(ch.isalnum() or ch in "/+=" for ch in value)
+    if name == "CLOUDFLARE_API_TOKEN":
+        return len(value) >= 20
+    if name == "CLOUDFLARE_ACCOUNT_ID":
+        return len(value) >= 16
     return True
 
 
@@ -198,23 +208,33 @@ def public_media_base() -> str:
 def get_s3_config() -> dict[str, str]:
     """Where object storage is and how to authenticate to it.
 
-    The single source of truth: every boto3 client in this codebase is built from this and
+    The single source of truth: every boto3 or Cloudflare client in this codebase is built from this and
     nothing else. A second answer to "which bucket?" living elsewhere is what produced a
     run of signature 403s.
     """
-    bucket = _setting("S3_BUCKET_NAME") or "olrac"
-    if bucket == "olrac-media":
-        bucket = "olrac"
+    bucket = _setting("S3_BUCKET_NAME") or "mr-signage-media"
+    if bucket in ("olrac-media", "olrac"):
+        bucket = "mr-signage-media"
     return {
         "endpoint_url": _setting("S3_ENDPOINT_URL"),
         "aws_access_key_id": _setting("AWS_ACCESS_KEY_ID"),
         "aws_secret_access_key": _setting("AWS_SECRET_ACCESS_KEY"),
         "bucket": bucket,
         "region_name": _setting("AWS_REGION") or "auto",
+        "cloudflare_api_token": _setting("CLOUDFLARE_API_TOKEN"),
+        "cloudflare_account_id": _setting("CLOUDFLARE_ACCOUNT_ID") or "e92ddadc9098dbcf44aadc5653e7a0d3",
     }
 
 
+def is_cloudflare_r2_enabled() -> bool:
+    token = _setting("CLOUDFLARE_API_TOKEN")
+    account_id = _setting("CLOUDFLARE_ACCOUNT_ID") or "e92ddadc9098dbcf44aadc5653e7a0d3"
+    return bool(token and account_id)
+
+
 def is_s3_enabled() -> bool:
+    if is_cloudflare_r2_enabled():
+        return True
     cfg = get_s3_config()
     if os.getenv("PYTEST_CURRENT_TEST") and cfg["aws_access_key_id"] == "mock":
         return False

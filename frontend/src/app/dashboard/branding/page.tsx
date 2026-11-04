@@ -103,7 +103,7 @@ export default function BrandingPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Branding"
-        description="Your logo and name as they appear at the top of every campaign report you share with a client."
+        description="Your logo, brand name, and header accent colour across your workspace header, client campaign reports, and PDF invoices."
       />
 
       {brandingQuery.isLoading || !branding ? (
@@ -150,7 +150,8 @@ export default function BrandingPage() {
 
               {canEdit && (
                 <Button onClick={() => save.mutate()} disabled={save.isPending}>
-                  <Palette data-icon="inline-start" /> Save branding
+                  <Palette data-icon="inline-start" />
+                  {save.isPending ? 'Saving…' : 'Save branding'}
                 </Button>
               )}
             </CardContent>

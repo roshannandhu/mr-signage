@@ -19,8 +19,10 @@ import mimetypes
 import os
 import pathlib
 import shutil
+import urllib.error
+import urllib.request
 from typing import Optional
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from .media_urls import is_s3_enabled, get_s3_config
 
@@ -29,6 +31,101 @@ logger = logging.getLogger(__name__)
 UPLOAD_DIR = os.path.join(
     pathlib.Path(__file__).parent.parent.absolute(), "uploads"
 )
+
+
+def _cf_credentials() -> tuple[str, str, str] | None:
+    """Returns (token, account_id, bucket) if Cloudflare Direct API is available, else None."""
+    cfg = get_s3_config()
+    token = cfg.get("cloudflare_api_token") or os.getenv("CLOUDFLARE_API_TOKEN")
+    account_id = cfg.get("cloudflare_account_id") or os.getenv("CLOUDFLARE_ACCOUNT_ID") or "e92ddadc9098dbcf44aadc5653e7a0d3"
+    bucket = cfg.get("bucket") or "mr-signage-media"
+    if token and account_id:
+        return token.strip(), account_id.strip(), bucket.strip()
+    return None
+
+
+def _cf_url(account_id: str, bucket: str, key: str) -> str:
+    return f"https://api.cloudflare.com/client/v4/accounts/{account_id}/r2/buckets/{bucket}/objects/{quote(key, safe='/')}"
+
+
+def _cf_store_file(local_path: pathlib.Path, key: str, content_type: str) -> bool:
+    creds = _cf_credentials()
+    if not creds:
+        return False
+    token, account_id, bucket = creds
+    url = _cf_url(account_id, bucket, key)
+    try:
+        with open(local_path, "rb") as f:
+            data = f.read()
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": content_type,
+            },
+            method="PUT",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status == 200
+    except Exception as exc:
+        logger.warning("Cloudflare R2 direct upload failed for %s: %s", key, exc)
+        return False
+
+
+def _cf_delete_object(key: str) -> bool:
+    creds = _cf_credentials()
+    if not creds:
+        return False
+    token, account_id, bucket = creds
+    url = _cf_url(account_id, bucket, key)
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status in (200, 204)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return True
+        logger.warning("Cloudflare R2 delete failed for %s: %s", key, e)
+        return False
+    except Exception as exc:
+        logger.warning("Cloudflare R2 delete failed for %s: %s", key, exc)
+        return False
+
+
+def _cf_read_object(key: str) -> Optional[bytes]:
+    creds = _cf_credentials()
+    if not creds:
+        return None
+    token, account_id, bucket = creds
+    url = _cf_url(account_id, bucket, key)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read() or None
+    except Exception as exc:
+        logger.debug("Cloudflare R2 read failed for %s: %s", key, exc)
+        return None
+
+
+def _cf_download_file(key: str, destination: pathlib.Path) -> bool:
+    creds = _cf_credentials()
+    if not creds:
+        return False
+    token, account_id, bucket = creds
+    url = _cf_url(account_id, bucket, key)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp, open(destination, "wb") as f_out:
+            shutil.copyfileobj(resp, f_out)
+        return True
+    except Exception as exc:
+        logger.warning("Cloudflare R2 download failed for %s: %s", key, exc)
+        return False
 
 
 def _client():
@@ -71,6 +168,8 @@ def fetch_to(stored_url: str, destination: pathlib.Path) -> pathlib.Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     if is_remote(stored_url):
+        if _cf_download_file(key, destination):
+            return destination
         cfg = get_s3_config()
         _client().download_file(cfg["bucket"], key, str(destination))
         return destination
@@ -126,6 +225,9 @@ def read(location: str | None) -> Optional[bytes]:
 
     if not key or not is_s3_enabled():
         return None
+    cf_data = _cf_read_object(unquote(key))
+    if cf_data is not None:
+        return cf_data
     try:
         cfg = get_s3_config()
         return _client().get_object(Bucket=cfg["bucket"], Key=unquote(key))["Body"].read() or None
@@ -157,11 +259,15 @@ def store(local_path: pathlib.Path, key: str, content_type: Optional[str] = None
     an original as far as `resolve_media_url` is concerned.
     """
     if is_s3_enabled():
+        extra_type = content_type_for(key)
+        # Try Cloudflare Direct REST API first if configured
+        if _cf_store_file(local_path, key, extra_type):
+            return f"s3://{key}"
         cfg = get_s3_config()
         # The extension decides. `content_type` is accepted for existing callers but never
         # trusted: some pass the uploader's own claim, and a claimed `text/html` on a .png key
         # was served as HTML. An unrecognised extension is stored as an opaque download.
-        extra = {"ContentType": content_type_for(key)}
+        extra = {"ContentType": extra_type}
         _client().upload_file(str(local_path), cfg["bucket"], key, ExtraArgs=extra)
         return f"s3://{key}"
 
@@ -233,6 +339,9 @@ def delete(stored_url: str) -> bool:
         # like the bucket refusing. It is a different problem and needs a different fix.
         logger.warning("Object storage is not configured; %s left in the bucket", key)
         return False
+
+    if _cf_delete_object(key):
+        return True
 
     cfg = get_s3_config()
     try:

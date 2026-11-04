@@ -264,32 +264,15 @@ def upload_content(
         shutil.copyfileobj(file.file, buffer)
 
     if is_s3_enabled():
-        cfg = get_s3_config()
-        s3 = get_s3_client()
-        bucket = cfg["bucket"]
         try:
-            with open(temp_local_file, "rb") as f_in:
-                s3.upload_fileobj(
-                    f_in,
-                    bucket,
-                    storage_key,
-                    ExtraArgs={"ContentType": media_storage.content_type_for(storage_key)},
-                )
-            file_url = f"s3://{storage_key}"
+            file_url = media_storage.store(pathlib.Path(temp_local_file), storage_key, content_type_header)
             if content_type == "image":
                 thumbnail = file_url
             else:
                 thumbnail_path = generate_video_thumbnail(temp_local_file, thumb_stem, folder)
                 if thumbnail_path and os.path.exists(thumbnail_path):
                     thumb_key = f"{folder}/{os.path.basename(thumbnail_path)}"
-                    with open(thumbnail_path, "rb") as thumb_file:
-                        s3.upload_fileobj(
-                            thumb_file,
-                            bucket,
-                            thumb_key,
-                            ExtraArgs={"ContentType": "image/jpeg"},
-                        )
-                    thumbnail = f"s3://{thumb_key}"
+                    thumbnail = media_storage.store(pathlib.Path(thumbnail_path), thumb_key, "image/jpeg")
                     try:
                         os.remove(thumbnail_path)
                     except Exception:
@@ -308,7 +291,7 @@ def upload_content(
                     os.remove(temp_local_file)
             except Exception:
                 pass
-            raise HTTPException(status_code=500, detail=f"S3 upload failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"Upload failed: {exc}")
     else:
         file_url = public_upload_url(storage_key)
         if content_type == "image":

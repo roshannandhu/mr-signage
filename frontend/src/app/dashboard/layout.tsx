@@ -190,7 +190,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       )}
 
-      <header className="border-hairline bg-card sticky top-0 z-40 border-b">
+      <header
+        className="border-hairline bg-card sticky top-0 z-40 border-b transition-colors"
+        style={brandingQuery.data?.brand_color ? { borderTop: `3px solid ${brandingQuery.data.brand_color}` } : undefined}
+      >
         <div className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-2 px-4 sm:px-6 lg:px-8">
           <Link href="/dashboard/screens" className="mr-4 flex shrink-0 items-center gap-2.5">
             {brandingQuery.data?.logo_url ? (
@@ -205,19 +208,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 />
               </span>
             ) : (
-              <span className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg">
+              <span
+                className="bg-primary text-primary-foreground grid size-8 place-items-center rounded-lg shadow-xs"
+                style={brandingQuery.data?.brand_color ? { backgroundColor: brandingQuery.data.brand_color } : undefined}
+              >
                 <RadioTower className="size-[18px]" aria-hidden="true" />
               </span>
             )}
-            <div className="hidden sm:flex sm:flex-col sm:leading-tight">
+            <div className="flex flex-col leading-tight min-w-0 max-w-[130px] sm:max-w-none">
               {/* Falls back to "MR Signage" (effective_name already resolves brand_name ||
                   org.name server-side, but the query has not answered on first paint). A
                   tenant with its own brand set sees it here, same as on their reports and
                   invoices; the login page keeps the platform's own mark, unconditionally. */}
-              <span className="text-foreground text-[16px] font-bold tracking-tight">
+              <span className="text-foreground text-[14px] sm:text-[16px] font-bold tracking-tight truncate">
                 {brandingQuery.data?.effective_name || 'MR Signage'}
               </span>
-              <span className="text-muted-foreground text-[10px] font-medium tracking-wide">
+              <span className="text-muted-foreground text-[10px] font-medium tracking-wide truncate">
                 {brandingQuery.data?.brand_name ? 'MR Signage' : '(Midhun-Roshan)'}
               </span>
             </div>
