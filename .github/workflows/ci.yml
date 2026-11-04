@@ -17,6 +17,7 @@ jobs:
       # time. Throwaway values -- nothing here connects to anything real.
       DATABASE_URL: "sqlite:///./ci.db"
       SECRET_KEY: "ci-not-a-real-secret"
+      PIN_ENCRYPTION_KEY: "rzn_KkewBmjrA840NcgMeC_QVOU4zQkZkWWUXehF_1M="
       AWS_ACCESS_KEY_ID: "mock"
       AWS_SECRET_ACCESS_KEY: "mock"
     steps:
@@ -70,6 +71,7 @@ jobs:
       # database that is not on localhost (backend/database.py), so a mistake here cannot reach
       # production either.
       SECRET_KEY: "ci-not-a-real-secret"
+      PIN_ENCRYPTION_KEY: "rzn_KkewBmjrA840NcgMeC_QVOU4zQkZkWWUXehF_1M="
       AWS_ACCESS_KEY_ID: "mock"
       AWS_SECRET_ACCESS_KEY: "mock"
       REDIS_URL: "redis://localhost:6379"
@@ -155,6 +157,7 @@ jobs:
       # Throwaway values against a database that exists only inside this job.
       DATABASE_URL: "postgresql://olrac:olrac_password@localhost:5432/ci_e2e"
       SECRET_KEY: "ci-not-a-real-secret"
+      PIN_ENCRYPTION_KEY: "rzn_KkewBmjrA840NcgMeC_QVOU4zQkZkWWUXehF_1M="
       AWS_ACCESS_KEY_ID: "mock"
       AWS_SECRET_ACCESS_KEY: "mock"
       REDIS_URL: "redis://localhost:6379"
