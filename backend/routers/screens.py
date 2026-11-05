@@ -173,7 +173,9 @@ def kiosk_lock_enabled(screen) -> bool:
         return False
     if getattr(screen, "is_locked", None) is not None:
         return bool(screen.is_locked)
-    return bool(organization.lock_enabled)
+    if organization.lock_enabled is not None:
+        return bool(organization.lock_enabled)
+    return True
 
 
 def master_maintenance_pin(db: Session) -> str | None:
@@ -1884,6 +1886,13 @@ def report_device_kiosk_status(
         )
         db.commit()
         schedule_immediate_outbox_dispatch(outbox_event.id)
+        try:
+            r = database.get_redis()
+            payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": payload.locked})
+            r.publish(f"org:{screen.organization_id}", payload_lock)
+            r.publish(f"dashboard:{screen.organization_id}", payload_lock)
+        except Exception:
+            pass
 
     return {"status": "ok", "screen_id": screen.id, "locked": payload.locked}
 
@@ -2320,6 +2329,8 @@ async def heartbeat(
         # scheduled polling tick. This is the cheapest path to sub-second PIN delivery
         # on networks where the WebSocket has silently dropped.
         "credentials_version": org_credentials_version,
+        # Live kiosk lock state to ensure bidirectional parity even when WebSockets drop
+        "kiosk_lock": kiosk_lock_enabled(db_screen),
     }
 
 
@@ -2601,7 +2612,10 @@ async def sync_tv(
     if since and marker <= as_aware_utc(since) and not merged_commands and not needs_credentials_sync:
         return Response(
             status_code=204,
-            headers={"X-Sync-Interval-Seconds": str(player_sync_interval_seconds())},
+            headers={
+                "X-Sync-Interval-Seconds": str(player_sync_interval_seconds()),
+                "X-Kiosk-Lock": "true" if kiosk_lock_enabled(screen) else "false",
+            },
         )
 
     if org:
