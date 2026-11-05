@@ -1,12 +1,14 @@
 package com.olrac.signage.boot
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.SystemClock
 import android.util.Log
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.olrac.signage.MainActivity
 import com.olrac.signage.service.PlaybackService
@@ -48,6 +50,13 @@ class WatchdogAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        try {
+            val info = serviceInfo
+            info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            serviceInfo = info
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not set FLAG_REQUEST_FILTER_KEY_EVENTS", e)
+        }
         val justBooted = SystemClock.elapsedRealtime() < BOOT_WINDOW_MS
         Log.i(TAG, "onServiceConnected (justBooted=$justBooted)")
         // Remembered so a remote diagnostics report can tell "never ran" from "ran and died".
@@ -97,6 +106,22 @@ class WatchdogAccessibilityService : AccessibilityService() {
             Log.e(TAG, "forceBringToFront failed (reason=$reason)", e)
             false
         }
+    }
+
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (event == null) return false
+        val isLocked = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(applicationContext)
+        val suppressed = watchdogSuppressed()
+        if (isLocked && !suppressed) {
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_HOME,
+                KeyEvent.KEYCODE_APP_SWITCH -> {
+                    // Block navigation away from player while locked on hardware remote/keys
+                    return true
+                }
+            }
+        }
+        return super.onKeyEvent(event)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -166,6 +191,8 @@ class WatchdogAccessibilityService : AccessibilityService() {
     /** True while a PIN-opened maintenance session or a recent operator exit is standing the
      *  watchdog down, so it does not fight the operator for the screen. */
     private fun watchdogSuppressed(): Boolean =
+        !com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(applicationContext) ||
+        prefs().contains(com.olrac.signage.MainActivity.PREF_OPERATOR_EXIT_AT) ||
         System.currentTimeMillis() < prefs().getLong(
             com.olrac.signage.MainActivity.PREF_WATCHDOG_SUPPRESS_UNTIL, 0L
         )

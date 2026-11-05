@@ -113,6 +113,12 @@ object PlayerLauncher {
             Log.i(TAG, "Launch held while the installer is in Settings finishing setup (reason=$reason)")
             return
         }
+        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(context) &&
+            reason != "remote_lock" && !reason.startsWith("manual")
+        ) {
+            Log.i(TAG, "Screen is unlocked; ignoring background launch request (reason=$reason)")
+            return
+        }
         warnIfBackgroundStartsWillBeRefused(context, reason)
         val intent = playerIntent(context)
         context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()

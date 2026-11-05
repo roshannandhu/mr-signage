@@ -95,8 +95,12 @@ fun ServerSetupScreen(
             Text("Switch Account / Unlink Screen")
         }
         Spacer(modifier = Modifier.height(10.dp))
-        Button(onClick = onClose, colors = secondaryButtonColors(), modifier = Modifier.fillMaxWidth()) {
-            Text("Return to player")
+        Button(
+            onClick = onClose,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669), contentColor = Color.White),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Lock Screen & Return to Ads")
         }
       }
     }

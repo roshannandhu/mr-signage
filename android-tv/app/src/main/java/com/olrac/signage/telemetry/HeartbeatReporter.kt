@@ -73,7 +73,8 @@ object HeartbeatReporter {
                 android_version = caps.android_version,
                 sdk_int = caps.sdk_int,
                 network_type = caps.network_type,
-                timezone = caps.timezone
+                timezone = caps.timezone,
+                is_locked = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(appContext)
             )
         )
         
@@ -97,6 +98,35 @@ object HeartbeatReporter {
                 body.screen_id?.let { edit.putInt("screen_id", it) }
                 body.organization_id?.let { edit.putInt("organization_id", it) }
                 edit.apply()
+
+                // If the server's credentials_version is strictly newer than what we last
+                // synced, the device has not yet received the updated PIN via a full sync.
+                // Trigger one immediately so the "Sync Pending" badge clears within seconds
+                // rather than waiting for the next scheduled polling tick.
+                val serverCredsVersion = body.credentials_version
+                if (serverCredsVersion != null) {
+                    val localCredsVersion = com.olrac.signage.data.DeviceState(appContext).credentialsVersion
+                    if (serverCredsVersion > localCredsVersion) {
+                        android.util.Log.i(
+                            "HeartbeatReporter",
+                            "Credentials drift detected via heartbeat: local=$localCredsVersion server=$serverCredsVersion; triggering immediate sync"
+                        )
+                        com.olrac.signage.service.PlaybackService.requestImmediateSync(appContext)
+                    }
+                }
+
+                // Authoritative kiosk lock state synchronization from heartbeat
+                val serverKioskLock = body.kiosk_lock
+                if (serverKioskLock != null) {
+                    val localKioskLock = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(appContext)
+                    if (serverKioskLock != localKioskLock) {
+                        android.util.Log.i(
+                            "HeartbeatReporter",
+                            "Kiosk lock drift detected via heartbeat: local=$localKioskLock server=$serverKioskLock; updating"
+                        )
+                        com.olrac.signage.MainActivity.onKioskLockChanged(appContext, serverKioskLock)
+                    }
+                }
 
                 // See PlaylistSynchronizer for why both fields are merged: pending_commands
                 // carries every command still within its hold time, pending_command is the

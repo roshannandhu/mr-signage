@@ -85,6 +85,15 @@ class PlaylistSynchronizer(context: Context) {
 
                 if (response.code() == 204) {
                     val interval = saveInterval(responseInterval ?: currentInterval)
+                    val lockHeader = response.headers()["X-Kiosk-Lock"]?.toBooleanStrictOrNull()
+                    if (lockHeader != null) {
+                        val previousLock = preferences.getBoolean(KEY_KIOSK_LOCK, true)
+                        if (previousLock != lockHeader) {
+                            preferences.edit().putBoolean(KEY_KIOSK_LOCK, lockHeader).apply()
+                            android.util.Log.i("PlaylistSynchronizer", "Kiosk lock state changed via 204 header: $previousLock -> $lockHeader")
+                            com.olrac.signage.MainActivity.onKioskLockChanged(appContext, lockHeader)
+                        }
+                    }
                     return@withContext SyncOutcome(true, false, false, interval)
                 }
                 // 404, and ONLY 404, means this screen is gone. It is not a transient failure

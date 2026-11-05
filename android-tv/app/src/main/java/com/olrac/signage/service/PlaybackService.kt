@@ -409,7 +409,7 @@ class PlaybackService : Service() {
         private const val ACTION_SYNC_NOW = "com.olrac.signage.action.SYNC_NOW"
 
         /** How often to ask for a queued remote command. See startCommandPollLoop. */
-        private const val COMMAND_POLL_SECONDS = 15
+        private const val COMMAND_POLL_SECONDS = 10
 
         fun start(context: Context, launchPlayer: Boolean, afterBoot: Boolean = false) {
             val intent = Intent(context, PlaybackService::class.java)

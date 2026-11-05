@@ -172,10 +172,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // 5-minute inactivity auto-relock when ServerSetupScreen is open
+            // 5-minute inactivity auto-relock when ServerSetupScreen is open (only when kiosk is locked)
             LaunchedEffect(showServerSetup) {
                 if (showServerSetup) {
                     while (showServerSetup) {
+                        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this@MainActivity)) {
+                            // Unlocked state: stay unlocked indefinitely, do not force-relock
+                            break
+                        }
                         val elapsed = System.currentTimeMillis() - lastInteractionAtMs
                         if (elapsed >= 5 * 60_000L) {
                             android.util.Log.i("MainActivity", "ServerSetupScreen 5-minute inactivity timeout reached; relocking to player")
@@ -195,12 +199,13 @@ class MainActivity : ComponentActivity() {
                         is com.olrac.signage.service.ServiceCommandEvent.RemoteUnlock -> {
                             if (!showPinPrompt && !showServerSetup) {
                                 android.util.Log.i("MainActivity", "Applying reactive remote unlock (id=${event.commandId})")
+                                setKioskLockState(locked = false, reportToServer = false)
                                 enterMaintenance()
                                 showServerSetup = true
                             }
                         }
                         is com.olrac.signage.service.ServiceCommandEvent.KioskLockChanged -> {
-                            setKioskLockState(event.locked)
+                            setKioskLockState(event.locked, reportToServer = false)
                         }
                     }
                 }
@@ -217,6 +222,7 @@ class MainActivity : ComponentActivity() {
                         prefs.edit().putBoolean(PREF_PENDING_REMOTE_UNLOCK, false).apply()
                         if (!showPinPrompt && !showServerSetup) {
                             android.util.Log.i("MainActivity", "Applying a remote unlock from prefs fallback")
+                            setKioskLockState(locked = false, reportToServer = false)
                             enterMaintenance()
                             showServerSetup = true
                         }
@@ -231,8 +237,8 @@ class MainActivity : ComponentActivity() {
                     masterPin = deviceState.masterPin,
                     onUnlocked = {
                         showPinPrompt = false
-                        // Correct pin: only now is it safe to drop kiosk pinning so the
-                        // setup screen's system dialogs can open.
+                        // Correct pin: unlock kiosk and notify backend so dashboard reflects Unlocked immediately
+                        setKioskLockState(locked = false, reportToServer = true)
                         enterMaintenance()
                         showServerSetup = true
                     },
@@ -341,10 +347,7 @@ class MainActivity : ComponentActivity() {
      * an operator could reach the home screen the whole time without re-entering the PIN.
      */
     private fun relockToPlayer() {
-        getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
-            .remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
-        DeviceOwnerManager.applyKioskPolicy(this)
-        rearmLockTask()
+        setKioskLockState(locked = true, reportToServer = true)
     }
 
     private fun refreshPermissionState() {
@@ -436,12 +439,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun enterMaintenance() {
-        // The watchdog was written before this maintenance/exit flow existed, so left to run it
-        // reclaims the screen from Settings and the home launcher -- dragging the operator back to
-        // the ads and blocking every maintenance action. Stand it down for a window whenever a
-        // correct PIN opens maintenance; onResume clears it once the player is deliberately back.
+        lastInteractionAtMs = System.currentTimeMillis()
         getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
-            .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, System.currentTimeMillis() + MAINTENANCE_SUPPRESS_MS).apply()
+            .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).apply()
         DeviceOwnerManager.allowMaintenanceApps(this)
     }
 
@@ -459,18 +459,9 @@ class MainActivity : ComponentActivity() {
      * The exit time is recorded so that relaunch also stands down if someone swipes it away.
      */
     private fun exitToSystemLauncher() {
-        getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
-            .putLong(PREF_OPERATOR_EXIT_AT, System.currentTimeMillis())
-            // Keep the watchdog off the home screen the operator just exited to, or it reclaims
-            // the player straight back over it.
-            .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, System.currentTimeMillis() + EXIT_SUPPRESS_MS)
-            .apply()
         showServerSetup = false
+        setKioskLockState(locked = false, reportToServer = true)
         val launcher = systemLauncher()
-        // Home is redirected BEFORE lock task ends: ending it on a home task makes Android
-        // restart HOME, and that has to land on the device's launcher, not on this player.
-        DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { android.content.ComponentName(it.packageName, it.className) })
-        try { stopLockTask() } catch (e: Exception) {}
         val opened = openSystemLauncher(launcher)
         android.util.Log.i("MainActivity", "Operator exit to ${launcher?.packageName ?: "background"} (opened=$opened)")
     }
@@ -515,24 +506,50 @@ class MainActivity : ComponentActivity() {
      *  pinned (a no-op). This is what closes the hole where the gesture alone, or a
      *  cancelled/failed pin, left the TV un-pinned until the next reboot. */
     private fun rearmLockTask() {
-        if (DeviceOwnerManager.isDeviceOwner(this) && !showPinPrompt && !showServerSetup &&
+        if (!showPinPrompt && !showServerSetup &&
             com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
         ) {
-            try { startLockTask() } catch (e: Exception) {}
+            try {
+                startLockTask()
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "startLockTask failed", e)
+            }
         }
     }
 
-    fun setKioskLockState(locked: Boolean) {
+    fun setKioskLockState(locked: Boolean, reportToServer: Boolean = true) {
+        val prefs = getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("kiosk_lock", locked).apply()
+
         runOnUiThread {
             if (locked) {
+                prefs.edit().remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
                 DeviceOwnerManager.applyKioskPolicy(this)
                 rearmLockTask()
-                android.util.Log.i("MainActivity", "Workspace Lock re-armed dynamically")
+                android.util.Log.i("MainActivity", "Kiosk Lock re-armed (locked=true)")
             } else {
+                prefs.edit().putLong(PREF_OPERATOR_EXIT_AT, System.currentTimeMillis())
+                    .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).apply()
                 val launcher = systemLauncher()
                 DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { ComponentName(it.packageName, it.className) })
                 try { stopLockTask() } catch (e: Exception) {}
-                android.util.Log.i("MainActivity", "Workspace Lock released dynamically")
+                android.util.Log.i("MainActivity", "Kiosk Lock released (locked=false)")
+            }
+        }
+
+        if (reportToServer) {
+            val deviceId = deviceState.deviceId
+            @Suppress("OPT_IN_USAGE")
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    ApiClient.service(this@MainActivity).reportKioskStatus(
+                        deviceId = deviceId,
+                        request = com.olrac.signage.network.KioskStatusUpdateRequest(locked = locked)
+                    )
+                    android.util.Log.i("MainActivity", "Successfully reported kiosk status to backend (locked=$locked)")
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Could not report kiosk status: ${e.message}")
+                }
             }
         }
     }
@@ -654,6 +671,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        lastInteractionAtMs = System.currentTimeMillis()
         // Touch-only path to the maintenance PIN, for devices with no D-pad remote (touch
         // panels, phones) where the Up-Up-Down-Down-OK gesture is unreachable: seven quick
         // taps in any corner reveal the same PIN prompt. Only over the player, and the pin
@@ -1298,9 +1316,17 @@ class MainActivity : ComponentActivity() {
         @Volatile var activeActivity: MainActivity? = null
 
         fun onKioskLockChanged(context: Context, locked: Boolean) {
-            activeActivity?.setKioskLockState(locked)
+            val prefs = context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("kiosk_lock", locked).apply()
+            if (locked) {
+                prefs.edit().remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
+            } else {
+                prefs.edit().putLong(PREF_OPERATOR_EXIT_AT, System.currentTimeMillis())
+                    .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).apply()
+            }
+            activeActivity?.setKioskLockState(locked, reportToServer = false)
             if (locked && !visible) {
-                com.olrac.signage.boot.PlayerLauncher.launch(context, delayMs = 200L, reason = "kiosk_lock_rearmed")
+                com.olrac.signage.boot.PlayerLauncher.launch(context, delayMs = 200L, reason = "remote_lock")
             }
         }
         private const val PAIRING_RETRY_MS = 5_000L

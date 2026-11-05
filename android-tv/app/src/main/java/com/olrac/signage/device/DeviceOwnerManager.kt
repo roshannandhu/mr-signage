@@ -102,7 +102,14 @@ object DeviceOwnerManager {
         try {
             // 1. LockTask Mode
             dpm.setLockTaskPackages(adminName, arrayOf(context.packageName))
-            Log.d(TAG, "Lock task packages set")
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                try {
+                    dpm.setLockTaskFeatures(adminName, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not set LOCK_TASK_FEATURE_NONE", e)
+                }
+            }
+            Log.d(TAG, "Lock task packages and features locked down")
 
             // 2. Persistent preferred activity for HOME intent
             // Undo an operator exit first: the launcher it pointed Home at must not keep winning.

@@ -288,6 +288,22 @@ export const api = {
     }>(`/screens/${screenId}/remote-lock`, {
       method: 'POST',
     }),
+  getScreenLockStatus: (screenId: number) =>
+    fetchWithAuth<{
+      screen_id: number
+      locked: boolean
+      feature_enabled: boolean
+    }>(`/screens/${screenId}/lock-status`),
+  setScreenLockStatus: (screenId: number, locked: boolean) =>
+    fetchWithAuth<{
+      screen_id: number
+      locked: boolean
+      feature_enabled: boolean
+    }>(`/screens/${screenId}/lock-status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ locked }),
+    }),
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
   }),

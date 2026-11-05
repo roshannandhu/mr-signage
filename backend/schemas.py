@@ -311,6 +311,16 @@ class LockEnabledResponse(BaseModel):
     lock_enabled: bool
 
 
+class ScreenLockStatusUpdate(BaseModel):
+    locked: bool
+
+
+class ScreenLockStatusResponse(BaseModel):
+    screen_id: int
+    locked: bool
+    feature_enabled: bool
+
+
 class KioskAttemptRequest(BaseModel):
     """A TV reporting one local PIN check, right or wrong, best-effort."""
 
@@ -502,6 +512,7 @@ class ScreenResponse(ScreenBase):
     sdk_int: Optional[int] = None
     network_type: Optional[str] = None
     timezone: Optional[str] = None
+    is_locked: Optional[bool] = None
 
     @field_validator("maintenance_pin", "effective_maintenance_pin", mode="before")
     @classmethod
@@ -912,6 +923,7 @@ class HeartbeatRequest(BaseModel):
     sdk_int: Optional[int] = None
     network_type: Optional[str] = None
     timezone: Optional[str] = None
+    is_locked: Optional[bool] = None
     
     model_config = ConfigDict(extra="ignore")
 

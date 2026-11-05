@@ -18,6 +18,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -47,6 +49,12 @@ fun PinPromptScreen(
 
     var entered by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(150L)
+        try { focusRequester.requestFocus() } catch (_: Exception) {}
+    }
     // Loaded once per reveal, not reset by it -- the whole point is that repeating the
     // gesture does not hand out five fresh guesses.
     var limiterState by remember { mutableStateOf(PinAttemptLimiter.load(context)) }
@@ -62,8 +70,8 @@ fun PinPromptScreen(
         }
     }
 
-    fun submit() {
-        val correct = entered == expectedPin || (masterPin != null && entered == masterPin)
+    fun submit(pinToCheck: String = entered) {
+        val correct = pinToCheck == expectedPin || (masterPin != null && pinToCheck == masterPin)
         KioskAttemptReporter.report(context, correct)
         if (correct) {
             limiterState = PinAttemptLimiter.recordSuccess()
@@ -94,11 +102,15 @@ fun PinPromptScreen(
         OutlinedTextField(
             value = entered,
             onValueChange = { typed ->
-                entered = typed.filter { it.isDigit() }.take(4)
+                val digits = typed.filter { it.isDigit() }.take(4)
+                entered = digits
                 error = null
+                if (digits.length == 4 && cooldownRemaining <= 0) {
+                    submit(digits)
+                }
             },
             enabled = cooldownRemaining <= 0,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
             label = { Text("Pin") },
             supportingText = run {
                 val message = if (cooldownRemaining > 0) {

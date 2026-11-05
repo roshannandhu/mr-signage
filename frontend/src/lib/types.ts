@@ -146,6 +146,7 @@ export interface Screen {
   fit_mode?: FitMode
   /** Unlocks the player's on-TV maintenance screen. Four digits, per screen. */
   maintenance_pin?: string | null
+  is_locked?: boolean
   /** Keeps this screen on its own PIN even when the workspace has set a shared one. */
   uses_own_pin?: boolean
   sync_playback?: boolean

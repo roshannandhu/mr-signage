@@ -138,12 +138,8 @@ data class HeartbeatRequest(
     val sdk_int: Int? = null,
     val network_type: String? = null,
     val timezone: String? = null,
-    // Whether this panel can install an update without a human tapping a dialog. Android
-    // permits a silent install only for the device owner, so this is the single fact that
-    // decides whether a published release actually reaches a screen or waits on somebody
-    // walking up to it -- and nothing reported it, so the fleet could not show which screens
-    // were quietly stuck.
-    val device_owner: Boolean? = null
+    val device_owner: Boolean? = null,
+    val is_locked: Boolean? = null
 )
 
 data class SyncResponse(
@@ -294,7 +290,14 @@ data class HeartbeatResponse(
     val screen_id: Int?,
     val organization_id: Int?,
     val pending_command: String? = null,
-    val pending_commands: List<String>? = null
+    val pending_commands: List<String>? = null,
+    // Credentials version as of this heartbeat. When this is strictly newer than the
+    // local credentialsVersion the device has not yet received the updated PIN via a full
+    // sync, so an immediate sync is triggered to close the gap without waiting for the
+    // next scheduled polling tick.
+    val credentials_version: Int? = null,
+    // Live authoritative lock state from the server. Reflects both dashboard toggles and plan gates.
+    val kiosk_lock: Boolean? = null
 )
 
 data class GoogleOAuthUrlResponse(
@@ -362,6 +365,12 @@ interface ApiService {
         @Body request: KioskAttemptRequest
     ): Response<Unit>
 
+    @POST("api/screens/{device_id}/kiosk-status")
+    suspend fun reportKioskStatus(
+        @Path("device_id") deviceId: String,
+        @Body request: KioskStatusUpdateRequest
+    ): Response<Unit>
+
     @POST("api/screens/{device_id}/commands/{command_id}/ack")
     suspend fun ackCommand(
         @Path("device_id") deviceId: String,
@@ -383,3 +392,4 @@ interface ApiService {
 }
 
 data class KioskAttemptRequest(val success: Boolean)
+data class KioskStatusUpdateRequest(val locked: Boolean)

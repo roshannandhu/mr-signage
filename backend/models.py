@@ -472,6 +472,8 @@ class Screen(Base):
     # alongside Organization.lock_pin. Defaults false so setting a workspace PIN immediately
     # covers every existing screen, which is the point of having one.
     uses_own_pin = Column(Boolean, nullable=False, default=False, server_default="false")
+    # Screen-level kiosk lock state (True = locked, False = unlocked, None = inherit org.lock_enabled)
+    is_locked = Column(Boolean, nullable=True, default=None)
     # Video-wall support: followers take their playback clock from a leader screen.
     sync_playback = Column(Boolean, nullable=False, default=False)
     sync_role = Column(String, nullable=False, default="leader")
