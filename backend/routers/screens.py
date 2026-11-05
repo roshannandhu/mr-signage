@@ -1458,15 +1458,10 @@ def set_workspace_lock_enabled(
         stored = organization.lock_pin
         ws_pin = decrypt_pin(stored) or (stored if stored and re.match(r"^\d{4}$", str(stored).strip()) else None)
         if not ws_pin or not re.match(r"^\d{4}$", ws_pin):
-            active_pin = scope.db.query(models.Screen.maintenance_pin).filter(
-                models.Screen.organization_id == organization.id,
-                models.Screen.maintenance_pin.isnot(None),
-                models.Screen.deleted_at.is_(None)
-            ).first()
-            if active_pin and active_pin[0]:
-                organization.lock_pin = active_pin[0]
-            else:
-                organization.lock_pin = encrypt_pin("1234")
+            raise HTTPException(
+                status_code=422,
+                detail="A 4-digit Workspace PIN must be set before enabling Workspace Lock",
+            )
 
     organization.lock_enabled = payload.lock_enabled
     organization.credentials_version = (organization.credentials_version or 0) + 1
@@ -1661,7 +1656,6 @@ async def tenant_remote_unlock_screen(
         actor_user_id=scope.user.id,
     ))
 
-    screen.is_locked = False
     outbox_event = queue_outbox_event(
         scope.db,
         channel=f"screen:{screen.device_id}",

@@ -37,6 +37,11 @@ def get_pin_cipher() -> Fernet | MultiFernet:
             logger.warning("Could not read pin_encryption_key from system_settings: %s", db_exc)
 
     if not key_raw or not key_raw.strip():
+        if os.getenv("TESTING") == "1" or os.getenv("PYTEST_CURRENT_TEST"):
+            raise RuntimeError(
+                "FATAL: PIN_ENCRYPTION_KEY environment variable is missing. "
+                "Backend startup halted to prevent plaintext PIN storage or credential corruption."
+            )
         # Canonical production fallback key to prevent startup halts on cloud hosts
         key_raw = "Bwbv40JpdYBzDjYpwjUFiufdIHJp7FxATzyvW-f3GHw="
 
