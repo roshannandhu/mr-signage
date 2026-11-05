@@ -159,22 +159,20 @@ def effective_maintenance_pin(db: Session, screen) -> str | None:
 
 
 def kiosk_lock_enabled(screen) -> bool:
-    """Whether this screen is actually locked right now -- two conditions ANDed together.
+    """Whether this screen is actually locked right now.
 
-    The plan has to sell the feature at all (False is the "not granted" default every other
-    Phase 3.1 feature flag uses for a plan that never set the key), AND the tenant has to
-    have turned it on themselves (Organization.lock_enabled, off by default). Separating
-    these is the point: a plan gaining the feature must never retroactively trap an
-    already-paired fleet the next time it syncs -- the tenant decides when, not the plan.
-
-    A screen with no organisation (never paired) has no plan either, so it reads as
-    unlocked rather than raising.
+    1. The plan has to sell the feature (plan_features.get("kiosk_lock", False)).
+       If the plan does not include kiosk_lock, screen is never locked.
+    2. If screen.is_locked is explicitly set (True or False), it takes precedence.
+    3. Otherwise defaults to organization.lock_enabled.
     """
     organization = getattr(screen, "organization", None)
     if organization is None or organization.plan is None:
         return False
     if not bool(plan_features(organization.plan).get("kiosk_lock", False)):
         return False
+    if getattr(screen, "is_locked", None) is not None:
+        return bool(screen.is_locked)
     return bool(organization.lock_enabled)
 
 
@@ -1354,6 +1352,7 @@ async def get_screens(
     return [
         schemas.ScreenResponse.model_validate(screen).model_copy(
             update={
+                "is_locked": kiosk_lock_enabled(screen),
                 "effective_playlist_id": screen.resolve_playlist_id(groups),
                 # What opens the maintenance door on THIS screen: its own PIN, or the
                 # workspace PIN if one is set and this screen has not opted out of it --
@@ -1660,6 +1659,7 @@ async def tenant_remote_unlock_screen(
         actor_user_id=scope.user.id,
     ))
 
+    screen.is_locked = False
     outbox_event = queue_outbox_event(
         scope.db,
         channel=f"screen:{screen.device_id}",
@@ -1670,8 +1670,24 @@ async def tenant_remote_unlock_screen(
             "expires_at": int(expires_at.timestamp()),
         },
     )
+    queue_outbox_event(
+        scope.db,
+        channel=f"org:{scope.organization.id}",
+        event_type="screen_lock_changed",
+        payload={"screen_id": screen.id, "locked": False},
+    )
     scope.db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    try:
+        from .. import database
+        r = database.get_redis()
+        payload_cmd = json.dumps({"type": "device_command", "command": "remote_unlock", "command_id": cmd_id, "screen_id": screen.id})
+        await r.publish(f"screen:{screen.device_id}", payload_cmd)
+        payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": False})
+        await r.publish(f"org:{scope.organization.id}", payload_lock)
+    except Exception as exc:
+        logger.debug("Redis publish failed for remote_unlock: %s", exc)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -1742,6 +1758,17 @@ async def tenant_remote_lock_screen(
         },
     )
 
+    screen.is_locked = True
+    queue_outbox_event(
+        scope.db,
+        channel=f"org:{org.id}",
+        event_type="screen_lock_changed",
+        payload={
+            "screen_id": screen.id,
+            "locked": True,
+        },
+    )
+
     queue_outbox_event(
         scope.db,
         channel=f"org:{org.id}",
@@ -1761,7 +1788,7 @@ async def tenant_remote_lock_screen(
         r = database.get_redis()
         payload_cmd = json.dumps({"type": "device_command", "command": "remote_lock", "command_id": cmd_id, "screen_id": screen.id})
         await r.publish(f"screen:{screen.device_id}", payload_cmd)
-        payload_lock = json.dumps({"type": "lock_state_changed", "lock_enabled": True, "screen_id": screen.id})
+        payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": True})
         await r.publish(f"org:{org.id}", payload_lock)
     except Exception as exc:
         logger.debug("Redis publish failed for remote_lock: %s", exc)
@@ -1773,6 +1800,92 @@ async def tenant_remote_lock_screen(
         device_id=screen.device_id,
         expires_at=expires_at.isoformat(),
     )
+
+
+@router.get("/{screen_id}/lock-status", response_model=schemas.ScreenLockStatusResponse)
+def get_screen_lock_status(
+    screen_id: int,
+    scope: TenantScope = Depends(get_tenant_scope),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    has_feature = bool(plan_features(scope.organization.plan).get("kiosk_lock", False)) if scope.organization and scope.organization.plan else False
+    is_locked = kiosk_lock_enabled(screen)
+    return schemas.ScreenLockStatusResponse(
+        screen_id=screen.id,
+        locked=is_locked,
+        feature_enabled=has_feature,
+    )
+
+
+@router.put("/{screen_id}/lock-status", response_model=schemas.ScreenLockStatusResponse)
+async def update_screen_lock_status(
+    screen_id: int,
+    payload: schemas.ScreenLockStatusUpdate,
+    scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("kiosk_lock")),
+):
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="Screen has not paired yet")
+
+    if payload.locked:
+        await tenant_remote_lock_screen(screen_id=screen.id, scope=scope, _feature=_feature)
+    else:
+        await tenant_remote_unlock_screen(screen_id=screen.id, scope=scope)
+
+    screen.is_locked = payload.locked
+    scope.db.commit()
+
+    return schemas.ScreenLockStatusResponse(
+        screen_id=screen.id,
+        locked=payload.locked,
+        feature_enabled=True,
+    )
+
+
+@router.post("/{device_id}/kiosk-status")
+def report_device_kiosk_status(
+    device_id: str,
+    payload: schemas.ScreenLockStatusUpdate,
+    db: Session = Depends(database.get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    screen = verify_device_auth(device_id, credentials, db)
+    screen.is_locked = payload.locked
+    db.commit()
+
+    if screen.organization_id:
+        outbox_event = queue_outbox_event(
+            db,
+            channel=f"org:{screen.organization_id}",
+            event_type="screen_lock_changed",
+            payload={"screen_id": screen.id, "locked": payload.locked},
+        )
+        db.commit()
+        schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    return {"status": "ok", "screen_id": screen.id, "locked": payload.locked}
 
 
 @router.post("/{device_id}/commands/{command_id}/ack", response_model=schemas.DeviceCommandAckResponse)
@@ -2163,6 +2276,16 @@ async def heartbeat(
         db_screen.last_error = req.last_error
         if req.last_error:
             db_screen.last_error_at = models.utcnow()
+    if "is_locked" in fields and req.is_locked is not None:
+        if db_screen.is_locked != req.is_locked:
+            db_screen.is_locked = req.is_locked
+            if db_screen.organization_id:
+                queue_outbox_event(
+                    db,
+                    channel=f"org:{db_screen.organization_id}",
+                    event_type="screen_lock_changed",
+                    payload={"screen_id": db_screen.id, "locked": req.is_locked},
+                )
     db.commit()
 
     # Presence cache. Best-effort on purpose: a Redis outage must never fail a TV's
@@ -2175,6 +2298,15 @@ async def heartbeat(
     except Exception as exc:  # noqa: BLE001 - any Redis failure must stay non-fatal
         logger.warning("Redis presence write failed for screen %s: %s", db_screen.id, exc)
 
+    # Resolve the workspace credentials version so the device can self-detect drift
+    # between heartbeats and trigger an immediate full sync, without waiting for the
+    # WS push or the next scheduled polling tick. Cheap: the org is already loaded.
+    org_credentials_version = (
+        db_screen.organization.credentials_version
+        if db_screen.organization
+        else None
+    )
+
     return {
         "status": "ok",
         "screen_status": db_screen.status,
@@ -2183,6 +2315,11 @@ async def heartbeat(
         "organization_id": db_screen.organization_id,
         "pending_command": pending_commands[0] if pending_commands else None,
         "pending_commands": pending_commands,
+        # Included so the device can self-detect credential drift between heartbeats and
+        # trigger an immediate full sync without waiting for the WS push or the next
+        # scheduled polling tick. This is the cheapest path to sub-second PIN delivery
+        # on networks where the WebSocket has silently dropped.
+        "credentials_version": org_credentials_version,
     }
 
 

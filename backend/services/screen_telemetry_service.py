@@ -52,9 +52,9 @@ def _commands_key(device_id: str) -> str:
 
 def player_sync_interval_seconds() -> int:
     try:
-        configured = int(os.getenv("PLAYER_SYNC_INTERVAL_SECONDS", "15"))
+        configured = int(os.getenv("PLAYER_SYNC_INTERVAL_SECONDS", "10"))
     except ValueError:
-        configured = 15
+        configured = 10
     return max(5, min(configured, 3600))
 
 
