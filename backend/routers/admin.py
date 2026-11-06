@@ -1991,6 +1991,10 @@ class FleetScreenOut(BaseModel):
     update_status: Optional[str] = None
     update_failure_count: int = 0
     last_seen: Optional[str] = None
+    wifi_ssid: Optional[str] = None
+    wifi_signal_bars: Optional[int] = None
+    has_wifi_password: bool = False
+    wifi_updated_at: Optional[str] = None
 
 
 class FleetOverviewOut(BaseModel):
@@ -2072,6 +2076,10 @@ def fleet_overview(
                 update_status=screen.update_status,
                 update_failure_count=screen.update_failure_count or 0,
                 last_seen=_iso(screen.last_seen),
+                wifi_ssid=screen.wifi_ssid,
+                wifi_signal_bars=screen.wifi_signal_bars,
+                has_wifi_password=bool(screen.wifi_password_enc),
+                wifi_updated_at=_iso(screen.wifi_updated_at) if screen.wifi_updated_at else None,
             )
         )
 
@@ -2302,6 +2310,48 @@ async def send_bulk_screen_commands(
         total=len(req.screen_ids),
         queued_count=queued_count,
         results=results,
+    )
+
+
+@router.post("/screens/{screen_id}/reveal-wifi-password", response_model=schemas.ScreenWifiPasswordRevealResponse)
+def admin_reveal_screen_wifi_password(
+    screen_id: int,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Reveal a screen's Wi-Fi password for super admin diagnostics. Every reveal is audited."""
+    from ..services.wifi_crypto import decrypt_wifi_password
+    screen = db.query(models.Screen).filter(models.Screen.id == screen_id, models.Screen.deleted_at.is_(None)).first()
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    password = decrypt_wifi_password(screen.wifi_password_enc) if screen.wifi_password_enc else None
+
+    _audit(
+        db,
+        scope,
+        request,
+        "screen.wifi_password.reveal",
+        org_id=screen.organization_id,
+        target_type="screen",
+        target_id=str(screen.id),
+        after={
+            "action": "revealed",
+            "screen_name": screen.name,
+            "wifi_ssid": screen.wifi_ssid,
+            "has_password": bool(password),
+        },
+    )
+    db.commit()
+
+    return schemas.ScreenWifiPasswordRevealResponse(
+        screen_id=screen.id,
+        screen_name=screen.name or f"Screen {screen.id}",
+        wifi_ssid=screen.wifi_ssid,
+        wifi_password=password,
+        wifi_signal_bars=screen.wifi_signal_bars,
+        wifi_updated_at=screen.wifi_updated_at,
     )
 
 

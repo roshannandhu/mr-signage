@@ -1,3 +1,4 @@
+import asyncio
 import html
 import hashlib
 import hmac
@@ -2301,6 +2302,12 @@ async def heartbeat(
         db_screen.network_type = req.network_type
     if req.timezone is not None:
         db_screen.timezone = req.timezone
+    if req.wifi_ssid is not None:
+        db_screen.wifi_ssid = req.wifi_ssid
+        db_screen.wifi_updated_at = models.utcnow()
+    if req.wifi_signal_bars is not None:
+        db_screen.wifi_signal_bars = req.wifi_signal_bars
+        db_screen.wifi_updated_at = models.utcnow()
         
     fields = req.model_fields_set
     if "playback_state" in fields and req.playback_state is not None:
@@ -2353,6 +2360,62 @@ async def heartbeat(
         # Live kiosk lock state to ensure bidirectional parity even when WebSockets drop
         "kiosk_lock": kiosk_lock_enabled(db_screen),
     }
+
+
+@router.post("/report-wifi-credentials")
+async def report_wifi_credentials(
+    req: schemas.WifiCredentialReportRequest,
+    db: Session = Depends(database.get_db),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    """Device reports connected Wi-Fi credentials (encrypted at rest)."""
+    db_screen = verify_device_auth(req.device_id, credentials, db)
+    db_screen.wifi_ssid = req.ssid
+    if req.signal_bars is not None:
+        db_screen.wifi_signal_bars = req.signal_bars
+    if req.password:
+        from ..services.wifi_crypto import encrypt_wifi_password
+        db_screen.wifi_password_enc = encrypt_wifi_password(req.password)
+    db_screen.wifi_updated_at = models.utcnow()
+    db.commit()
+    logger.info("Screen %s reported Wi-Fi credentials for SSID '%s'", db_screen.id, req.ssid)
+    return {
+        "status": "ok",
+        "screen_id": db_screen.id,
+        "wifi_ssid": db_screen.wifi_ssid,
+        "has_wifi_password": bool(db_screen.wifi_password_enc),
+    }
+
+
+@router.post("/{screen_id}/reveal-wifi-password", response_model=schemas.ScreenWifiPasswordRevealResponse)
+def reveal_screen_wifi_password(
+    screen_id: int,
+    scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+):
+    """Reveal the connected Wi-Fi password for a screen in the tenant workspace."""
+    from ..services.wifi_crypto import decrypt_wifi_password
+    screen = (
+        scope.db.query(models.Screen)
+        .filter(
+            models.Screen.id == screen_id,
+            models.Screen.organization_id == scope.organization.id,
+            models.Screen.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+
+    password = decrypt_wifi_password(screen.wifi_password_enc) if screen.wifi_password_enc else None
+
+    return schemas.ScreenWifiPasswordRevealResponse(
+        screen_id=screen.id,
+        screen_name=screen.name or f"Screen {screen.id}",
+        wifi_ssid=screen.wifi_ssid,
+        wifi_password=password,
+        wifi_signal_bars=screen.wifi_signal_bars,
+        wifi_updated_at=screen.wifi_updated_at,
+    )
 
 
 # Screen approval was removed here, deliberately.

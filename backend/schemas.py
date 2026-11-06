@@ -368,6 +368,23 @@ class ScreenMaintenancePinUpdate(BaseModel):
         return data
 
 
+class WifiCredentialReportRequest(BaseModel):
+    device_id: str
+    ssid: str = Field(min_length=1, max_length=128)
+    password: Optional[str] = Field(default=None, max_length=128)
+    signal_bars: Optional[int] = Field(default=None, ge=0, le=4)
+
+
+class ScreenWifiPasswordRevealResponse(BaseModel):
+    screen_id: int
+    screen_name: str
+    wifi_ssid: Optional[str] = None
+    wifi_password: Optional[str] = None
+    wifi_signal_bars: Optional[int] = None
+    wifi_updated_at: Optional[datetime] = None
+
+
+
 class TenantRemoteUnlockResponse(BaseModel):
     queued: bool
     command_id: str
@@ -511,6 +528,10 @@ class ScreenResponse(ScreenBase):
     android_version: Optional[str] = None
     sdk_int: Optional[int] = None
     network_type: Optional[str] = None
+    wifi_ssid: Optional[str] = None
+    wifi_signal_bars: Optional[int] = None
+    has_wifi_password: bool = False
+    wifi_updated_at: Optional[datetime] = None
     timezone: Optional[str] = None
     is_locked: Optional[bool] = None
 
@@ -922,6 +943,10 @@ class HeartbeatRequest(BaseModel):
     android_version: Optional[str] = None
     sdk_int: Optional[int] = None
     network_type: Optional[str] = None
+    wifi_ssid: Optional[str] = None
+    wifi_signal_bars: Optional[int] = None
+    has_wifi_password: bool = False
+    wifi_updated_at: Optional[datetime] = None
     timezone: Optional[str] = None
     is_locked: Optional[bool] = None
     

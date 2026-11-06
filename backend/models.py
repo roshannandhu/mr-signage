@@ -516,7 +516,15 @@ class Screen(Base):
     android_version = Column(String, nullable=True)
     sdk_int = Column(Integer, nullable=True)
     network_type = Column(String, nullable=True)
+    wifi_ssid = Column(String(128), nullable=True)
+    wifi_signal_bars = Column(Integer, nullable=True)
+    wifi_password_enc = Column(String, nullable=True)
+    wifi_updated_at = Column(UtcDateTime, nullable=True)
     timezone = Column(String, nullable=True)
+
+    @property
+    def has_wifi_password(self) -> bool:
+        return bool(self.wifi_password_enc)
     
     playback_state = Column(String, nullable=False, default="idle")
     current_item_id = Column(Integer, nullable=True)
