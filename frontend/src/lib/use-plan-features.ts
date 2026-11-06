@@ -22,8 +22,17 @@ export function usePlanFeatures() {
     enabled: hasToken,
   })
   const flags = summaryQuery.data?.plan.feature_flags ?? {}
-  // Unknown while loading reads as "has it", so the nav does not flash an item and then hide
-  // it a moment later on every page load.
-  const has = (key: string) => (summaryQuery.isLoading ? true : Boolean(flags[key]))
-  return { has, isLoading: summaryQuery.isLoading, flags }
+  const has = (key: string) => Boolean(flags[key])
+  const hasCommercial = Boolean(flags['scheduling'])
+  const hasScheduling = Boolean(flags['scheduling'])
+  const hasPayslips = Boolean(flags['payslips']) && hasCommercial
+
+  return {
+    has,
+    hasCommercial,
+    hasScheduling,
+    hasPayslips,
+    isLoading: summaryQuery.isLoading,
+    flags,
+  }
 }

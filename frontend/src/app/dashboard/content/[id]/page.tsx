@@ -11,6 +11,7 @@ import {
   Building2,
   CalendarRange,
   CheckCircle2,
+  FileDown,
   Film,
   IndianRupee,
   MapPin,
@@ -19,6 +20,7 @@ import {
   RefreshCw,
   TriangleAlert,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
 import { MediaThumbnail } from '@/components/dashboard/media-thumbnail'
@@ -43,14 +45,8 @@ import {
 import { canEditTenantContent } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { MediaPeriodStats, Playlist, Screen } from '@/lib/types'
-
-const SECTIONS = [
-  { id: 'booking', label: 'Booking' },
-  { id: 'locations', label: 'Locations' },
-  { id: 'performance', label: 'Performance' },
-  { id: 'technical', label: 'Technical' },
-] as const
 
 /**
  * Jump links for the sections below, pinned under the app header.
@@ -66,11 +62,12 @@ const SECTIONS = [
  * same reason that header's is -- content scrolling under a translucent bar is the one
  * thing a section nav must never make hard to read.
  */
-function SectionNav() {
-  const [active, setActive] = useState<string>(SECTIONS[0].id)
+function SectionNav({ sections }: { sections: readonly { id: string; label: string }[] }) {
+  const [active, setActive] = useState<string>(sections[0]?.id || '')
 
   useEffect(() => {
-    const elements = SECTIONS
+    setActive(sections[0]?.id || '')
+    const elements = sections
       .map((section) => document.getElementById(section.id))
       .filter((element): element is HTMLElement => element !== null)
     if (!elements.length) return
@@ -89,7 +86,7 @@ function SectionNav() {
     )
     elements.forEach((element) => observer.observe(element))
     return () => observer.disconnect()
-  }, [])
+  }, [sections])
 
   return (
     <nav
@@ -97,7 +94,7 @@ function SectionNav() {
       className="border-hairline bg-background sticky top-16 z-30 -mx-4 mb-6 border-b px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
     >
       <div className="flex gap-1 overflow-x-auto py-2">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <a
             key={section.id}
             href={`#${section.id}`}
@@ -133,8 +130,23 @@ export default function AdDetailPage() {
   const params = useParams()
   const contentId = Number(params.id)
   const [editModalOpen, setEditModalOpen] = useState(false)
+  const [downloadingReport, setDownloadingReport] = useState(false)
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasCommercial } = usePlanFeatures()
+
+  const sections = useMemo(() => {
+    const list: { id: string; label: string }[] = []
+    if (hasCommercial) {
+      list.push({ id: 'booking', label: 'Booking' })
+    }
+    list.push(
+      { id: 'locations', label: 'Locations' },
+      { id: 'performance', label: 'Performance' },
+      { id: 'technical', label: 'Technical' },
+    )
+    return list
+  }, [hasCommercial])
 
   // One row, not the whole library. The page used to fetch every asset and pick this one
   // out in the browser, so anything past the listing's 500-row cap rendered "not found".
@@ -278,7 +290,7 @@ export default function AdDetailPage() {
 
   // The four commercial facts. Every one of these used to be a tab click away, or absent
   // from the page entirely, on the screen where an operator answers "what did we sell?".
-  const kpis = booking
+  const kpis = hasCommercial && booking
     ? [
         {
           label: 'Booked window',
@@ -310,7 +322,50 @@ export default function AdDetailPage() {
             : 'No plays recorded yet',
         },
       ]
-    : []
+    : [
+        {
+          label: 'On air',
+          icon: MonitorPlay,
+          value: String(scheduledOn.length),
+          note: `${online} online now`,
+        },
+        {
+          label: 'Plays',
+          icon: Film,
+          value: (report?.lifetime.total_plays ?? 0).toLocaleString(),
+          note: report?.lifetime.total_plays
+            ? `${report.lifetime.online_plays.toLocaleString()} online · ${report.lifetime.offline_plays.toLocaleString()} offline`
+            : 'No plays recorded yet',
+        },
+        {
+          label: 'Length',
+          icon: CalendarRange,
+          value: duration || '—',
+          note: orientation || 'Media clip',
+        },
+        {
+          label: 'File size',
+          icon: Receipt,
+          value: formatBytes(item.file_size_bytes),
+          note: item.type.toUpperCase(),
+        },
+      ]
+
+  const handleDownloadReport = async () => {
+    setDownloadingReport(true)
+    try {
+      if (booking) {
+        await api.downloadBookingReport(booking.id)
+      } else {
+        await api.downloadContentReport(contentId)
+      }
+      toast.success('Playback report downloaded.')
+    } catch (err) {
+      toast.error((err as Error).message || 'Could not download playback report.')
+    } finally {
+      setDownloadingReport(false)
+    }
+  }
 
   return (
     <div>
@@ -338,23 +393,38 @@ export default function AdDetailPage() {
                   {` • added ${relativeTime(item.uploaded_at)}`}
                 </p>
               </div>
-              {canEdit && (
-                <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
-                  <Building2 data-icon="inline-start" /> Edit client &amp; ad details
+              <div className="flex flex-wrap items-center gap-2">
+                {canEdit && hasCommercial && (
+                  <Button variant="outline" size="sm" onClick={() => setEditModalOpen(true)}>
+                    <Building2 data-icon="inline-start" /> Edit client &amp; ad details
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={downloadingReport}
+                  onClick={handleDownloadReport}
+                >
+                  <FileDown data-icon="inline-start" className={downloadingReport ? 'animate-spin' : undefined} />
+                  Download playback report
                 </Button>
-              )}
+              </div>
             </div>
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
-                <Building2 className="size-3" aria-hidden="true" /> {item.client_name || 'Direct advertiser'}
-              </Badge>
-              {item.plan_name
-                ? <Badge variant="secondary">{item.plan_name}</Badge>
-                // Sold on a negotiated price rather than a package. Rendering nothing
-                // here made a custom sale look identical to an advert nobody has bought.
-                : booking && <Badge variant="outline">Custom — no package</Badge>}
-              {state && <Badge variant={state.tone}>{state.label}</Badge>}
+              {hasCommercial && (
+                <>
+                  <Badge variant="outline">
+                    <Building2 className="size-3" aria-hidden="true" /> {item.client_name || 'Direct advertiser'}
+                  </Badge>
+                  {item.plan_name
+                    ? <Badge variant="secondary">{item.plan_name}</Badge>
+                    // Sold on a negotiated price rather than a package. Rendering nothing
+                    // here made a custom sale look identical to an advert nobody has bought.
+                    : booking && <Badge variant="outline">Custom — no package</Badge>}
+                  {state && <Badge variant={state.tone}>{state.label}</Badge>}
+                </>
+              )}
               {item.status === 'ready' && <Badge variant="success"><CheckCircle2 className="size-3" aria-hidden="true" /> Ready to play</Badge>}
               {item.status === 'processing' && <Badge variant="warning">Still processing</Badge>}
               {item.status === 'failed' && <Badge variant="danger"><TriangleAlert className="size-3" aria-hidden="true" /> Processing failed</Badge>}
@@ -363,7 +433,7 @@ export default function AdDetailPage() {
               ))}
             </div>
 
-            {(item.client_email || item.client_phone) && (
+            {hasCommercial && (item.client_email || item.client_phone) && (
               <p className="text-muted-foreground mt-2 truncate text-sm">
                 {item.client_email}
                 {item.client_email && item.client_phone && ' • '}
@@ -403,8 +473,46 @@ export default function AdDetailPage() {
         </div>
       </header>
 
-      {booking ? (
-        <section aria-label="Booking summary" className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {hasCommercial ? (
+        booking ? (
+          <section aria-label="Booking summary" className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            {kpis.map(({ label, value, icon: Icon, note }) => (
+              <Card
+                key={label}
+                className="ring-hairline bg-card border-0 py-0 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1"
+              >
+                <CardContent className="p-4 sm:p-5">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-muted-foreground text-sm font-medium">{label}</p>
+                    <span className="bg-primary/10 text-primary dark:text-brand grid size-8 shrink-0 place-items-center rounded-lg sm:size-9 sm:rounded-xl">
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
+                  </div>
+                  <p className="text-foreground mt-4 text-2xl font-semibold tracking-[-0.04em] tabular-nums sm:mt-5 sm:text-3xl">{value}</p>
+                  <p className="text-muted-foreground/70 mt-1 text-xs">{note}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        ) : placementsQuery.isError ? (
+          <div className="mb-6">
+            <ErrorState message="This advert's booking could not be loaded." onRetry={() => placementsQuery.refetch()} />
+          </div>
+        ) : !placementsQuery.isLoading ? (
+          <div className="ring-hairline bg-card mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl p-5 shadow-sm ring-1">
+            <div className="flex items-center gap-2.5">
+              <span className="bg-primary/10 text-primary dark:text-brand grid size-9 place-items-center rounded-xl">
+                <Receipt className="size-4" aria-hidden="true" />
+              </span>
+              <div>
+                <p className="text-foreground text-sm font-semibold">Not sold to anyone yet</p>
+                <p className="text-muted-foreground text-xs">Record who is paying for this advert, for how long, and where it runs.</p>
+              </div>
+            </div>
+          </div>
+        ) : null
+      ) : (
+        <section aria-label="Media summary" className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
           {kpis.map(({ label, value, icon: Icon, note }) => (
             <Card
               key={label}
@@ -423,23 +531,7 @@ export default function AdDetailPage() {
             </Card>
           ))}
         </section>
-      ) : placementsQuery.isError ? (
-        <div className="mb-6">
-          <ErrorState message="This advert's booking could not be loaded." onRetry={() => placementsQuery.refetch()} />
-        </div>
-      ) : !placementsQuery.isLoading ? (
-        <div className="ring-hairline bg-card mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl p-5 shadow-sm ring-1">
-          <div className="flex items-center gap-2.5">
-            <span className="bg-primary/10 text-primary dark:text-brand grid size-9 place-items-center rounded-xl">
-              <Receipt className="size-4" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-foreground text-sm font-semibold">Not sold to anyone yet</p>
-              <p className="text-muted-foreground text-xs">Record who is paying for this advert, for how long, and where it runs.</p>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      )}
 
       {item.status === 'failed' && (
         <div className="border-destructive/30 bg-destructive/5 mb-6 rounded-xl border p-4">
@@ -449,14 +541,16 @@ export default function AdDetailPage() {
         </div>
       )}
 
-      <SectionNav />
+      <SectionNav sections={sections} />
 
-      <section id="booking" aria-labelledby="booking-title" className="mb-8 scroll-mt-32">
-        <h2 id="booking-title" className="text-foreground mb-4 flex items-center gap-2 text-lg font-semibold">
-          <Receipt className="text-primary dark:text-brand size-5" aria-hidden="true" /> Booking &amp; billing
-        </h2>
-        <AdBookings contentId={contentId} />
-      </section>
+      {hasCommercial && (
+        <section id="booking" aria-labelledby="booking-title" className="mb-8 scroll-mt-32">
+          <h2 id="booking-title" className="text-foreground mb-4 flex items-center gap-2 text-lg font-semibold">
+            <Receipt className="text-primary dark:text-brand size-5" aria-hidden="true" /> Booking &amp; billing
+          </h2>
+          <AdBookings contentId={contentId} />
+        </section>
+      )}
 
       <section id="locations" aria-labelledby="locations-title" className="mb-8 scroll-mt-32">
         <h2 id="locations-title" className="text-foreground mb-4 flex items-center gap-2 text-lg font-semibold">
@@ -466,7 +560,7 @@ export default function AdDetailPage() {
           <Card className="ring-hairline bg-card border-0 ring-1">
             <CardContent className="p-5">
               <h3 className="text-foreground mb-4 flex items-center gap-2 font-semibold">
-                <CalendarRange className="text-primary dark:text-brand size-4" aria-hidden="true" /> Sold schedule per location
+                <CalendarRange className="text-primary dark:text-brand size-4" aria-hidden="true" /> {hasCommercial ? 'Sold schedule per location' : 'Locations scheduled'}
               </h3>
               {!booking?.targets.length ? (
                 scheduledOn.length > 0 ? (
@@ -774,7 +868,7 @@ export default function AdDetailPage() {
         </div>
       </section>
 
-      {canEdit && (
+      {canEdit && hasCommercial && (
         <EditClientAdModal open={editModalOpen} onOpenChange={setEditModalOpen} contentItem={item} />
       )}
     </div>

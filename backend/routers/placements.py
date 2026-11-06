@@ -528,6 +528,7 @@ def relocate_content_to_client(scope: TenantScope, content_id: int, client: mode
 def create_placement(
     payload: schemas.PlacementCreate,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
+    _feature: TenantScope = Depends(require_feature("scheduling")),
 ):
     if not scope.get(models.Content, payload.content_id):
         raise HTTPException(status_code=404, detail="Content not found")

@@ -8,7 +8,7 @@ import uuid
 from typing import Optional
 
 import boto3
-from fastapi import Query, APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import Query, APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 from arq import create_pool
 from .. import models, schemas
-from ..database import REDIS_SETTINGS
-from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles
+from ..tenancy import TenantScope, get_tenant_scope, require_tenant_roles, require_feature
 from .. import media_storage
 from ..media_urls import (
     is_s3_enabled,
@@ -685,6 +684,198 @@ def delete_content(
     scope.db.delete(content)
     scope.db.commit()
     return {"status": "ok"}
+
+
+@router.get("/{content_id}/report.pdf")
+def download_content_report_pdf(
+    content_id: int,
+    scope: TenantScope = Depends(get_tenant_scope),
+    _feature: TenantScope = Depends(require_feature("pdf_reports")),
+):
+    """Download a branded proof-of-play report PDF for an advert.
+
+    If booked commercially, uses the booking's exact targets and window.
+    If placed directly as media, synthesizes a playback performance audit
+    with zero payment or invoice fields.
+    """
+    content = (
+        scope.query(models.Content)
+        .options(*CONTENT_LOADERS)
+        .filter(models.Content.id == content_id)
+        .first()
+    )
+    if not content:
+        raise HTTPException(status_code=404, detail="Content not found")
+
+    from .placements import _render_report
+    if content.ad_placements:
+        latest_placement = sorted(content.ad_placements, key=lambda p: p.id, reverse=True)[0]
+        pdf, filename = _render_report(scope, latest_placement)
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    from ..reports.booking_report import build_pdf
+    from ..worker import aggregate_play_logs_sync
+    aggregate_play_logs_sync(scope.db)
+
+    playlist_ids = {item.playlist_id for item in content.playlist_items}
+    all_screens = (
+        scope.query(models.Screen)
+        .filter(models.Screen.organization_id == scope.organization_id)
+        .all()
+    )
+    screens = [s for s in all_screens if s.effective_playlist_id in playlist_ids] if playlist_ids else []
+    screen_ids = [s.id for s in screens]
+
+    now = models.utcnow()
+    raw_thumb = content.thumbnail or content.file_url
+    content_thumbnail = resolve_media_url(raw_thumb) if raw_thumb else None
+    spot_seconds = (content.duration_ms / 1000) if content.duration_ms else 10.0
+
+    window = [
+        models.PlayLogHourlyRollup.organization_id == scope.organization_id,
+        models.PlayLogHourlyRollup.media_id == content.id,
+    ]
+    if screen_ids:
+        window.append(models.PlayLogHourlyRollup.screen_id.in_(screen_ids))
+
+    total, completed, errors, offline = scope.db.query(
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.total_plays), 0),
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.completed_plays), 0),
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.error_plays), 0),
+        func.coalesce(func.sum(models.PlayLogHourlyRollup.offline_plays), 0),
+    ).filter(*window).one()
+
+    totals = {
+        "total_plays": total,
+        "completed_plays": completed,
+        "error_plays": errors,
+        "success_percent": round(completed / total * 100, 1) if total else 0.0,
+        "online_plays": max(0, total - offline),
+        "offline_plays": offline,
+    }
+
+    counts = dict(
+        scope.db.query(
+            models.PlayLogHourlyRollup.screen_id,
+            func.coalesce(func.sum(models.PlayLogHourlyRollup.total_plays), 0),
+        ).filter(*window).group_by(models.PlayLogHourlyRollup.screen_id).all()
+    )
+
+    days_elapsed = max(1, (now - content.uploaded_at).days)
+    per_screen = []
+    for screen in screens:
+        per_screen.append({
+            "screen_id": screen.id,
+            "screen_name": screen.name or f"Screen {screen.id}",
+            "location": screen.location,
+            "assigned_at": content.uploaded_at,
+            "starts_at": content.uploaded_at,
+            "ends_at": now,
+            "days": days_elapsed,
+            "status": "Active",
+            "days_elapsed": days_elapsed,
+            "latitude": screen.latitude,
+            "longitude": screen.longitude,
+            "online": screen.status == "online",
+            "last_seen": screen.last_seen,
+            "total_plays": counts.get(screen.id, 0),
+            "completed_plays": counts.get(screen.id, 0),
+            "plays_per_day_avg": round(counts.get(screen.id, 0) / days_elapsed, 1),
+            "counts_may_be_incomplete": False,
+        })
+    per_screen.sort(key=lambda r: r["total_plays"], reverse=True)
+
+    places: dict[str, dict] = {}
+    for row in per_screen:
+        key = row["location"] or "Location not set"
+        place = places.setdefault(key, {
+            "location": key, "screens": 0, "total_plays": 0,
+            "_earliest_assignment": row["assigned_at"],
+        })
+        place["screens"] += 1
+        place["total_plays"] += row["total_plays"]
+
+    per_location = []
+    for key, place in places.items():
+        per_location.append({
+            "location": place["location"],
+            "screens": place["screens"],
+            "total_plays": place["total_plays"],
+            "avg_plays_per_screen": round(place["total_plays"] / max(1, place["screens"])),
+            "plays_per_day_avg": round(place["total_plays"] / days_elapsed, 1),
+        })
+
+    import hashlib
+    verify_payload = f"content:{content.id}:{scope.organization_id}:{content.uploaded_at.isoformat()}"
+    token_hash = hashlib.sha256(verify_payload.encode()).hexdigest()[:8].upper()
+    certificate_id = f"POP-C{content.id:04d}-{token_hash}"
+    verification_url = f"https://olrac-signage.abhinavsanthosh221.workers.dev/verify/pop?cert={certificate_id}&id={content.id}"
+
+    daily_rows = (
+        scope.db.query(
+            models.PlayLogHourlyRollup.date_hour,
+            func.coalesce(func.sum(models.PlayLogHourlyRollup.total_plays), 0),
+            func.coalesce(func.sum(models.PlayLogHourlyRollup.completed_plays), 0),
+        )
+        .filter(*window)
+        .group_by(models.PlayLogHourlyRollup.date_hour)
+        .all()
+    )
+    from .analytics import _bucket_daily
+    daily = [
+        {"date": day.isoformat(), "total_plays": t, "completed_plays": c}
+        for day, t, c in _bucket_daily(daily_rows)
+    ]
+
+    report = {
+        "placement_id": None,
+        "advertiser": content.name,
+        "content_name": content.name,
+        "content_id": content.id,
+        "content_type": content.type,
+        "content_file_url": content.file_url,
+        "content_thumbnail": content_thumbnail,
+        "certificate_id": certificate_id,
+        "verification_url": verification_url,
+        "target_schedule": [],
+        "organization": {
+            "name": ((scope.organization.brand_name or scope.organization.name) if scope.organization else "Signage network"),
+            "logo": resolve_media_url(scope.organization.logo_url) if scope.organization and scope.organization.logo_url else None,
+            "brand_color": scope.organization.brand_color if scope.organization else None,
+            "email": getattr(scope.organization, "owner_email", None) if scope.organization else None,
+        },
+        "starts_at": content.uploaded_at,
+        "ends_at": now,
+        "effective_ends_at": now,
+        "days_total": days_elapsed,
+        "days_elapsed": days_elapsed,
+        "days_remaining": 0,
+        "screens_used": len(screens),
+        "plan": None,
+        "plan_max_locations": len(screens),
+        "plan_locations_exceeded": False,
+        "extensions": [],
+        "generated_at": now,
+        "totals": totals,
+        "spot_seconds": spot_seconds,
+        "airtime_seconds": round(totals["total_plays"] * spot_seconds),
+        "per_screen": per_screen,
+        "per_location": per_location,
+        "daily": daily,
+        "stale_screens": [],
+    }
+
+    safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in content.name).strip() or "media"
+    pdf = build_pdf(report)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe} - playback report.pdf"'},
+    )
 
 
 # Declared last on purpose: FastAPI matches routes in declaration order, so a bare

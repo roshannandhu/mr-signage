@@ -456,6 +456,16 @@ export const api = {
     saveBlob(blob, filename)
   },
 
+  downloadContentReport: async (contentId: number) => {
+    const response = await authFetch(`/content/${contentId}/report.pdf`)
+    if (!response.ok) throw new ApiError('The playback report could not be generated.', response.status)
+    const disposition = response.headers.get('content-disposition') || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    const filename = match?.[1] || `playback-report-${contentId}.pdf`
+    const blob = await response.blob()
+    saveBlob(blob, filename)
+  },
+
   /**
    * Hand the PDF to the device's share sheet, so a tenant can send it to their client from
    * WhatsApp, Gmail or anything else installed.

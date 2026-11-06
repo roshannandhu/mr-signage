@@ -1580,7 +1580,7 @@ class FeatureItemOut(BaseModel):
 
 
 PLATFORM_FEATURES = [
-    FeatureItemOut(key="scheduling", label="Scheduling", description="Per-screen and per-playlist day and time scheduling", category="Content", enforced=True),
+    FeatureItemOut(key="scheduling", label="Ad Booking & Scheduling", description="Client advertising, booking campaigns, custom sales plans, and date/time scheduling", category="Content", enforced=True),
     FeatureItemOut(key="transitions", label="Transitions", description="Cut, fade, wipe and slide animations between playlist items", category="Content", enforced=True),
     FeatureItemOut(key="ads_counting", label="Ads counting reports", description="Per-advert play logs and proof-of-play analytics", category="Ads & reporting", enforced=True),
     FeatureItemOut(key="pdf_reports", label="PDF playback reports", description="Downloadable branded proof-of-play certificates for advertisers", category="Ads & reporting", enforced=True),

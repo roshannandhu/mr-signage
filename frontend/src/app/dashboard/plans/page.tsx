@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarRange, MapPin, Plus, Tags, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -17,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { TenantPlan } from '@/lib/types'
 import { rupees } from '@/lib/format'
 
@@ -37,6 +39,7 @@ export default function PlansPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasCommercial } = usePlanFeatures()
 
   const plansQuery = useQuery({ queryKey: ['tenant-plans'], queryFn: () => api.getTenantPlans(true) })
 
@@ -79,6 +82,28 @@ export default function PlansPage() {
     },
     onError: fail,
   })
+
+  if (!hasCommercial) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Commercial"
+          title="Advertising Packages"
+          description="Standard rate cards for campaigns across your screen network."
+        />
+        <EmptyState
+          icon={Tags}
+          title="Custom plans not available on your plan"
+          description="Creating and selling ad packages requires a commercial plan tier with Ad Booking & Scheduling enabled. Contact your administrator or upgrade your subscription."
+          action={
+            <Button variant="outline" render={<Link href="/dashboard/billing" />}>
+              View Billing &amp; Plans
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
 
   if (plansQuery.isError) {
     return <ErrorState message="Plans could not be loaded." onRetry={() => plansQuery.refetch()} />

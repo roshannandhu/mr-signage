@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { PaymentMethod, Placement, PlacementTarget, PlanOption, Screen, ScreenGroup } from '@/lib/types'
 import { addDays, asDate, bookingState, dateInput, money, rupees } from '@/lib/format'
 import { invalidateBookingViews } from '@/lib/query-keys'
@@ -39,6 +40,7 @@ export function AdBookings({ contentId }: { contentId: number }) {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasPayslips } = usePlanFeatures()
 
   const placementsQuery = useQuery({ queryKey: ['placements', contentId], queryFn: () => api.getPlacements(contentId) })
   // The ad's own client, so a new booking does not ask for it again. Same query key the
@@ -403,7 +405,7 @@ export function AdBookings({ contentId }: { contentId: number }) {
                         "₹5,000 · paid" on a booking that owed ₹12,000 and had received
                         ₹5,000 of it. Both halves come from one derivation now, shared with
                         the ad header, the invoices page and the PDF. */}
-                    {bill.total > 0 && (
+                    {hasPayslips && bill.total > 0 && (
                       <Badge variant={bill.tone === 'outline' ? 'warning' : bill.tone}>
                         {rupees(bill.total)} · {bill.shortLabel}
                       </Badge>
@@ -445,14 +447,16 @@ export function AdBookings({ contentId }: { contentId: number }) {
                     {/* Filled while money is outstanding, part payment included. Reading
                         `is_paid` made a booking with ₹45,000 still owing offer a quiet
                         "Payment" button, as if there were nothing left to collect. */}
-                    <Button
-                      size="sm"
-                      variant={bill.balance > 0 ? 'default' : 'outline'}
-                      onClick={() => openPayment(placement)}
-                    >
-                      <IndianRupee data-icon="inline-start" />
-                      {bill.status === 'paid' ? 'Payment' : bill.status === 'part_paid' ? 'Add payment' : 'Record payment'}
-                    </Button>
+                    {hasPayslips && (
+                      <Button
+                        size="sm"
+                        variant={bill.balance > 0 ? 'default' : 'outline'}
+                        onClick={() => openPayment(placement)}
+                      >
+                        <IndianRupee data-icon="inline-start" />
+                        {bill.status === 'paid' ? 'Payment' : bill.status === 'part_paid' ? 'Add payment' : 'Record payment'}
+                      </Button>
+                    )}
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={<Button size="icon-sm" variant="ghost" aria-label={`More actions for ${placement.advertiser}`} />}
@@ -470,12 +474,14 @@ export function AdBookings({ contentId }: { contentId: number }) {
                         >
                           <FileDown data-icon="inline-start" /> Playback report
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          disabled={busyReport === placement.id}
-                          onClick={() => runReport(placement, 'invoice')}
-                        >
-                          <Receipt data-icon="inline-start" /> Invoice
-                        </DropdownMenuItem>
+                        {hasPayslips && (
+                          <DropdownMenuItem
+                            disabled={busyReport === placement.id}
+                            onClick={() => runReport(placement, 'invoice')}
+                          >
+                            <Receipt data-icon="inline-start" /> Invoice
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem
                           disabled={busyReport === placement.id}
                           onClick={() => runReport(placement, 'share')}

@@ -25,16 +25,23 @@ def _service(scope: TenantScope) -> PlaylistService:
     return PlaylistService(scope.db)
 
 
-def _gate_scheduling(scope: TenantScope, schedule) -> None:
+def _gate_scheduling(scope: TenantScope, item_or_schedule: Any) -> None:
     """Charge for scheduling only when a request actually schedules something.
 
-    "scheduling" is sold on every package in the storefront and, until this, gated nothing --
-    a workspace on a package without it could set day-and-time windows freely. It cannot be
-    a route dependency: schedules ride along on ordinary playlist-item writes, so refusing
-    the route would stop a tenant adding items at all rather than stop them scheduling.
+    "scheduling" is sold on commercial packages and gates day-and-time windows and run dates.
+    It cannot be a route dependency: schedules ride along on ordinary playlist-item writes,
+    so refusing the route would stop a tenant adding items at all rather than stop them scheduling.
     """
-    if schedule is None:
+    if item_or_schedule is None:
         return
+    if hasattr(item_or_schedule, "schedule") or hasattr(item_or_schedule, "start_at") or hasattr(item_or_schedule, "end_at"):
+        has_schedule = (
+            getattr(item_or_schedule, "schedule", None) is not None
+            or getattr(item_or_schedule, "start_at", None) is not None
+            or getattr(item_or_schedule, "end_at", None) is not None
+        )
+        if not has_schedule:
+            return
     ensure_feature(scope, "scheduling")
 
 
@@ -76,7 +83,7 @@ def add_item_to_playlist(
     item: schemas.PlaylistItemCreate,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
 ):
-    _gate_scheduling(scope, item.schedule)
+    _gate_scheduling(scope, item)
     return _service(scope).add_item_to_playlist(playlist_id, item, scope)
 
 
@@ -96,7 +103,7 @@ def update_playlist_item(
     payload: schemas.PlaylistItemUpdate,
     scope: TenantScope = Depends(require_tenant_roles("owner", "editor")),
 ):
-    _gate_scheduling(scope, payload.schedule)
+    _gate_scheduling(scope, payload)
     # Transitions are gated inside the service, which has already loaded the item and can
     # tell a genuinely new transition from a resave of one the item already carried.
     return _service(scope).update_playlist_item(playlist_id, item_id, payload, scope)

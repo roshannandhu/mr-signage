@@ -50,25 +50,17 @@ const primaryLinks = [
 
 const toolLinks = [
   { href: '/dashboard/campaigns', label: 'Playback report', icon: BarChart3, ownerOnly: false },
-  // Directly under the report on purpose: they are the two halves of one booking, and
-  // keeping them adjacent is what makes the split legible. NOT /dashboard/billing, which
-  // is this workspace's own subscription to MR Signage.
-  { href: '/dashboard/invoices', label: 'Invoices', icon: Receipt, ownerOnly: false },
+  // Invoices & payslips are gated on the plan's payslips feature.
+  { href: '/dashboard/invoices', label: 'Invoices', icon: Receipt, ownerOnly: false, feature: 'payslips' },
   { href: '/dashboard/alerts', label: 'Alerts', icon: Bell, ownerOnly: false },
   { href: '/dashboard/files', label: 'File management', icon: FolderCheck, ownerOnly: false },
   { href: '/dashboard/emergency', label: 'Emergency broadcast', icon: RadioTower, ownerOnly: false, feature: 'emergency_alert' },
 ]
 
 const accountLinks = [
-  // The page exists, renders and has a search box; it just had no link, so it was
-  // reachable only by typing the URL. 7a60dd2 moved client creation inline into the upload
-  // flow and removed this entry, but left the route and the Contact import behind -- an
-  // orphaned page rather than a deleted one. Clients are still worth managing somewhere:
-  // the campaign report is addressed from this record, and emailing one needs the address
-  // kept up to date after the ad was booked. Delete app/dashboard/clients if that is not
-  // wanted, rather than leaving it unreachable.
-  { href: '/dashboard/clients', label: 'Clients', icon: Contact, ownerOnly: false },
-  { href: '/dashboard/plans', label: 'Plans', icon: Tags, ownerOnly: false },
+  // Commercial advertiser client management and ad sales plans are gated on scheduling/commercial features.
+  { href: '/dashboard/clients', label: 'Clients', icon: Contact, ownerOnly: false, feature: 'scheduling' },
+  { href: '/dashboard/plans', label: 'Plans', icon: Tags, ownerOnly: false, feature: 'scheduling' },
   { href: '/dashboard/branding', label: 'Branding', icon: Palette, ownerOnly: false },
   { href: '/dashboard/team', label: 'Team', icon: Users, ownerOnly: true },
   { href: '/dashboard/billing', label: 'Billing', icon: CreditCard, ownerOnly: true },
@@ -127,7 +119,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const isOwner = user?.role === 'owner'
   const toolItems = toolLinks.filter((item) => (!item.ownerOnly || isOwner) && (!('feature' in item) || hasFeature(item.feature ?? '')))
-  const accountItems = accountLinks.filter((item) => !item.ownerOnly || isOwner)
+  const accountItems = accountLinks.filter((item) => (!item.ownerOnly || isOwner) && (!('feature' in item) || hasFeature(item.feature ?? '')))
 
   const isActive = (href: string) => pathname.startsWith(href)
   const toolsActive = toolItems.some((item) => isActive(item.href))

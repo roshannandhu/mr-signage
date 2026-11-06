@@ -174,6 +174,7 @@ function ItemRow({
   defaultTransition,
   defaultDurationMs,
   hasTransitions,
+  hasCommercial,
   canEdit,
   saving,
   onMoveUp,
@@ -191,6 +192,8 @@ function ItemRow({
    * "Handoff to next ad" section rather than showing it locked -- a tenant should not learn
    * about a capability their admin has not turned on for them. */
   hasTransitions: boolean
+  /** Whether the workspace's plan includes commercial advertising & date scheduling. */
+  hasCommercial: boolean
   canEdit: boolean
   saving: boolean
   onMoveUp?: () => void
@@ -324,10 +327,14 @@ function ItemRow({
               <span className="inline-flex items-center gap-1"><Clock3 className="size-3" /> {loopDuration(item.duration)}{item.content.type === 'video' && clipDuration(item.content.duration_ms) && <span className="text-muted-foreground/60"> of {clipDuration(item.content.duration_ms)}</span>}</span>
               <span aria-hidden="true">·</span>
               <span className="truncate max-w-[120px] sm:max-w-none">{item.transition ? transitionLabel(item.transition) : `${transitionLabel(defaultTransition)} (default)`}</span>
-              <span aria-hidden="true">·</span>
-              {item.start_at || item.end_at || item.schedule
-                ? <span className="text-amber-700 dark:text-amber-300 font-medium">Scheduled</span>
-                : <span>Always on</span>}
+              {hasCommercial && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  {item.start_at || item.end_at || item.schedule
+                    ? <span className="text-amber-700 dark:text-amber-300 font-medium">Scheduled</span>
+                    : <span>Always on</span>}
+                </>
+              )}
             </p>
           </div>
 
@@ -378,9 +385,9 @@ function ItemRow({
               <div>
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-muted-foreground flex items-center gap-2 text-xs font-semibold"><CalendarClock className="text-primary size-3.5" /> Playback rules</p>
-                  <Badge variant={scheduled ? 'warning' : 'success'}>{scheduled ? 'Scheduled' : 'Always active'}</Badge>
+                  {hasCommercial && <Badge variant={scheduled ? 'warning' : 'success'}>{scheduled ? 'Scheduled' : 'Always active'}</Badge>}
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className={cn('grid grid-cols-1 gap-3', hasCommercial ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
                   <div>
                     <Label htmlFor={`duration-${item.id}`} className="text-muted-foreground mb-2 text-xs">Seconds</Label>
                     {item.content.type === 'video' ? (
@@ -393,36 +400,48 @@ function ItemRow({
                       <Input id={`duration-${item.id}`} type="number" min={1} max={86400} value={form.duration} onChange={(event) => set('duration', Math.max(1, Number(event.target.value)))} />
                     )}
                   </div>
-                  <div>
-                    <Label htmlFor={`start-${item.id}`} className="text-muted-foreground mb-2 text-xs">Starts</Label>
-                    <Input id={`start-${item.id}`} type="datetime-local" value={form.startAt} onChange={(event) => set('startAt', event.target.value)} />
-                  </div>
-                  <div>
-                    <Label htmlFor={`end-${item.id}`} className="text-muted-foreground mb-2 text-xs">Expires</Label>
-                    <Input id={`end-${item.id}`} type="datetime-local" value={form.endAt} onChange={(event) => set('endAt', event.target.value)} />
-                  </div>
+                  {hasCommercial ? (
+                    <>
+                      <div>
+                        <Label htmlFor={`start-${item.id}`} className="text-muted-foreground mb-2 text-xs">Starts</Label>
+                        <Input id={`start-${item.id}`} type="datetime-local" value={form.startAt} onChange={(event) => set('startAt', event.target.value)} />
+                      </div>
+                      <div>
+                        <Label htmlFor={`end-${item.id}`} className="text-muted-foreground mb-2 text-xs">Expires</Label>
+                        <Input id={`end-${item.id}`} type="datetime-local" value={form.endAt} onChange={(event) => set('endAt', event.target.value)} />
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <Label className="text-muted-foreground mb-2 text-xs">Rotation</Label>
+                      <Select value={form.rotation} onValueChange={(value: string | null) => set('rotation', value ?? '')}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue>{(value: string | null) => rotationLabel(value)}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {rotationOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
-                <div className="mt-3">
-                  <Label className="text-muted-foreground mb-2 text-xs">Rotation</Label>
-                  <Select value={form.rotation} onValueChange={(value: string | null) => set('rotation', value ?? '')}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue>{(value: string | null) => rotationLabel(value)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {rotationOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {/* Per-item Days / From / Until removed: an advert's timing now comes from
-                    its client booking, which is the only place a sale is recorded. The
-                    placement writes start_at and end_at onto the item (see
-                    placements.sync_placement_window), so two editable controls for the same
-                    thing meant the manual one was silently overwritten on the next booking
-                    change. The backend Schedule model and the player's ScheduleEvaluator are
-                    untouched, so a window already saved keeps applying and is preserved
-                    through an unrelated edit. */}
+                {hasCommercial && (
+                  <div className="mt-3">
+                    <Label className="text-muted-foreground mb-2 text-xs">Rotation</Label>
+                    <Select value={form.rotation} onValueChange={(value: string | null) => set('rotation', value ?? '')}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue>{(value: string | null) => rotationLabel(value)}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {rotationOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
             </fieldset>
 
@@ -541,7 +560,9 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
-  const hasTransitions = usePlanFeatures().has('transitions')
+  const planFeatures = usePlanFeatures()
+  const hasTransitions = planFeatures.has('transitions')
+  const hasCommercial = planFeatures.hasCommercial
   const playlistKey = useMemo(() => ['playlist', playlistId], [playlistId])
   const playlistQuery = useQuery({ queryKey: playlistKey, queryFn: () => api.getPlaylist(playlistId), enabled: Number.isFinite(playlistId) })
   const contentQuery = useQuery({ queryKey: ['content'], queryFn: api.getContent })
@@ -703,6 +724,44 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     },
   })
 
+  // Adding media directly to this playlist when commercial booking features are not active
+  const addDirectMutation = useMutation({
+    mutationFn: (content: ContentItem) => {
+      const order = items.reduce((max, item) => Math.max(max, item.order), -1) + 1
+      return api.addPlaylistItem(playlistId, content.id, order)
+    },
+    onMutate: async (content) => {
+      const previous = await snapshot()
+      if (previous) {
+        const order = previous.items.reduce((max, item) => Math.max(max, item.order), -1) + 1
+        const pending: PlaylistItem = {
+          id: -content.id,
+          content_id: content.id,
+          content,
+          duration: content.duration_ms ? Math.max(1, Math.round(content.duration_ms / 1000)) : 10,
+          rotation: null,
+          order,
+          start_at: null,
+          end_at: null,
+          transition: null,
+          transition_ms: null,
+          schedule: null,
+        }
+        queryClient.setQueryData<Playlist>(playlistKey, { ...previous, items: [...previous.items, pending] })
+      }
+      return { previous }
+    },
+    onError: (error: Error, _content, context) => {
+      restore(context?.previous)
+      toast.error(error.message)
+    },
+    onSuccess: () => toast.success('Added to loop'),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: playlistKey })
+      queryClient.invalidateQueries({ queryKey: ['content'] })
+    },
+  })
+
   // Zero-lag instant optimistic update for editing item duration, rotation, schedule, and transition
   const updateMutation = useMutation({
     mutationFn: ({ itemId, data }: { itemId: number; data: Parameters<typeof api.updatePlaylistItem>[2] }) =>
@@ -828,6 +887,11 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       return
     }
 
+    if (!hasCommercial) {
+      addDirectMutation.mutate(content)
+      return
+    }
+
     if (instant) {
       addBookedMutation.mutate(content)
     } else {
@@ -909,6 +973,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
                       defaultTransition={playlist.default_transition}
                       defaultDurationMs={playlist.default_transition_ms}
                       hasTransitions={hasTransitions}
+                      hasCommercial={hasCommercial}
                       canEdit={canEdit && item.id > 0}
                       saving={savingItem === item.id}
                       highlighted={highlightedItemId === item.id}
@@ -929,35 +994,63 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
           <div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search assets…" className="pl-9" aria-label="Search library" /></div>
           <div className="mt-4 max-h-[min(60vh,660px)] space-y-5 overflow-y-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
             {contentQuery.isLoading ? Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-20" />) : (
-              <>
+              !hasCommercial ? (
                 <div>
-                  <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booked <span className="font-normal normal-case">{library.booked.length}</span></p>
-                  <div className="space-y-2">{library.booked.map((content) => (
-                    <LibraryRow key={content.id} content={content} booked placed={placedContentIds.has(content.id)}
-                      instant={Boolean(screenId)} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
-                      canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, Boolean(screenId))} />
-                  ))}</div>
-                  {!library.booked.length && (
+                  <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Available Media <span className="font-normal normal-case">{library.booked.length + library.notBooked.length}</span>
+                  </p>
+                  <div className="space-y-2">
+                    {[...library.booked, ...library.notBooked].map((content) => (
+                      <LibraryRow
+                        key={content.id}
+                        content={content}
+                        booked={false}
+                        placed={placedContentIds.has(content.id)}
+                        instant={true}
+                        adding={addDirectMutation.isPending && addDirectMutation.variables?.id === content.id}
+                        canEdit={canEdit}
+                        fetchedAt={fetchedAt}
+                        onAdd={() => handleAddItem(content, true)}
+                      />
+                    ))}
+                  </div>
+                  {!(library.booked.length + library.notBooked.length) && (
                     <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
-                      {placedContentIds.size > 0 ? 'All booked ads are in this loop.' : 'No ad has a running booking.'}
+                      {placedContentIds.size > 0 ? 'All uploaded media is in this loop.' : 'No media uploaded yet. Add media in Content library.'}
                     </p>
                   )}
                 </div>
-                <div>
-                  <p className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Not booked <span className="font-normal normal-case">{library.notBooked.length}</span></p>
-                  <p className="mb-2 text-[11px] text-muted-foreground/70">Adding one asks for a plan or a custom booking.</p>
-                  <div className="space-y-2">{library.notBooked.map((content) => (
-                    <LibraryRow key={content.id} content={content} booked={false} placed={placedContentIds.has(content.id)}
-                      instant={false} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
-                      canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, false)} />
-                  ))}</div>
-                  {!library.notBooked.length && (
-                    <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
-                      {placedContentIds.size > 0 ? 'No other ads in library.' : 'Every ad is booked.'}
-                    </p>
-                  )}
-                </div>
-              </>
+              ) : (
+                <>
+                  <div>
+                    <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booked <span className="font-normal normal-case">{library.booked.length}</span></p>
+                    <div className="space-y-2">{library.booked.map((content) => (
+                      <LibraryRow key={content.id} content={content} booked placed={placedContentIds.has(content.id)}
+                        instant={Boolean(screenId)} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                        canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, Boolean(screenId))} />
+                    ))}</div>
+                    {!library.booked.length && (
+                      <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
+                        {placedContentIds.size > 0 ? 'All booked ads are in this loop.' : 'No ad has a running booking.'}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Not booked <span className="font-normal normal-case">{library.notBooked.length}</span></p>
+                    <p className="mb-2 text-[11px] text-muted-foreground/70">Adding one asks for a plan or a custom booking.</p>
+                    <div className="space-y-2">{library.notBooked.map((content) => (
+                      <LibraryRow key={content.id} content={content} booked={false} placed={placedContentIds.has(content.id)}
+                        instant={false} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                        canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, false)} />
+                    ))}</div>
+                    {!library.notBooked.length && (
+                      <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
+                        {placedContentIds.size > 0 ? 'No other ads in library.' : 'Every ad is booked.'}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )
             )}
           </div>
         </aside>
@@ -986,7 +1079,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       </DndContext>
 
       {/* A new booking, or a plan change when a booked advert has run out of screens. */}
-      {bookingFor && (
+      {hasCommercial && bookingFor && (
         <BookOrExtendDialog
           content={bookingFor}
           screens={screensShowingThisPlaylist}

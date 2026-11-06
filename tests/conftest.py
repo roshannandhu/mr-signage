@@ -39,6 +39,7 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "mock")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "mock")
 
 ISOLATED_SCRIPTS = {
+    "test_commercial_combo_feature_gating.py",
     "test_feature_parity.py",
     "test_tenant_isolation.py",
     "test_quotas.py",

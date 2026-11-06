@@ -24,6 +24,7 @@ import { api } from '@/lib/api'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { assetOrientation, clipDuration, expiryLabel, relativeTime, rupees } from '@/lib/format'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import { cn } from '@/lib/utils'
 import { canEditTenantContent } from '@/lib/roles'
 import type { ContentItem } from '@/lib/types'
@@ -43,6 +44,7 @@ export default function ContentPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasCommercial } = usePlanFeatures()
 
   const contentQuery = useQuery({
     queryKey: ['content'],
@@ -55,15 +57,15 @@ export default function ContentPage() {
 
   const content = useMemo(() => contentQuery.data || [], [contentQuery.data])
 
-  const clientsQuery = useQuery({ queryKey: ['clients'], queryFn: api.getClients })
+  const clientsQuery = useQuery({ queryKey: ['clients'], queryFn: api.getClients, enabled: hasCommercial })
   const screensQuery = useQuery({ queryKey: ['screens'], queryFn: api.getScreens })
   const sellScreens = screensQuery.data || []
-  const plansQuery = useQuery({ queryKey: ['tenant-plans'], queryFn: () => api.getTenantPlans() })
+  const plansQuery = useQuery({ queryKey: ['tenant-plans'], queryFn: () => api.getTenantPlans(), enabled: hasCommercial })
   const sellClients = clientsQuery.data || []
   const sellPlans = plansQuery.data || []
 
   const [uploadOpen, setUploadOpen] = useState(false)
-  const [uploadMode, setUploadMode] = useState<'ad' | 'general'>('ad')
+  const [uploadMode, setUploadMode] = useState<'ad' | 'general'>(() => (hasCommercial ? 'ad' : 'general'))
   const [queue, setQueue] = useState<QueuedUpload[]>([])
   const [tags, setTags] = useState('')
 
@@ -160,7 +162,8 @@ export default function ContentPage() {
     setQueue((current) => current.map((entry, position) => position === index ? { ...entry, ...patch } : entry))
 
   const startUploads = async () => {
-    if (uploadMode === 'ad') {
+    const isAdMode = hasCommercial && uploadMode === 'ad'
+    if (isAdMode) {
       if (isNewClient && !newClientName.trim()) {
         toast.error('Please enter the client / advertiser company name')
         return
@@ -195,7 +198,7 @@ export default function ContentPage() {
     let resolvedClientId: number | undefined = undefined
     let resolvedClientName = ''
 
-    if (uploadMode === 'ad') {
+    if (isAdMode) {
       if (isNewClient) {
         const already = createdClient.current
         if (already && already.typed === newClientName.trim()) {
@@ -321,7 +324,9 @@ export default function ContentPage() {
   const closeUpload = (open: boolean) => {
     if (open) {
       setUploadOpen(true)
-      if (!sellPlanId && sellPlans.length > 0) {
+      if (!hasCommercial) {
+        setUploadMode('general')
+      } else if (!sellPlanId && sellPlans.length > 0) {
         setSellPlanId(String(sellPlans[0].id))
       }
       return
@@ -364,41 +369,47 @@ export default function ContentPage() {
       <DialogTrigger render={<Button />}><Upload data-icon="inline-start" /> Upload media</DialogTrigger>
       <DialogContent className="sm:max-w-lg max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Upload media &amp; ad creatives</DialogTitle>
-          <DialogDescription>Add advert creatives for clients or general signage content.</DialogDescription>
+          <DialogTitle>{hasCommercial ? 'Upload media & ad creatives' : 'Upload media'}</DialogTitle>
+          <DialogDescription>
+            {hasCommercial
+              ? 'Add advert creatives for clients or general signage content.'
+              : 'Add images or videos directly to your screen content library.'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 pt-1 pb-3">
-          {/* Mode Switcher */}
-          <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-xl border border-border/40">
-            <button
-              type="button"
-              onClick={() => setUploadMode('ad')}
-              className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                uploadMode === 'ad'
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Target className="size-3.5 text-primary dark:text-brand" />
-              Client Advertisement
-            </button>
-            <button
-              type="button"
-              onClick={() => setUploadMode('general')}
-              className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                uploadMode === 'general'
-                  ? 'bg-card text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <ImageIcon className="size-3.5" />
-              General Media
-            </button>
-          </div>
+          {/* Mode Switcher - Only shown when commercial advertising is enabled */}
+          {hasCommercial && (
+            <div className="flex items-center gap-1 p-1 bg-muted/60 rounded-xl border border-border/40">
+              <button
+                type="button"
+                onClick={() => setUploadMode('ad')}
+                className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  uploadMode === 'ad'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Target className="size-3.5 text-primary dark:text-brand" />
+                Client Advertisement
+              </button>
+              <button
+                type="button"
+                onClick={() => setUploadMode('general')}
+                className={`flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
+                  uploadMode === 'general'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <ImageIcon className="size-3.5" />
+                General Media
+              </button>
+            </div>
+          )}
 
           {/* Client Details Section when in 'ad' mode */}
-          {uploadMode === 'ad' && (
+          {hasCommercial && uploadMode === 'ad' && (
             <div className="rounded-xl border border-border/70 bg-muted/30 p-3.5 space-y-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-semibold flex items-center gap-1.5 text-foreground">
@@ -810,26 +821,28 @@ export default function ContentPage() {
                 }
                 badges={
                   <>
-                    {item.client_name && (
+                    {hasCommercial && item.client_name && (
                       <OverlayBadge tone="neutral" className="bg-slate-900/90 text-primary border-primary/40 font-semibold text-[10px]">
                         {item.client_name}
                       </OverlayBadge>
                     )}
-                    {item.plan_name && (
+                    {hasCommercial && item.plan_name && (
                       <OverlayBadge tone="neutral" className="text-[10px]">
                         {item.plan_name}
                       </OverlayBadge>
                     )}
-                    {expiry && <OverlayBadge tone="danger">{expiry}</OverlayBadge>}
+                    {hasCommercial && expiry && <OverlayBadge tone="danger">{expiry}</OverlayBadge>}
                     {item.status === 'failed' && <OverlayBadge tone="danger">Failed</OverlayBadge>}
                   </>
                 }
                 cornerBadge={duration ? <OverlayBadge>{duration}</OverlayBadge> : undefined}
                 menu={canEdit ? (
                   <>
-                    <DropdownMenuItem onClick={() => setEditingClientItem(item)} className="font-medium">
-                      <Building2 className="size-4 text-primary" /> Edit Client & Ad Details
-                    </DropdownMenuItem>
+                    {hasCommercial && (
+                      <DropdownMenuItem onClick={() => setEditingClientItem(item)} className="font-medium">
+                        <Building2 className="size-4 text-primary" /> Edit Client & Ad Details
+                      </DropdownMenuItem>
+                    )}
                     {item.status === 'failed' && (
                       <DropdownMenuItem onClick={() => retryMutation.mutate(item.id)}>
                         <RefreshCw aria-hidden="true" /> Retry processing

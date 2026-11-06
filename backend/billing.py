@@ -27,7 +27,7 @@ DEFAULT_PLANS = (
         "max_clients": 3,
         "max_ad_slots": 5,
         "max_storage_bytes": 10 * 1024 * 1024 * 1024,
-        "features": {"scheduling": True, ADS_COUNTING: True},
+        "features": {ADS_COUNTING: True, PDF_REPORTS: True},
     },
     {
         "name": "Starter",

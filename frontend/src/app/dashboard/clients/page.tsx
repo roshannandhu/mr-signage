@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Contact, Mail, Phone, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -17,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { Client } from '@/lib/types'
 
 /**
@@ -30,6 +32,7 @@ export default function ClientsPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasCommercial } = usePlanFeatures()
 
   const clientsQuery = useQuery({ queryKey: ['clients'], queryFn: api.getClients })
 
@@ -85,6 +88,28 @@ export default function ClientsPage() {
     onSuccess: () => { refresh(); toast.success('Client removed. Their bookings are kept.') },
     onError: fail,
   })
+
+  if (!hasCommercial) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Commercial"
+          title="Advertiser Clients"
+          description="Manage client contacts, billing details, and campaign histories."
+        />
+        <EmptyState
+          icon={Contact}
+          title="Client management not available on your plan"
+          description="Managing advertiser clients requires a commercial plan tier with Ad Booking & Scheduling enabled. Contact your administrator or upgrade your subscription."
+          action={
+            <Button variant="outline" render={<Link href="/dashboard/billing" />}>
+              View Billing &amp; Plans
+            </Button>
+          }
+        />
+      </div>
+    )
+  }
 
   if (clientsQuery.isError) {
     return <ErrorState message="Clients could not be loaded." onRetry={() => clientsQuery.refetch()} />

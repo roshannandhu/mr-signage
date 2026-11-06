@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { usePlanFeatures } from '@/lib/use-plan-features'
 import type { PaymentMethod, Placement } from '@/lib/types'
 import { bookingState, dateInput, money, rupees } from '@/lib/format'
 
@@ -43,6 +44,7 @@ export default function InvoicesPage() {
   const queryClient = useQueryClient()
   const user = useAuthStore((state) => state.user)
   const canEdit = canEditTenantContent(user)
+  const { hasPayslips } = usePlanFeatures()
 
   const placementsQuery = useQuery({ queryKey: ['all-placements'], queryFn: api.getAllPlacements })
   const placements = useMemo(() => placementsQuery.data || [], [placementsQuery.data])
@@ -139,6 +141,28 @@ export default function InvoicesPage() {
     } finally {
       setBusy(null)
     }
+  }
+
+  if (!hasPayslips) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Commercial"
+          title="Invoices &amp; Payslips"
+          description="Track client balances, record payments, and download tax invoices."
+        />
+        <EmptyState
+          icon={Receipt}
+          title="Invoicing not available on your plan"
+          description="Client billing, invoices, and payment tracking require a commercial plan tier with Payslips & Invoicing enabled. Contact your administrator or upgrade your subscription."
+          action={
+            <Button variant="outline" render={<Link href="/dashboard/billing" />}>
+              View Billing &amp; Plans
+            </Button>
+          }
+        />
+      </div>
+    )
   }
 
   return (
