@@ -131,7 +131,8 @@ export function GrantLimitsDialog({
                   checked={Boolean(features[feature.key])}
                   onChange={(e) => {
                     const next = { ...features, [feature.key]: e.target.checked }
-                    if (feature.key === 'scheduling') {
+                    if (feature.key === 'scheduling' || feature.key === 'payslips') {
+                      next['scheduling'] = e.target.checked
                       next['payslips'] = e.target.checked
                     }
                     setFeatures(next)

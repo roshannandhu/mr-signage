@@ -389,6 +389,7 @@ export default function ScreensPage() {
                 <TableHead className="w-20">Preview</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead className="w-32">Status</TableHead>
+                {hasKioskLock && <TableHead className="w-28">Lock</TableHead>}
                 <TableHead className="hidden w-40 lg:table-cell">Group</TableHead>
                 <TableHead className="hidden w-24 xl:table-cell">Version</TableHead>
                 <TableHead className="hidden w-40 sm:table-cell">Last seen</TableHead>
@@ -424,6 +425,21 @@ export default function ScreensPage() {
                       </Link>
                     </TableCell>
                     <TableCell className="py-2.5"><StatusIndicator status={screen.status} /></TableCell>
+                    {hasKioskLock && (
+                      <TableCell className="py-2.5">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'text-xs font-medium',
+                            screen.is_locked
+                              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400'
+                              : 'bg-amber-500/10 text-amber-600 border-amber-500/30 dark:text-amber-400'
+                          )}
+                        >
+                          {screen.is_locked ? 'Locked' : 'Unlocked'}
+                        </Badge>
+                      </TableCell>
+                    )}
                     <TableCell className="text-muted-foreground hidden py-2.5 text-sm lg:table-cell">
                       {groupName(screen.group_id) || '—'}
                     </TableCell>
@@ -484,7 +500,16 @@ export default function ScreensPage() {
                       <MonitorPlay className="size-9" aria-hidden="true" />
                     </div>
                   }
-                  badges={<OverlayBadge tone={online ? 'online' : 'offline'}>{online ? 'Online' : 'Offline'}</OverlayBadge>}
+                  badges={
+                    <>
+                      <OverlayBadge tone={online ? 'online' : 'offline'}>{online ? 'Online' : 'Offline'}</OverlayBadge>
+                      {hasKioskLock && (
+                        <OverlayBadge tone={screen.is_locked ? 'neutral' : 'danger'}>
+                          {screen.is_locked ? 'Locked' : 'Unlocked'}
+                        </OverlayBadge>
+                      )}
+                    </>
+                  }
                   menu={
                     <>
                       <DropdownMenuItem render={<Link href={`/dashboard/screens/${screen.id}`} />}>

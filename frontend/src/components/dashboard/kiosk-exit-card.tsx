@@ -139,6 +139,30 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
               </>
             )}
           </Badge>
+          {hasKioskLock && (
+            <div
+              className="ml-auto flex items-center gap-1.5 pr-2"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+            >
+              <label
+                className="relative inline-flex items-center cursor-pointer"
+                title={isLocked ? 'Switch to unlock screen' : 'Switch to lock screen in kiosk'}
+              >
+                <input
+                  type="checkbox"
+                  className="peer sr-only"
+                  checked={isLocked}
+                  disabled={setLockMutation.isPending}
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    setLockMutation.mutate(e.target.checked)
+                  }}
+                />
+                <div className="h-6 w-11 rounded-full bg-amber-500/30 peer-checked:bg-emerald-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[3px] after:bg-white after:border-gray-300 after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+              </label>
+            </div>
+          )}
         </div>
         {effectivePin ? (
           <code className="bg-primary/10 text-primary dark:text-brand shrink-0 rounded-lg px-2.5 py-1 text-sm font-semibold tracking-[0.2em]">

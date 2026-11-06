@@ -605,7 +605,8 @@ export default function AdminPackagesPage() {
                                     ...planForm.feature_flags,
                                     [item.key]: e.target.checked,
                                   }
-                                  if (item.key === 'scheduling') {
+                                  if (item.key === 'scheduling' || item.key === 'payslips') {
+                                    nextFlags['scheduling'] = e.target.checked
                                     nextFlags['payslips'] = e.target.checked
                                   }
                                   setPlanForm({

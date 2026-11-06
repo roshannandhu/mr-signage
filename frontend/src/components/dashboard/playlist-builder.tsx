@@ -990,7 +990,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
         </section>
 
         <aside className="rounded-2xl bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1 ring-hairline lg:sticky lg:top-20" aria-labelledby="library-title">
-          <div><h2 id="library-title" className="font-semibold text-foreground">Content library</h2><p className="mt-1 text-xs text-muted-foreground/70">{library.booked.length + library.notBooked.length} ads{screenId ? ' · booked ones add instantly' : ''}</p></div>
+          <div><h2 id="library-title" className="font-semibold text-foreground">Content library</h2><p className="mt-1 text-xs text-muted-foreground/70">{library.booked.length + library.notBooked.length} ads{screenId ? (hasCommercial ? ' · booked ones add instantly' : ' · click + to add to loop') : ''}</p></div>
           <div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search assets…" className="pl-9" aria-label="Search library" /></div>
           <div className="mt-4 max-h-[min(60vh,660px)] space-y-5 overflow-y-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
             {contentQuery.isLoading ? Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-20" />) : (
