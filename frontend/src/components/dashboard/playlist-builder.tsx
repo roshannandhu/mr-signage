@@ -273,7 +273,7 @@ function ItemRow({
       <CardContent className="p-3 sm:p-5">
         <div className="flex items-center gap-2.5 sm:gap-3">
           {/* Reordering Controls Pod: Clean Move Up, Drag Handle, Move Down */}
-          <div className="flex flex-col items-center justify-center shrink-0 -my-1 rounded-md p-0.5 bg-muted/40">
+          <div className="flex flex-col items-center justify-center shrink-0 rounded-lg bg-muted/60 p-1 border border-hairline gap-0.5">
             <button
               type="button"
               disabled={!canEdit || index === 0}
@@ -281,18 +281,18 @@ function ItemRow({
                 e.stopPropagation()
                 onMoveUp?.()
               }}
-              className="flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
               aria-label={`Move ${item.content.name} up`}
               title="Move up"
             >
-              <ChevronUp className="size-3.5" />
+              <ChevronUp className="size-4" />
             </button>
             <button
               type="button"
               {...attributes}
               {...listeners}
               disabled={!canEdit}
-              className="grid size-6 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none select-none"
+              className="grid size-7 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/80 hover:bg-background hover:text-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none select-none transition-all"
               aria-label={`Drag to reorder ${item.content.name}`}
               title="Drag to reorder"
             >
@@ -305,11 +305,11 @@ function ItemRow({
                 e.stopPropagation()
                 onMoveDown?.()
               }}
-              className="flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
               aria-label={`Move ${item.content.name} down`}
               title="Move down"
             >
-              <ChevronDown className="size-3.5" />
+              <ChevronDown className="size-4" />
             </button>
           </div>
 
@@ -579,8 +579,8 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     return ordered.length === serverItems.length ? ordered : serverItems
   }, [localOrder, serverItems])
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 100, tolerance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   )
   const [dragging, setDragging] = useState<ContentItem | null>(null)
