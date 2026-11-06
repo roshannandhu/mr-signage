@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { closestCenter, type CollisionDetection, DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, KeyboardSensor, PointerSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
+import { closestCenter, type CollisionDetection, DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CalendarClock, Check, ChevronDown, Clock3, GripVertical, ListVideo, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, ChevronUp, Clock3, GripVertical, ListVideo, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
@@ -167,8 +167,24 @@ function formFor(item: PlaylistItem, defaultDurationMs: number) {
 // the transition and schedule editors both always open, a twenty-item loop rendered
 // forty selects, forty sliders and a hundred and forty day toggles on one screen —
 // and each item needed two separate saves to commit one change.
-function ItemRow({ item, defaultTransition, defaultDurationMs, hasTransitions, canEdit, saving, onRemove, onSave, highlighted = false }: {
+function ItemRow({
+  item,
+  index,
+  totalItems,
+  defaultTransition,
+  defaultDurationMs,
+  hasTransitions,
+  canEdit,
+  saving,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+  onSave,
+  highlighted = false,
+}: {
   item: PlaylistItem
+  index: number
+  totalItems: number
   defaultTransition: TransitionName
   defaultDurationMs: number
   /** Whether the workspace's plan includes per-item transitions. False hides the whole
@@ -177,6 +193,8 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, hasTransitions, c
   hasTransitions: boolean
   canEdit: boolean
   saving: boolean
+  onMoveUp?: () => void
+  onMoveDown?: () => void
   onRemove: () => void
   onSave: (data: {
     duration: number
@@ -241,28 +259,74 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, hasTransitions, c
     <Card
       id={`timeline-item-${item.id}`}
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         'border-0 bg-card py-0 ring-1 ring-hairline transition-all duration-300',
-        isDragging ? 'z-20 opacity-80 shadow-2xl' : 'shadow-[0_1px_2px_rgba(15,23,42,.04)]',
+        isDragging ? 'z-30 opacity-40 shadow-2xl ring-2 ring-primary' : 'shadow-[0_1px_2px_rgba(15,23,42,.04)]',
         item.id < 0 && 'animate-in fade-in zoom-in-95 ring-2 ring-primary/40 bg-primary/5 duration-500',
         highlighted && 'ring-2 ring-primary bg-primary/5 shadow-lg shadow-primary/25 scale-[1.015]'
       )}
     >
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-3">
-          <button type="button" {...attributes} {...listeners} disabled={!canEdit} className="grid size-9 shrink-0 cursor-grab touch-none place-items-center rounded-lg text-muted-foreground/40 hover:bg-muted hover:text-muted-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none" aria-label={`Move ${item.content.name}`}><GripVertical className="size-5" /></button>
-          <MediaThumbnail item={item.content} className="size-16 shrink-0 rounded-xl" />
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          {/* Reordering Controls Pod: Clean Move Up, Drag Handle, Move Down */}
+          <div className="flex flex-col items-center justify-center shrink-0 -my-1 rounded-md p-0.5 bg-muted/40">
+            <button
+              type="button"
+              disabled={!canEdit || index === 0}
+              onClick={(e) => {
+                e.stopPropagation()
+                onMoveUp?.()
+              }}
+              className="flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              aria-label={`Move ${item.content.name} up`}
+              title="Move up"
+            >
+              <ChevronUp className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              disabled={!canEdit}
+              className="grid size-6 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none select-none"
+              aria-label={`Drag to reorder ${item.content.name}`}
+              title="Drag to reorder"
+            >
+              <GripVertical className="size-4" />
+            </button>
+            <button
+              type="button"
+              disabled={!canEdit || index >= totalItems - 1}
+              onClick={(e) => {
+                e.stopPropagation()
+                onMoveDown?.()
+              }}
+              className="flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              aria-label={`Move ${item.content.name} down`}
+              title="Move down"
+            >
+              <ChevronDown className="size-3.5" />
+            </button>
+          </div>
+
+          {/* Thumbnail with Sequence Badge */}
+          <div className="relative size-14 sm:size-16 shrink-0">
+            <MediaThumbnail item={item.content} className="size-14 sm:size-16 rounded-xl object-cover" />
+            <span className="absolute left-1 top-1 flex h-4 min-w-4 items-center justify-center rounded bg-black/80 px-1 font-mono text-[9px] font-semibold text-white shadow-sm ring-1 ring-white/10 backdrop-blur-xs">
+              #{index + 1}
+            </span>
+          </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-foreground truncate font-semibold">{item.content.name}</p>
-            <p className="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <p className="text-foreground truncate font-semibold text-sm sm:text-base">{item.content.name}</p>
+            <p className="text-muted-foreground/70 mt-0.5 sm:mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
               <span className="inline-flex items-center gap-1"><Clock3 className="size-3" /> {loopDuration(item.duration)}{item.content.type === 'video' && clipDuration(item.content.duration_ms) && <span className="text-muted-foreground/60"> of {clipDuration(item.content.duration_ms)}</span>}</span>
               <span aria-hidden="true">·</span>
-              <span>{item.transition ? transitionLabel(item.transition) : `${transitionLabel(defaultTransition)} (default)`}</span>
+              <span className="truncate max-w-[120px] sm:max-w-none">{item.transition ? transitionLabel(item.transition) : `${transitionLabel(defaultTransition)} (default)`}</span>
               <span aria-hidden="true">·</span>
               {item.start_at || item.end_at || item.schedule
-                ? <span className="text-amber-700 dark:text-amber-300">Scheduled</span>
+                ? <span className="text-amber-700 dark:text-amber-300 font-medium">Scheduled</span>
                 : <span>Always on</span>}
             </p>
           </div>
@@ -273,13 +337,13 @@ function ItemRow({ item, defaultTransition, defaultDurationMs, hasTransitions, c
             aria-expanded={open}
             aria-controls={`item-settings-${item.id}`}
             onClick={() => setOpen((current) => !current)}
-            className="text-muted-foreground shrink-0"
+            className="text-muted-foreground shrink-0 px-2 sm:px-3"
           >
             <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden="true" />
-            <span className="sr-only sm:not-sr-only">{open ? 'Close' : 'Edit'}</span>
+            <span className="sr-only sm:not-sr-only sm:ml-1">{open ? 'Close' : 'Edit'}</span>
           </Button>
 
-          {canEdit && <Button variant="ghost" size="icon" className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive shrink-0" onClick={onRemove} aria-label={`Remove ${item.content.name}`}><Trash2 /></Button>}
+          {canEdit && <Button variant="ghost" size="icon" className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive shrink-0 size-8 sm:size-9" onClick={onRemove} aria-label={`Remove ${item.content.name}`}><Trash2 className="size-4" /></Button>}
         </div>
 
         {open && (
@@ -493,22 +557,69 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     const ordered = localOrder.map((itemId) => byId.get(itemId)).filter((item): item is PlaylistItem => Boolean(item))
     return ordered.length === serverItems.length ? ordered : serverItems
   }, [localOrder, serverItems])
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
   const [dragging, setDragging] = useState<ContentItem | null>(null)
 
   /**
-   * closestCenter always returns the nearest droppable, even when the pointer is nowhere
-   * near it -- so dragging a library card two inches and dropping it back in the library
-   * would book an advert by accident. pointerWithin returns nothing in that case.
+   * Library card drags (string IDs, pointer only) get pointerWithin so dropping back
+   * into the library does not trigger an accidental drop.
    *
-   * But pointerWithin needs pointer coordinates, and a KeyboardEvent has none, so using it
-   * everywhere would silently kill the existing keyboard reorder. Branch instead: library
-   * drags (string ids, pointer only) get pointerWithin, timeline reorders keep closestCenter.
+   * Timeline reorders (numeric IDs) get closestCenter, with the outer 'timeline' droppable
+   * filtered out so the background dropzone never intercepts closestCenter and cancels the reorder.
    */
-  const collisionDetection: CollisionDetection = (args) =>
-    typeof args.active.id === 'string' && args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
+  const collisionDetection: CollisionDetection = (args) => {
+    if (typeof args.active.id === 'string') {
+      return args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
+    }
+    const itemContainers = args.droppableContainers.filter((c) => c.id !== 'timeline')
+    return closestCenter({
+      ...args,
+      droppableContainers: itemContainers,
+    })
+  }
   const invalidate = () => { queryClient.invalidateQueries({ queryKey: playlistKey }); queryClient.invalidateQueries({ queryKey: ['playlists'] }) }
-  const reorderMutation = useMutation({ mutationFn: (orders: number[]) => api.reorderPlaylistItems(playlistId, orders), onSuccess: () => { setLocalOrder(null); invalidate(); toast.success('Order saved') }, onError: (error: Error) => { setLocalOrder(null); toast.error(error.message); playlistQuery.refetch() } })
+  const reorderMutation = useMutation({
+    mutationFn: (orders: number[]) => api.reorderPlaylistItems(playlistId, orders),
+    onMutate: async (newOrderIds: number[]) => {
+      await queryClient.cancelQueries({ queryKey: playlistKey })
+      const previous = queryClient.getQueryData<Playlist>(playlistKey)
+      if (previous) {
+        const itemMap = new Map(previous.items.map((it) => [it.id, it]))
+        const reordered: PlaylistItem[] = []
+        newOrderIds.forEach((id, idx) => {
+          const item = itemMap.get(id)
+          if (item) {
+            reordered.push({ ...item, order: idx })
+          }
+        })
+        previous.items.forEach((item) => {
+          if (!newOrderIds.includes(item.id)) reordered.push(item)
+        })
+        queryClient.setQueryData<Playlist>(playlistKey, {
+          ...previous,
+          items: reordered,
+        })
+      }
+      return { previous }
+    },
+    onError: (error: Error, _vars, context) => {
+      restore(context?.previous)
+      setLocalOrder(null)
+      toast.error(error.message)
+      playlistQuery.refetch()
+    },
+    onSuccess: () => {
+      setLocalOrder(null)
+      toast.success('Order saved')
+    },
+    onSettled: () => {
+      invalidate()
+    },
+  })
   // An advert with no running booking opens the booking dialog: it may not reach a screen
   // without a client, because the placement is what records the sale, the paid window and the
   // proof-of-play an invoice is built from.
@@ -742,16 +853,28 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       return
     }
 
-    // Timeline reorder -- unchanged.
+    // Timeline reorder
     if (active.id === over.id) return
     const oldIndex = items.findIndex((item) => item.id === active.id)
-    const newIndex = items.findIndex((item) => item.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
+    let newIndex = items.findIndex((item) => item.id === over.id)
+    if (newIndex === -1 && over.id === 'timeline') {
+      newIndex = items.length - 1
+    }
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+
     const order = arrayMove(items, oldIndex, newIndex).map((item) => item.id)
     setLocalOrder(order)
     reorderMutation.mutate(order)
   }
 
+  const handleMoveItem = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= items.length) return
+    const newItems = arrayMove(items, index, targetIndex)
+    const order = newItems.map((item) => item.id)
+    setLocalOrder(order)
+    reorderMutation.mutate(order)
+  }
 
   return (
     <div className="relative space-y-8">
@@ -777,16 +900,20 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
               <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
                 {/* A row still being added has no server id yet, so nothing can be done to it until it lands. */}
                 <div className="space-y-3">
-                  {items.map((item) => (
+                  {items.map((item, index) => (
                     <ItemRow
                       key={item.id}
                       item={item}
+                      index={index}
+                      totalItems={items.length}
                       defaultTransition={playlist.default_transition}
                       defaultDurationMs={playlist.default_transition_ms}
                       hasTransitions={hasTransitions}
                       canEdit={canEdit && item.id > 0}
                       saving={savingItem === item.id}
                       highlighted={highlightedItemId === item.id}
+                      onMoveUp={() => handleMoveItem(index, 'up')}
+                      onMoveDown={() => handleMoveItem(index, 'down')}
                       onRemove={() => removeMutation.mutate(item.id)}
                       onSave={(data) => updateMutation.mutate({ itemId: item.id, data })}
                     />
@@ -843,11 +970,16 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
             cursor, with no visible error.
             Keep it as a direct child of DndContext: it is position:fixed, not portaled, so
             any ancestor with transform/filter/backdrop-filter would clip it. */}
-        <DragOverlay dropAnimation={null}>
+        <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
           {dragging ? (
-            <div className="flex items-center gap-3 rounded-xl border border-hairline bg-card p-2.5 shadow-lg">
-              <MediaThumbnail item={dragging} className="size-12 shrink-0 rounded-lg" />
-              <p className="truncate text-sm font-medium text-foreground">{dragging.name}</p>
+            <div className="flex items-center gap-3 rounded-xl border border-primary/40 bg-card/95 p-3 shadow-2xl backdrop-blur-md ring-2 ring-primary/20 max-w-sm pointer-events-none select-none">
+              <MediaThumbnail item={dragging} className="size-12 shrink-0 rounded-lg shadow-sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{dragging.name}</p>
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
+                  {clipDuration(dragging.duration_ms) || `${loopDuration(10)}`}
+                </p>
+              </div>
             </div>
           ) : null}
         </DragOverlay>
