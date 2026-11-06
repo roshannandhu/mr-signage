@@ -119,7 +119,14 @@ function DefaultTransitionPanel({ playlist, disabled, pending, onSave }: {
             <p className="text-sm font-semibold text-foreground flex items-center gap-2">
               <Sparkles className="size-4 text-primary" /> Default handoff
             </p>
-            <p className="text-muted-foreground/80 mt-1 text-xs">Used by every item that does not have its own transition.</p>
+            <p className="text-muted-foreground/80 mt-1 text-xs">
+              Used by every item that does not have its own transition.
+              {playlist.items.length < 2 && (
+                <span className="block mt-1 text-amber-600 dark:text-amber-400 font-medium">
+                  Note: Transitions activate between 2 or more ads in the playback loop.
+                </span>
+              )}
+            </p>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>

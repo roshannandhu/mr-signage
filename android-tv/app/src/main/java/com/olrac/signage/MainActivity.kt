@@ -79,6 +79,9 @@ import com.olrac.signage.ui.PlayerScreen
 import com.olrac.signage.ui.FloatingWifiSymbolHud
 import com.olrac.signage.ui.WifiSignalIcon
 import com.olrac.signage.ui.ModernWifiControlCenterDialog
+import com.olrac.signage.ui.ModernRemotePillHud
+import com.olrac.signage.ui.FloatingQuickSettingsGear
+import com.olrac.signage.ui.RemotePillState
 import com.olrac.signage.ui.screens.*
 import com.olrac.signage.network.RealtimeClient
 import com.olrac.signage.network.WifiManagerHelper
@@ -108,6 +111,7 @@ class MainActivity : ComponentActivity() {
     private var requirementStates by mutableStateOf<List<SetupRequirementState>>(emptyList())
     private var setupError by mutableStateOf<String?>(null)
     private var lastInteractionAtMs by mutableStateOf<Long>(System.currentTimeMillis())
+    private var remotePillState by mutableStateOf<RemotePillState?>(null)
     private lateinit var wifiHelper: WifiManagerHelper
     private var showWifiHud by mutableStateOf(false)
     private var showWifiDialog by mutableStateOf(false)
@@ -236,15 +240,33 @@ class MainActivity : ComponentActivity() {
                 com.olrac.signage.service.PlaybackService.commandEvents.collect { event ->
                     when (event) {
                         is com.olrac.signage.service.ServiceCommandEvent.RemoteUnlock -> {
-                            if (!showPinPrompt && !showServerSetup) {
-                                android.util.Log.i("MainActivity", "Applying reactive remote unlock (id=${event.commandId})")
-                                setKioskLockState(locked = false, reportToServer = false)
-                                enterMaintenance()
-                                showServerSetup = true
-                            }
+                            android.util.Log.i("MainActivity", "Applying reactive remote unlock (id=${event.commandId})")
+                            setKioskLockState(locked = false, reportToServer = false)
+                            enterMaintenance()
+                            // Zero interruption: Keep ads playing! Do NOT force showServerSetup = true.
+                            remotePillState = RemotePillState(
+                                title = "Screen Unlocked Remotely",
+                                subtitle = "Operator controls enabled • Ads playing uninterrupted",
+                                isLocked = false
+                            )
                         }
                         is com.olrac.signage.service.ServiceCommandEvent.KioskLockChanged -> {
                             setKioskLockState(event.locked, reportToServer = false)
+                            if (event.locked) {
+                                showServerSetup = false
+                                showPinPrompt = false
+                                remotePillState = RemotePillState(
+                                    title = "Screen Locked in Kiosk Mode",
+                                    subtitle = "Navigation locked • Uninterrupted playback active",
+                                    isLocked = true
+                                )
+                            } else {
+                                remotePillState = RemotePillState(
+                                    title = "Screen Unlocked Remotely",
+                                    subtitle = "Operator controls enabled • Ads playing uninterrupted",
+                                    isLocked = false
+                                )
+                            }
                         }
                     }
                 }
@@ -355,6 +377,28 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(top = 24.dp, end = 24.dp)
+            )
+
+            // Modern 3.5s Dynamic Floating Status Pill (Top Center)
+            ModernRemotePillHud(
+                pillState = if (!showPinPrompt && !showServerSetup) remotePillState else null,
+                onDismiss = { remotePillState = null },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 24.dp)
+            )
+
+            // Subtle Floating Gear Icon when Unlocked (Top Start)
+            val isKioskUnlocked = !com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this@MainActivity)
+            FloatingQuickSettingsGear(
+                visible = isKioskUnlocked && !showPinPrompt && !showServerSetup && !showWifiDialog,
+                onClick = {
+                    enterMaintenance()
+                    showServerSetup = true
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 24.dp, start = 24.dp)
             )
 
             // In-App Wi-Fi Control Center Dialog (Pure Black #000000 Theme, Native Keyboard)
@@ -598,7 +642,11 @@ class MainActivity : ComponentActivity() {
                 prefs.edit().remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).commit()
                 DeviceOwnerManager.applyKioskPolicy(this)
                 rearmLockTask()
-                android.widget.Toast.makeText(this@MainActivity, "🔒 Screen Locked in Kiosk Mode", android.widget.Toast.LENGTH_SHORT).show()
+                remotePillState = RemotePillState(
+                    title = "Screen Locked in Kiosk Mode",
+                    subtitle = "Navigation locked • Fullscreen playback active",
+                    isLocked = true
+                )
                 android.util.Log.i("MainActivity", "Kiosk Lock re-armed (locked=true)")
             } else {
                 prefs.edit().putLong(PREF_OPERATOR_EXIT_AT, System.currentTimeMillis())
@@ -614,7 +662,11 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.w("MainActivity", "stopLockTask failed: ${e.message}")
                 }
                 showPinPrompt = false
-                android.widget.Toast.makeText(this@MainActivity, "🔓 Screen Unlocked Remotely", android.widget.Toast.LENGTH_SHORT).show()
+                remotePillState = RemotePillState(
+                    title = "Screen Unlocked Remotely",
+                    subtitle = "Operator controls enabled • Ads playing uninterrupted",
+                    isLocked = false
+                )
                 android.util.Log.i("MainActivity", "Kiosk Lock released (locked=false)")
             }
         }
@@ -810,7 +862,13 @@ class MainActivity : ComponentActivity() {
 
             if (inCorner && (!isLockFeatureAvailable || !isTopRightCorner)) {
                 if (cornerTaps.record(System.currentTimeMillis())) {
-                    showPinPrompt = true
+                    val isCurrentlyLocked = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
+                    if (isCurrentlyLocked) {
+                        showPinPrompt = true
+                    } else {
+                        enterMaintenance()
+                        showServerSetup = true
+                    }
                     showWifiHud = false
                     hudDismissJob?.cancel()
                     return true

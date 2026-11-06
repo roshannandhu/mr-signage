@@ -7,7 +7,7 @@ class SyncBackoffPolicyTest {
     @Test
     fun serverIntervalIsBounded() {
         assertEquals(60, SyncBackoffPolicy.serverIntervalSeconds(null))
-        assertEquals(15, SyncBackoffPolicy.serverIntervalSeconds(1))
+        assertEquals(10, SyncBackoffPolicy.serverIntervalSeconds(1))
         assertEquals(3_600, SyncBackoffPolicy.serverIntervalSeconds(10_000))
     }
 

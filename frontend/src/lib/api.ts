@@ -1,7 +1,8 @@
 import { useAuthStore } from './store'
 import type {
   FeatureItem, PlanImpactRequest, PlanImpactResponse, AuditEvent, PagedResult, PlatformStorage, PlatformHealth, AdminOverview, InboxCounts, SearchOut, Package, PackageWrite, FleetOverview, ScreenUpdateResult, TenantSummary, TenantScreen, TenantContent, TenantUser, AlertSummary, Branding, Client, TenantPlan, FleetAlert, Placement, PaymentMethod, PlanOption, MediaReport, FitMode, OperatingMode, RolloutState, SyncRole, AppRelease, BillingSummary, Campaign, CampaignExportFormat, CampaignInfo, CampaignPoint, CampaignStats, CheckoutSession, PurchaseResponse, CustomPlanRequestInput, CustomPlanRequestItem, CustomPlanRequestUpdate, ContentItem, LockPin, LockEnabled, KioskUnlockEvent, PlatformPayment, EmergencyBroadcast, EnrollmentToken, ItemSchedule, Plan, Playlist, PlaylistItem, Screen, TenantRole, ScreenGroup, TransitionName, User,
-  SecurityOverview, SecurityAdmin, CreateAdminInput, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote
+  SecurityOverview, SecurityAdmin, CreateAdminInput, PlatformHealthDetails, SystemSettings, AttentionItem, TenantNote,
+  ScreenWifiPasswordReveal
 } from './types'
 
 const PROD_API_URL = 'https://mr-signage.onrender.com'
@@ -307,6 +308,10 @@ export const api = {
   pairScreen: (pairCode: string) => fetchWithAuth<Screen>('/screens/pair', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pair_code: pairCode }),
   }),
+  revealScreenWifiPassword: (screenId: number) =>
+    fetchWithAuth<ScreenWifiPasswordReveal>(`/screens/${screenId}/reveal-wifi-password`, {
+      method: 'POST',
+    }),
   revokeScreenDeviceSecret: (screenId: number) => fetchWithAuth(`/screens/${screenId}/device-secret`, { method: 'DELETE' }),
   // 204, so there is no body to read -- typed void rather than an object the caller would
   // find undefined at runtime. Archives the screen: play history keeps its attribution and
@@ -948,6 +953,10 @@ export const adminApi = {
 
   // Custom-plan request queue.
   getFleet: () => fetchWithAuth<FleetOverview>('/admin/fleet'),
+  revealScreenWifiPassword: (screenId: number) =>
+    fetchWithAuth<ScreenWifiPasswordReveal>(`/admin/screens/${screenId}/reveal-wifi-password`, {
+      method: 'POST',
+    }),
   // Make one TV look for its update now. Omit versionCode for the latest released build
   // (which also clears any pin); pass one to pin the screen to that build.
   updateScreenNow: (screenId: number, versionCode?: number | null) =>

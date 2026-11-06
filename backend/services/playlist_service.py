@@ -84,7 +84,7 @@ class PlaylistService(BaseService):
         bump_playlist(playlist)
         self.commit()
         self.refresh(playlist)
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist.id, db=self.db)
         return playlist
 
     def add_item_to_playlist(
@@ -119,7 +119,7 @@ class PlaylistService(BaseService):
         self.repo.add_item(db_item)
         self.commit()
         self.refresh(db_item)
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist_id, db=self.db)
         return db_item
 
     def reorder_playlist_items(
@@ -143,7 +143,7 @@ class PlaylistService(BaseService):
 
         bump_playlist(playlist)
         self.commit()
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist_id, db=self.db)
         return {"status": "ok", "updated_at": playlist.updated_at}
 
     def update_playlist_item(
@@ -192,7 +192,7 @@ class PlaylistService(BaseService):
         bump_playlist(item.playlist)
         self.commit()
         self.refresh(item)
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist_id, db=self.db)
         return item
 
     def update_playlist_transitions(
@@ -216,7 +216,7 @@ class PlaylistService(BaseService):
         bump_playlist(playlist)
         self.commit()
         self.refresh(playlist)
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist.id, db=self.db)
         return playlist
 
     def remove_item_from_playlist(
@@ -254,7 +254,7 @@ class PlaylistService(BaseService):
             self.repo.delete_item(item)
             bump_playlist(playlist)
         self.commit()
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist_id, db=self.db)
         return {"status": "ok"}
 
     def delete_playlist(self, playlist_id: int, scope: TenantScope) -> Dict[str, str]:
@@ -275,5 +275,5 @@ class PlaylistService(BaseService):
 
         self.repo.delete(playlist)
         self.commit()
-        trigger_screen_sync(organization_id=scope.organization_id)
+        trigger_screen_sync(organization_id=scope.organization_id, playlist_id=playlist_id, db=self.db)
         return {"status": "ok"}

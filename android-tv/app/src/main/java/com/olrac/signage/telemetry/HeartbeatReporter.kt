@@ -42,6 +42,9 @@ object HeartbeatReporter {
         val tSent = System.currentTimeMillis()
         val updateStatus = preferences.getString("update_status", null)
         val caps = DeviceCapabilities.get(appContext)
+        val wifiHelper = com.olrac.signage.network.WifiManagerHelper(appContext)
+        val wifiSsid = wifiHelper.currentConnectedSsid
+        val wifiBars = if (wifiSsid != null) wifiHelper.currentSignalBars else null
         val response = ApiClient.service(appContext).heartbeat(
             HeartbeatRequest(
                 device_id = deviceId,
@@ -73,6 +76,8 @@ object HeartbeatReporter {
                 android_version = caps.android_version,
                 sdk_int = caps.sdk_int,
                 network_type = caps.network_type,
+                wifi_ssid = wifiSsid,
+                wifi_signal_bars = wifiBars,
                 timezone = caps.timezone,
                 is_locked = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(appContext)
             )

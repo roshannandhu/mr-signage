@@ -80,12 +80,27 @@ async def dispatch_outbox_event(event_id: int) -> bool:
 
 def schedule_immediate_outbox_dispatch(event_id: int) -> None:
     """Safely schedule an asyncio task for zero-latency post-commit dispatch."""
-    try:
-        loop = asyncio.get_running_loop()
-        if loop.is_running():
-            loop.create_task(dispatch_outbox_event(event_id))
-    except RuntimeError:
-        pass
+    from .routers.websockets import get_main_event_loop
+    loop = get_main_event_loop()
+    if loop and loop.is_running():
+        try:
+            current = asyncio.get_running_loop()
+            if current is loop:
+                loop.create_task(dispatch_outbox_event(event_id))
+                return
+        except RuntimeError:
+            pass
+        try:
+            asyncio.run_coroutine_threadsafe(dispatch_outbox_event(event_id), loop)
+        except Exception:
+            pass
+    else:
+        try:
+            cur = asyncio.get_running_loop()
+            if cur.is_running():
+                cur.create_task(dispatch_outbox_event(event_id))
+        except RuntimeError:
+            pass
 
 
 def process_outbox_batch(db: Session, batch_size: int = 50) -> int:

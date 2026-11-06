@@ -252,14 +252,19 @@ private fun DualSurfacePlayer(
             // needed to write it, and is the same path a power cut recovers through.
             currentItemStartedAtMs = null
             recoverInterruptedPlay(context)
+            // Immediately stop both players and reset transition progress to abort removed media in <100ms
+            players[0].stop()
+            players[0].playWhenReady = false
+            players[1].stop()
+            players[1].playWhenReady = false
+            transitionProgress.snapTo(0f)
+            currentIndex = 0
+            currentItemId = playlist.firstOrNull()?.id
+            playbackEpoch++
+        } else {
+            currentIndex = preservedIndex
+            currentItemId = playlist[currentIndex].id
         }
-        currentIndex = when {
-            preservedIndex >= 0 -> preservedIndex
-            currentIndex in playlist.indices -> currentIndex
-            else -> 0
-        }
-        currentItemId = playlist[currentIndex].id
-        playbackEpoch++
     }
 
     val safeIndex = currentIndex.coerceIn(playlist.indices)

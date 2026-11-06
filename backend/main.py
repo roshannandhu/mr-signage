@@ -146,6 +146,9 @@ def _run_worker_in_process() -> bool:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    from .routers.websockets import set_main_event_loop
+    set_main_event_loop(asyncio.get_running_loop())
+
     # Enforce strict PIN encryption key validation before any request is served
     from .pin_crypto import get_pin_cipher
     get_pin_cipher()

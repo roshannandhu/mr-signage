@@ -16,7 +16,7 @@ import android.os.SystemClock
  * second press still works. Boot, crash recovery and the supervisor do not go through here.
  */
 object RemoteLaunchGate {
-    const val DUPLICATE_WINDOW_MS = 30_000L
+    const val DUPLICATE_WINDOW_MS = 2_500L
 
     private var lastAllowedAt: Long? = null
 

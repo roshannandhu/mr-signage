@@ -186,6 +186,10 @@ export interface Screen {
   android_version: string | null
   sdk_int: number | null
   network_type: string | null
+  wifi_ssid?: string | null
+  wifi_signal_bars?: number | null
+  has_wifi_password?: boolean
+  wifi_updated_at?: string | null
   timezone: string | null
 }
 
@@ -729,6 +733,19 @@ export interface FleetScreen {
   update_status: string | null
   update_failure_count: number
   last_seen: string | null
+  wifi_ssid?: string | null
+  wifi_signal_bars?: number | null
+  has_wifi_password?: boolean
+  wifi_updated_at?: string | null
+}
+
+export interface ScreenWifiPasswordReveal {
+  screen_id: number
+  screen_name: string
+  wifi_ssid: string | null
+  wifi_password: string | null
+  wifi_signal_bars: number | null
+  wifi_updated_at: string | null
 }
 
 export interface FleetOverview {

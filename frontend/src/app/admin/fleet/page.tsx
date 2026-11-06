@@ -1,13 +1,16 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Activity,
   AlertTriangle,
   CheckCircle,
+  Copy,
   Download,
   Eye,
+  EyeOff,
+  Key,
   Lock,
   MapPin,
   Maximize,
@@ -20,6 +23,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Unlock,
+  Wifi,
+  WifiOff,
   X,
 } from 'lucide-react'
 import { adminApi, api } from '@/lib/api'
@@ -250,6 +255,26 @@ export default function AdminFleetPage() {
           {row.online ? 'Online' : 'Offline'}
         </span>
       ),
+    },
+    {
+      id: 'wifi',
+      header: 'Wi-Fi Network',
+      hideOnMobile: true,
+      cell: ({ row }) => {
+        if (!row.wifi_ssid) {
+          return <span className="text-xs text-muted-foreground">—</span>
+        }
+        const bars = row.wifi_signal_bars ?? 0
+        return (
+          <div className="flex items-center gap-1.5" title={`Signal: ${bars}/4 bars`}>
+            <Wifi className="size-3.5 text-emerald-500 shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="font-mono text-xs text-foreground truncate max-w-[130px]">{row.wifi_ssid}</span>
+              <span className="text-[10px] text-muted-foreground">{bars}/4 bars</span>
+            </div>
+          </div>
+        )
+      },
     },
     {
       id: 'version',
@@ -713,6 +738,35 @@ function FleetScreenDrawer({
   const [unlockReason, setUnlockReason] = useState('')
   const [showUnlockModal, setShowUnlockModal] = useState(false)
   const [pinChoice, setPinChoice] = useState<string>(screen.target_version_code ? String(screen.target_version_code) : '')
+  const [revealedWifiPassword, setRevealedWifiPassword] = useState<string | null>(null)
+  const [revealCountdown, setRevealCountdown] = useState<number>(0)
+
+  const revealWifiMutation = useMutation({
+    mutationFn: () => adminApi.revealScreenWifiPassword(screen.id),
+    onSuccess: (data) => {
+      if (data.wifi_password) {
+        setRevealedWifiPassword(data.wifi_password)
+        setRevealCountdown(30)
+        toast.success('Wi-Fi password revealed')
+      } else {
+        toast.info('No password stored for this network')
+      }
+    },
+    onError: (err: Error) => {
+      toast.error(`Failed to reveal Wi-Fi password: ${err.message}`)
+    },
+  })
+
+  useEffect(() => {
+    if (revealCountdown <= 0) {
+      if (revealedWifiPassword !== null) setRevealedWifiPassword(null)
+      return
+    }
+    const timer = setTimeout(() => {
+      setRevealCountdown((prev) => prev - 1)
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [revealCountdown, revealedWifiPassword])
 
   const commandMutation = useMutation({
     mutationFn: async ({
@@ -834,6 +888,115 @@ function FleetScreenDrawer({
                     {screen.latitude.toFixed(4)}, {screen.longitude.toFixed(4)}
                   </span>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Network & Wi-Fi Connectivity */}
+          <div className="space-y-3 rounded-2xl border border-border bg-muted/20 p-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                <Wifi className="size-3.5 text-primary" />
+                Network & Wi-Fi Details
+              </h4>
+              {screen.wifi_ssid && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle className="size-3" />
+                  Connected
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Connected SSID:</span>
+                <span className="font-mono font-medium text-foreground">
+                  {screen.wifi_ssid || 'No Wi-Fi reported'}
+                </span>
+              </div>
+
+              {screen.wifi_ssid && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Signal Quality:</span>
+                    <span className="font-medium text-foreground flex items-center gap-1">
+                      <span className="font-mono">{screen.wifi_signal_bars ?? 0}/4 bars</span>
+                      <span className="text-muted-foreground">
+                        ({(screen.wifi_signal_bars ?? 0) >= 3 ? 'Strong' : (screen.wifi_signal_bars ?? 0) >= 2 ? 'Fair' : 'Weak'})
+                      </span>
+                    </span>
+                  </div>
+
+                  {screen.wifi_updated_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Last Network Sync:</span>
+                      <span className="text-foreground">
+                        {new Date(screen.wifi_updated_at).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Password reveal section */}
+                  <div className="mt-3 rounded-xl border border-border bg-card p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        <Key className="size-3.5 text-primary" />
+                        Wi-Fi Password:
+                      </span>
+                      {!revealedWifiPassword ? (
+                        <button
+                          type="button"
+                          onClick={() => revealWifiMutation.mutate()}
+                          disabled={revealWifiMutation.isPending}
+                          className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition disabled:opacity-50"
+                        >
+                          <Eye className="size-3 text-primary" />
+                          {revealWifiMutation.isPending ? 'Decrypting…' : 'Reveal Password'}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-mono text-amber-500 font-medium">
+                          Auto-hiding in {revealCountdown}s
+                        </span>
+                      )}
+                    </div>
+
+                    {revealedWifiPassword ? (
+                      <div className="flex items-center justify-between rounded-lg bg-muted/60 p-2 font-mono text-xs border border-border">
+                        <span className="text-foreground select-all font-semibold tracking-wider">
+                          {revealedWifiPassword}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(revealedWifiPassword)
+                              toast.success('Password copied to clipboard')
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground"
+                            title="Copy password"
+                          >
+                            <Copy className="size-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRevealedWifiPassword(null)
+                              setRevealCountdown(0)
+                            }}
+                            className="p-1 rounded text-muted-foreground hover:text-foreground"
+                            title="Hide password"
+                          >
+                            <EyeOff className="size-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground">
+                        Stored with AES-256 Fernet encryption. Every reveal action is recorded in the platform security audit log.
+                      </p>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>

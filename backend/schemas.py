@@ -1027,7 +1027,7 @@ class SyncResponse(BaseModel):
     playlist_updated_at: Optional[datetime] = None
     status: Optional[str] = None
     app_version: Optional[AppVersionResponse] = None
-    sync_interval_seconds: int = Field(default=60, ge=15, le=3600)
+    sync_interval_seconds: int = Field(default=60, ge=5, le=3600)
     # How the player should scale content that does not match the panel's aspect ratio.
     # Per screen rather than per item, which is how an operator thinks about a display.
     fit_mode: FitMode = "contain"

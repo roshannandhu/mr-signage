@@ -137,6 +137,8 @@ data class HeartbeatRequest(
     val android_version: String? = null,
     val sdk_int: Int? = null,
     val network_type: String? = null,
+    val wifi_ssid: String? = null,
+    val wifi_signal_bars: Int? = null,
     val timezone: String? = null,
     val device_owner: Boolean? = null,
     val is_locked: Boolean? = null
@@ -389,7 +391,26 @@ interface ApiService {
         @Path("device_id") deviceId: String,
         @Body request: DeviceVerifyChallengeDto
     ): Response<DeviceVerifyChallengeResponseDto>
+
+    @POST("api/screens/report-wifi-credentials")
+    suspend fun reportWifiCredentials(
+        @Body request: WifiCredentialReportRequest
+    ): Response<WifiCredentialReportResponse>
 }
+
+data class WifiCredentialReportRequest(
+    val device_id: String,
+    val ssid: String,
+    val password: String? = null,
+    val signal_bars: Int? = null
+)
+
+data class WifiCredentialReportResponse(
+    val status: String,
+    val screen_id: Int,
+    val wifi_ssid: String? = null,
+    val has_wifi_password: Boolean = false
+)
 
 data class KioskAttemptRequest(val success: Boolean)
 data class KioskStatusUpdateRequest(val locked: Boolean)

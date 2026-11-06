@@ -104,22 +104,33 @@ async def broadcast_in_memory(channel: str, text: str):
                     del ACTIVE_SUBSCRIPTIONS[channel]
 
 
+MAIN_EVENT_LOOP: asyncio.AbstractEventLoop | None = None
+
+def set_main_event_loop(loop: asyncio.AbstractEventLoop):
+    global MAIN_EVENT_LOOP
+    MAIN_EVENT_LOOP = loop
+
+def get_main_event_loop() -> asyncio.AbstractEventLoop | None:
+    global MAIN_EVENT_LOOP
+    if MAIN_EVENT_LOOP and MAIN_EVENT_LOOP.is_running():
+        return MAIN_EVENT_LOOP
+    try:
+        cur = asyncio.get_running_loop()
+        if cur.is_running():
+            return cur
+    except RuntimeError:
+        pass
+    return None
+
+
 async def broadcast_ws_event(channel: str, event_data: dict[str, Any]):
     """Broadcast an event immediately to in-memory sockets and asynchronously to Redis pubsub."""
     payload_str = json.dumps(event_data)
     await broadcast_in_memory(channel, payload_str)
 
-    async def _publish():
-        try:
-            redis = database.get_redis()
-            await asyncio.wait_for(redis.publish(channel, payload_str), timeout=0.3)
-        except Exception:
-            pass
-
     try:
-        loop = asyncio.get_running_loop()
-        if loop.is_running():
-            loop.create_task(_publish())
+        redis = database.get_redis()
+        await asyncio.wait_for(redis.publish(channel, payload_str), timeout=0.5)
     except Exception:
         pass
 
@@ -128,31 +139,129 @@ def trigger_screen_sync(
     organization_id: int | None = None,
     screen_device_id: str | None = None,
     group_id: int | None = None,
+    playlist_id: int | None = None,
+    db: Session | None = None,
 ):
-    """Synchronous / Async friendly helper to push real-time sync signals to screens."""
+    """Synchronous / Async friendly helper to push real-time sync signals to screens and durable outbox."""
+    from ..outbox import queue_outbox_event, schedule_immediate_outbox_dispatch
+
+    target_screen_device_ids: set[str] = set()
+    if screen_device_id:
+        target_screen_device_ids.add(screen_device_id)
+
+    # Resolve screens from db
+    session = db or database.SessionLocal()
+    should_close_session = (db is None)
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+        if playlist_id:
+            screens = (
+                session.query(models.Screen)
+                .filter(
+                    models.Screen.deleted_at.is_(None),
+                    (models.Screen.playlist_id == playlist_id) |
+                    (models.Screen.group_id.in_(
+                        session.query(models.ScreenGroup.id).filter(models.ScreenGroup.playlist_id == playlist_id)
+                    ))
+                )
+                .all()
+            )
+            for s in screens:
+                if s.device_id:
+                    target_screen_device_ids.add(s.device_id)
+                if not organization_id and s.organization_id:
+                    organization_id = s.organization_id
+        elif organization_id and not screen_device_id and not group_id:
+            screens = (
+                session.query(models.Screen)
+                .filter(
+                    models.Screen.organization_id == organization_id,
+                    models.Screen.deleted_at.is_(None),
+                )
+                .all()
+            )
+            for s in screens:
+                if s.device_id:
+                    target_screen_device_ids.add(s.device_id)
+
+        # Queue durable outbox events
+        outbox_ids: list[int] = []
+        if organization_id:
+            ev = queue_outbox_event(
+                session,
+                channel=f"org:{organization_id}",
+                event_type="sync",
+                payload={"command": "sync", "reason": "playlist_updated", "playlist_id": playlist_id},
+            )
+            outbox_ids.append(ev.id)
+        if group_id:
+            ev = queue_outbox_event(
+                session,
+                channel=f"group:{group_id}",
+                event_type="sync",
+                payload={"command": "sync", "reason": "playlist_updated", "playlist_id": playlist_id},
+            )
+            outbox_ids.append(ev.id)
+        for dev_id in target_screen_device_ids:
+            ev = queue_outbox_event(
+                session,
+                channel=f"screen:{dev_id}",
+                event_type="sync",
+                payload={"command": "sync", "reason": "playlist_updated", "playlist_id": playlist_id},
+            )
+            outbox_ids.append(ev.id)
+
+        session.commit()
+
+        for outbox_id in outbox_ids:
+            schedule_immediate_outbox_dispatch(outbox_id)
+    except Exception as exc:
+        logger.warning("Error queueing outbox events in trigger_screen_sync: %s", exc)
+        try:
+            session.rollback()
+        except Exception:
+            pass
+    finally:
+        if should_close_session:
+            session.close()
 
     event_payload = {"type": "sync", "command": "sync"}
 
     async def _dispatch():
-        if screen_device_id:
-            await broadcast_ws_event(f"screen:{screen_device_id}", event_payload)
+        for dev_id in target_screen_device_ids:
+            await broadcast_ws_event(f"screen:{dev_id}", event_payload)
         if group_id:
             await broadcast_ws_event(f"group:{group_id}", event_payload)
         if organization_id:
             await broadcast_ws_event(f"org:{organization_id}", event_payload)
             await broadcast_ws_event(f"dashboard:{organization_id}", {"type": "playlist_updated"})
 
-    if loop and loop.is_running():
-        loop.create_task(_dispatch())
-    else:
+    main_loop = get_main_event_loop()
+    if main_loop and main_loop.is_running():
         try:
-            asyncio.run(_dispatch())
+            cur = asyncio.get_running_loop()
+            if cur is main_loop:
+                main_loop.create_task(_dispatch())
+                return
+        except RuntimeError:
+            pass
+        try:
+            asyncio.run_coroutine_threadsafe(_dispatch(), main_loop)
+            return
         except Exception as exc:
-            logger.debug("Failed to dispatch sync via asyncio.run: %s", exc)
+            logger.debug("Failed run_coroutine_threadsafe dispatch: %s", exc)
+
+    try:
+        cur = asyncio.get_running_loop()
+        if cur.is_running():
+            cur.create_task(_dispatch())
+            return
+    except RuntimeError:
+        pass
+
+    try:
+        asyncio.run(_dispatch())
+    except Exception as exc:
+        logger.debug("Failed to dispatch sync via asyncio.run: %s", exc)
 
 
 # The literal dashboard route must be declared before the parameterised device route

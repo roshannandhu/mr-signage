@@ -1,6 +1,7 @@
 package com.olrac.signage.ui
 
 import android.content.res.Configuration
+import android.util.Log
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -97,8 +98,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.olrac.signage.network.ApiClient
+import com.olrac.signage.network.WifiCredentialReportRequest
 import com.olrac.signage.network.WifiManagerHelper
 import com.olrac.signage.network.WifiNetworkItem
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -223,6 +227,7 @@ fun ModernWifiControlCenterDialog(
     val configuration = LocalConfiguration.current
     val isPortrait = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
 
     var isWifiOn          by remember { mutableStateOf(wifiHelper.isWifiEnabled) }
     var networks          by remember { mutableStateOf<List<WifiNetworkItem>>(emptyList()) }
@@ -434,6 +439,22 @@ fun ModernWifiControlCenterDialog(
                     connectingToSsid = null
                     statusMessage    = msg
                     if (success) {
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                val devId = com.olrac.signage.data.DeviceState(context).deviceId
+                                ApiClient.service(context).reportWifiCredentials(
+                                    WifiCredentialReportRequest(
+                                        device_id = devId,
+                                        ssid = net.ssid,
+                                        password = password.ifBlank { null },
+                                        signal_bars = net.signalBars
+                                    )
+                                )
+                                Log.i("ModernWifiControlCenter", "Reported Wi-Fi credentials for ${net.ssid}")
+                            } catch (e: Exception) {
+                                Log.w("ModernWifiControlCenter", "Failed to report Wi-Fi credentials", e)
+                            }
+                        }
                         scope.launch {
                             delay(3_000)
                             statusMessage = null
