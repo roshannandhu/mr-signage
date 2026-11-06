@@ -125,24 +125,27 @@ async def queue_device_command(device_id: str, command: str, ttl_seconds: Option
         return False
     hold = ttl_seconds if ttl_seconds is not None else _COMMAND_HOLD_SECONDS.get(command, _DEFAULT_HOLD_SECONDS)
     expiry = time.time() + hold
+
+    # Always record in memory immediately so latency is 0ms regardless of Redis availability
+    _IN_MEMORY_COMMANDS.setdefault(device_id, {})[command] = expiry
+
+    # Background fire-and-forget Redis backup with short timeout so caller never blocks
+    async def _save_to_redis():
+        try:
+            redis = database.get_redis()
+            await asyncio.wait_for(redis.hset(_commands_key(device_id), command, str(expiry)), timeout=0.3)
+            await asyncio.wait_for(redis.expire(_commands_key(device_id), _MAX_HOLD_SECONDS), timeout=0.3)
+        except Exception as exc:
+            logger.debug("Redis queue command backup skipped for device %s: %s", device_id, exc)
+
     try:
-        redis = database.get_redis()
-        await redis.hset(_commands_key(device_id), command, str(expiry))
-        # The hash's own TTL is only a backstop against an orphaned key for a screen that
-        # never comes back -- correctness comes from the per-command expiry checked in
-        # pop_device_commands, not from this. Reset to the longest possible hold on every
-        # write so an earlier, shorter-held command already in the hash is not cut off.
-        await redis.expire(_commands_key(device_id), _MAX_HOLD_SECONDS)
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Could not queue command %r in Redis for device %s: %s (using in-memory fallback)",
-            command,
-            device_id,
-            exc,
-        )
-        _IN_MEMORY_COMMANDS.setdefault(device_id, {})[command] = expiry
-        return True
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            loop.create_task(_save_to_redis())
+    except RuntimeError:
+        pass
+
+    return True
 
 
 async def pop_device_commands(device_id: str) -> List[str]:
@@ -161,14 +164,14 @@ async def pop_device_commands(device_id: str) -> List[str]:
 
     try:
         redis = database.get_redis()
-        raw = await redis.eval(_POP_SCRIPT, 1, _commands_key(device_id))
+        raw = await asyncio.wait_for(redis.eval(_POP_SCRIPT, 1, _commands_key(device_id)), timeout=0.3)
         pairs = [v.decode("utf-8") if isinstance(v, bytes) else str(v) for v in (raw or [])]
         for command, expiry_raw in zip(pairs[0::2], pairs[1::2]):
             seen.add(command)
             if float(expiry_raw) > now:
                 commands.append(command)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not read pending commands from Redis for device %s: %s", device_id, exc)
+        logger.debug("Could not read pending commands from Redis for device %s: %s (using memory)", device_id, exc)
 
     in_memory = _IN_MEMORY_COMMANDS.pop(device_id, None)
     if in_memory:

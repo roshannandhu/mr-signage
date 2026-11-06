@@ -88,20 +88,38 @@ async def unregister_ws(channel: str, ws: WebSocket):
 async def broadcast_in_memory(channel: str, text: str):
     async with SUBSCRIPTION_LOCK:
         sockets = list(ACTIVE_SUBSCRIPTIONS.get(channel, []))
+    dead_sockets = []
     for ws in sockets:
         try:
             await ws.send_text(text)
         except Exception:
-            pass
+            dead_sockets.append(ws)
+    if dead_sockets:
+        async with SUBSCRIPTION_LOCK:
+            current = ACTIVE_SUBSCRIPTIONS.get(channel)
+            if current:
+                for ws in dead_sockets:
+                    current.discard(ws)
+                if not current:
+                    del ACTIVE_SUBSCRIPTIONS[channel]
 
 
 async def broadcast_ws_event(channel: str, event_data: dict[str, Any]):
-    """Broadcast an event to both in-memory sockets and Redis pubsub."""
+    """Broadcast an event immediately to in-memory sockets and asynchronously to Redis pubsub."""
     payload_str = json.dumps(event_data)
     await broadcast_in_memory(channel, payload_str)
+
+    async def _publish():
+        try:
+            redis = database.get_redis()
+            await asyncio.wait_for(redis.publish(channel, payload_str), timeout=0.3)
+        except Exception:
+            pass
+
     try:
-        redis = database.get_redis()
-        await redis.publish(channel, payload_str)
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            loop.create_task(_publish())
     except Exception:
         pass
 

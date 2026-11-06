@@ -34,7 +34,7 @@ class RealtimeClient(
     private val onMessage: (JSONObject) -> Unit
 ) {
     private val client = OkHttpClient.Builder()
-        .pingInterval(30, TimeUnit.SECONDS)
+        .pingInterval(10, TimeUnit.SECONDS)
         .build()
         
     private var webSocket: WebSocket? = null
@@ -48,7 +48,8 @@ class RealtimeClient(
     @Volatile private var stopped = false
 
     private companion object {
-        val RECONNECT_BACKOFF_MS = longArrayOf(5_000, 15_000, 30_000, 60_000, 120_000)
+        // Fast, aggressive reconnect backoff (max 5s) for instant remote control
+        val RECONNECT_BACKOFF_MS = longArrayOf(1_000, 2_000, 3_000, 5_000)
     }
 
     fun start() {
@@ -56,6 +57,14 @@ class RealtimeClient(
         // On the IO scope: presenting a token may mean exchanging the device secret for one,
         // which is a blocking network call.
         scope.launch { connect() }
+    }
+
+    fun forceReconnect() {
+        if (stopped) return
+        attempt = 0
+        if (!isConnected) {
+            scope.launch { connect() }
+        }
     }
 
     private fun connect() {

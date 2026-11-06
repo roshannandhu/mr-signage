@@ -1690,10 +1690,7 @@ async def tenant_remote_unlock_screen(
         event_type="screen_lock_changed",
         payload={"screen_id": screen.id, "locked": False},
     )
-    scope.db.commit()
-    schedule_immediate_outbox_dispatch(outbox_event.id)
-
-    # Deliver immediately via in-memory WebSocket connections and Redis pubsub
+    # Deliver immediately via in-memory WebSocket connections and Redis pubsub before DB commit
     from .websockets import broadcast_ws_event
     try:
         await broadcast_ws_event(
@@ -1710,6 +1707,10 @@ async def tenant_remote_unlock_screen(
         )
     except Exception as exc:
         logger.debug("Broadcast failed for remote_unlock: %s", exc)
+
+    screen.is_locked = False
+    scope.db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -1801,10 +1802,7 @@ async def tenant_remote_lock_screen(
         },
     )
 
-    scope.db.commit()
-    schedule_immediate_outbox_dispatch(outbox_event.id)
-
-    # Broadcast via websocket channels and Redis pubsub
+    # Broadcast via websocket channels and Redis pubsub before DB commit
     from .websockets import broadcast_ws_event
     try:
         await broadcast_ws_event(
@@ -1821,6 +1819,10 @@ async def tenant_remote_lock_screen(
         )
     except Exception as exc:
         logger.debug("Broadcast failed for remote_lock: %s", exc)
+
+    screen.is_locked = True
+    scope.db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -1882,9 +1884,6 @@ async def update_screen_lock_status(
         await tenant_remote_lock_screen(screen_id=screen.id, scope=scope, _feature=_feature)
     else:
         await tenant_remote_unlock_screen(screen_id=screen.id, scope=scope)
-
-    screen.is_locked = payload.locked
-    scope.db.commit()
 
     return schemas.ScreenLockStatusResponse(
         screen_id=screen.id,
@@ -2312,16 +2311,11 @@ async def heartbeat(
         db_screen.last_error = req.last_error
         if req.last_error:
             db_screen.last_error_at = models.utcnow()
-    if "is_locked" in fields and req.is_locked is not None:
-        if db_screen.is_locked != req.is_locked:
-            db_screen.is_locked = req.is_locked
-            if db_screen.organization_id:
-                queue_outbox_event(
-                    db,
-                    channel=f"org:{db_screen.organization_id}",
-                    event_type="screen_lock_changed",
-                    payload={"screen_id": db_screen.id, "locked": req.is_locked},
-                )
+    # Heartbeat reports device telemetry. The server is the authority for tenant-controlled
+    # kiosk lock, so heartbeat telemetry must not overwrite a tenant's desired lock state.
+    # Device only updates lock state on the server via explicit /report-kiosk-status when an
+    # operator physically enters the maintenance PIN.
+    # db_screen.is_locked is intentionally preserved here.
     db.commit()
 
     # Presence cache. Best-effort on purpose: a Redis outage must never fail a TV's
@@ -2846,25 +2840,11 @@ async def bring_to_front(
     queued = await queue_device_command(screen.device_id, "bring_to_front") if screen.device_id else False
 
     published = False
-    try:
-        redis = database.get_redis()
-        payload = json.dumps({"type": "bring_to_front", "command": "launch_app"})
-        if screen.device_id:
-            await redis.publish(f"screen:{screen.device_id}", payload)
-            await redis.publish(f"device:{screen.device_id}", payload)
-        await redis.publish(f"screen:{screen.id}", payload)
-        if screen.organization_id:
-            await redis.publish(
-                f"org:{screen.organization_id}",
-                json.dumps({"type": "bring_to_front", "device_id": screen.device_id, "screen_id": screen.id}),
-            )
-        published = True
-    except Exception as e:
-        logger.warning(f"Failed to publish bring_to_front to redis: {e}")
+    payload = json.dumps({"type": "bring_to_front", "command": "launch_app"})
 
+    # 1. Deliver immediately via in-memory WebSocket connections (<1ms latency)
     try:
         from .websockets import broadcast_in_memory
-        payload = json.dumps({"type": "bring_to_front", "command": "launch_app"})
         if screen.device_id:
             await broadcast_in_memory(f"screen:{screen.device_id}", payload)
             await broadcast_in_memory(f"device:{screen.device_id}", payload)
@@ -2877,6 +2857,32 @@ async def bring_to_front(
         published = True
     except Exception as e:
         logger.warning(f"Failed to broadcast bring_to_front in-memory: {e}")
+
+    # 2. Asynchronously notify Redis pubsub in background so caller never waits on connection
+    async def _publish_redis():
+        try:
+            redis = database.get_redis()
+            if screen.device_id:
+                await asyncio.wait_for(redis.publish(f"screen:{screen.device_id}", payload), timeout=0.3)
+                await asyncio.wait_for(redis.publish(f"device:{screen.device_id}", payload), timeout=0.3)
+            await asyncio.wait_for(redis.publish(f"screen:{screen.id}", payload), timeout=0.3)
+            if screen.organization_id:
+                await asyncio.wait_for(
+                    redis.publish(
+                        f"org:{screen.organization_id}",
+                        json.dumps({"type": "bring_to_front", "device_id": screen.device_id, "screen_id": screen.id}),
+                    ),
+                    timeout=0.3,
+                )
+        except Exception as exc:
+            logger.debug("Redis publish bring_to_front skipped: %s", exc)
+
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            loop.create_task(_publish_redis())
+    except RuntimeError:
+        pass
 
     if not queued and not published:
         # Neither path is available, so the command is going nowhere. Saying "ok" here is

@@ -44,10 +44,12 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
   })
 
   // Live Screen Lock status query (bidirectional reflection with TV/tablet)
+  const [optimisticLocked, setOptimisticLocked] = useState<boolean | null>(null)
+
   const lockStatusQuery = useQuery({
     queryKey: ['screen-lock-status', screen.id],
     queryFn: () => api.getScreenLockStatus(screen.id),
-    refetchInterval: 2000,
+    refetchInterval: optimisticLocked !== null ? false : 3000,
   })
 
   const [pinDraft, setPinDraft] = useState('')
@@ -61,12 +63,15 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
     : true
 
   // Current live lock state (reflects both dashboard toggle and on-device secret unlocks)
-  const isLocked = lockStatusQuery.data?.locked ?? screen.is_locked ?? true
+  const isLocked = optimisticLocked !== null
+    ? optimisticLocked
+    : (lockStatusQuery.data?.locked ?? screen.is_locked ?? true)
 
   // Bidirectional Screen Lock Mutation
   const setLockMutation = useMutation({
     mutationFn: (newLocked: boolean) => api.setScreenLockStatus(screen.id, newLocked),
     onMutate: async (newLocked: boolean) => {
+      setOptimisticLocked(newLocked)
       await queryClient.cancelQueries({ queryKey: ['screen-lock-status', screen.id] })
       const prev = queryClient.getQueryData(['screen-lock-status', screen.id])
       queryClient.setQueryData(['screen-lock-status', screen.id], {
@@ -77,6 +82,7 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
       return { prev }
     },
     onError: (err: Error, _, context) => {
+      setOptimisticLocked(null)
       if (context?.prev) queryClient.setQueryData(['screen-lock-status', screen.id], context.prev)
       toast.error(err.message)
     },
@@ -85,6 +91,7 @@ export function KioskExitCard({ screen }: { screen: Screen }) {
       queryClient.invalidateQueries({ queryKey: ['screen', screen.id] })
       queryClient.invalidateQueries({ queryKey: ['screens'] })
       toast.success(data.locked ? 'Screen locked in kiosk playback' : 'Screen unlocked for maintenance')
+      setTimeout(() => setOptimisticLocked(null), 5000)
     },
   })
 

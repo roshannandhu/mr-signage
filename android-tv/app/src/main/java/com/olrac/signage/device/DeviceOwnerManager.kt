@@ -145,6 +145,16 @@ object DeviceOwnerManager {
 
             // 4. Auto-grant runtime permissions
             dpm.setPermissionPolicy(adminName, DevicePolicyManager.PERMISSION_POLICY_AUTO_GRANT)
+            val permissionsToGrant = arrayOf(
+                android.Manifest.permission.ACCESS_FINE_LOCATION,
+                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+                "android.permission.NEARBY_WIFI_DEVICES"
+            )
+            for (p in permissionsToGrant) {
+                try {
+                    dpm.setPermissionGrantState(adminName, context.packageName, p, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
+                } catch (_: Exception) {}
+            }
             Log.d(TAG, "Permission policy set to auto grant")
 
             // 5. Block uninstalls

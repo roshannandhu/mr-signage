@@ -19,6 +19,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -75,8 +76,12 @@ import com.olrac.signage.network.GoogleStartResponse
 import com.olrac.signage.network.SignInRequest
 import com.olrac.signage.service.PlaybackService
 import com.olrac.signage.ui.PlayerScreen
+import com.olrac.signage.ui.FloatingWifiSymbolHud
+import com.olrac.signage.ui.WifiSignalIcon
+import com.olrac.signage.ui.ModernWifiControlCenterDialog
 import com.olrac.signage.ui.screens.*
 import com.olrac.signage.network.RealtimeClient
+import com.olrac.signage.network.WifiManagerHelper
 import com.olrac.signage.device.DeviceOwnerManager
 import com.olrac.signage.boot.SetupGate
 import com.olrac.signage.boot.SetupRequirement
@@ -103,6 +108,21 @@ class MainActivity : ComponentActivity() {
     private var requirementStates by mutableStateOf<List<SetupRequirementState>>(emptyList())
     private var setupError by mutableStateOf<String?>(null)
     private var lastInteractionAtMs by mutableStateOf<Long>(System.currentTimeMillis())
+    private lateinit var wifiHelper: WifiManagerHelper
+    private var showWifiHud by mutableStateOf(false)
+    private var showWifiDialog by mutableStateOf(false)
+    private var hudDismissJob: Job? = null
+
+    private fun triggerWifiHud() {
+        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)) return
+        if (showWifiDialog || showPinPrompt || showServerSetup) return
+        showWifiHud = true
+        hudDismissJob?.cancel()
+        hudDismissJob = lifecycleScope.launch {
+            delay(12_000L)
+            showWifiHud = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,6 +130,7 @@ class MainActivity : ComponentActivity() {
 
         configurePlayerWindow()
         deviceState = DeviceState(this)
+        wifiHelper = WifiManagerHelper(this)
         val deviceId = deviceState.deviceId
 
         val forceSignIn = LaunchStateResolver.honourForcedSignIn(
@@ -124,6 +145,20 @@ class MainActivity : ComponentActivity() {
             PlaybackService.start(this, launchPlayer = false)
         } else {
             launchState = LaunchState.CheckingLocalState
+        }
+
+        if (intent?.hasExtra("set_kiosk_lock") == true) {
+            val locked = intent.getBooleanExtra("set_kiosk_lock", true)
+            setKioskLockState(locked = locked, reportToServer = false)
+        }
+        if (intent?.hasExtra("set_api_base_url") == true) {
+            val url = intent.getStringExtra("set_api_base_url")
+            if (!url.isNullOrBlank()) {
+                saveServerUrl(url)
+            }
+        }
+        if (intent?.getBooleanExtra("open_wifi_dialog", false) == true) {
+            showWifiDialog = true
         }
         
         if (isHomePressWhileExited()) {
@@ -151,11 +186,12 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            LaunchedEffect(deviceId, serverRevision) {
-                if (!forceSignIn) {
-                    resolveAndRefreshPairing(deviceId)
+            Box(modifier = Modifier.fillMaxSize()) {
+                LaunchedEffect(deviceId, serverRevision) {
+                    if (!forceSignIn) {
+                        resolveAndRefreshPairing(deviceId)
+                    }
                 }
-            }
 
             // Re-read the two switches once a second so a row turns green the moment the
             // installer flips it, without them having to come back and forth. The loop ends
@@ -214,25 +250,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Runs for the whole life of the Activity, unlike the gate loop above: a remote
-            // unlock can arrive at any time, not only during setup. Checked here rather than
-            // only in onResume because a device-owner TV resuming into lock task does not
-            // always re-run onResume the instant PlaybackService sets the flag.
-            LaunchedEffect(Unit) {
-                val prefs = getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-                while (true) {
-                    if (prefs.getBoolean(PREF_PENDING_REMOTE_UNLOCK, false)) {
-                        prefs.edit().putBoolean(PREF_PENDING_REMOTE_UNLOCK, false).apply()
-                        if (!showPinPrompt && !showServerSetup) {
-                            android.util.Log.i("MainActivity", "Applying a remote unlock from prefs fallback")
-                            setKioskLockState(locked = false, reportToServer = false)
-                            enterMaintenance()
-                            showServerSetup = true
-                        }
-                    }
-                    delay(2_000L)
-                }
-            }
 
             if (showPinPrompt) {
                 PinPromptScreen(
@@ -308,7 +325,7 @@ class MainActivity : ComponentActivity() {
 
                     is LaunchState.GoogleSignIn -> GoogleSignInScreen(
                         state = state,
-                        serverUrl = ApiClient.effectiveBaseUrl(this),
+                        serverUrl = ApiClient.effectiveBaseUrl(this@MainActivity),
                         serverError = serverError,
                         defaultHome = defaultHome,
                         onCancel = { launchState = LaunchState.SignIn() },
@@ -322,8 +339,36 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+
+            val isLockFeatureAvailable = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this@MainActivity)
+
+            // Floating Minimalist Wi-Fi Symbol HUD in Top-Right (Pure Canvas-drawn wave arcs)
+            FloatingWifiSymbolHud(
+                visible = showWifiHud && !showPinPrompt && !showServerSetup && !showWifiDialog && isLockFeatureAvailable,
+                isConnected = wifiHelper.isWifiConnected,
+                signalBars = wifiHelper.currentSignalBars,
+                onTap = {
+                    showWifiDialog = true
+                    showWifiHud = false
+                    hudDismissJob?.cancel()
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 24.dp, end = 24.dp)
+            )
+
+            // In-App Wi-Fi Control Center Dialog (Pure Black #000000 Theme, Native Keyboard)
+            if (showWifiDialog && isLockFeatureAvailable) {
+                ModernWifiControlCenterDialog(
+                    wifiHelper = wifiHelper,
+                    onDismiss = {
+                        showWifiDialog = false
+                    }
+                )
+            }
         }
     }
+}
 
     /**
      * Open the maintenance screen's system screens without leaving kiosk. Called only AFTER a
@@ -546,17 +591,18 @@ class MainActivity : ComponentActivity() {
 
     fun setKioskLockState(locked: Boolean, reportToServer: Boolean = true) {
         val prefs = getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-        prefs.edit().putBoolean("kiosk_lock", locked).apply()
+        prefs.edit().putBoolean("kiosk_lock", locked).commit()
 
         runOnUiThread {
             if (locked) {
-                prefs.edit().remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).apply()
+                prefs.edit().remove(PREF_OPERATOR_EXIT_AT).remove(PREF_WATCHDOG_SUPPRESS_UNTIL).commit()
                 DeviceOwnerManager.applyKioskPolicy(this)
                 rearmLockTask()
+                android.widget.Toast.makeText(this@MainActivity, "🔒 Screen Locked in Kiosk Mode", android.widget.Toast.LENGTH_SHORT).show()
                 android.util.Log.i("MainActivity", "Kiosk Lock re-armed (locked=true)")
             } else {
                 prefs.edit().putLong(PREF_OPERATOR_EXIT_AT, System.currentTimeMillis())
-                    .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).apply()
+                    .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).commit()
                 val launcher = systemLauncher()
                 DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { ComponentName(it.packageName, it.className) })
                 try {
@@ -568,6 +614,7 @@ class MainActivity : ComponentActivity() {
                     android.util.Log.w("MainActivity", "stopLockTask failed: ${e.message}")
                 }
                 showPinPrompt = false
+                android.widget.Toast.makeText(this@MainActivity, "🔓 Screen Unlocked Remotely", android.widget.Toast.LENGTH_SHORT).show()
                 android.util.Log.i("MainActivity", "Kiosk Lock released (locked=false)")
             }
         }
@@ -602,6 +649,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        if (::wifiHelper.isInitialized) {
+            wifiHelper.unregisterReceivers()
+        }
         if (activeActivity == this) activeActivity = null
         super.onDestroy()
     }
@@ -672,6 +722,22 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        if (intent?.hasExtra("set_kiosk_lock") == true) {
+            val locked = intent.getBooleanExtra("set_kiosk_lock", true)
+            setKioskLockState(locked = locked, reportToServer = false)
+        }
+
+        if (intent?.hasExtra("set_api_base_url") == true) {
+            val url = intent.getStringExtra("set_api_base_url")
+            if (!url.isNullOrBlank()) {
+                saveServerUrl(url)
+            }
+        }
+
+        if (intent?.getBooleanExtra("open_wifi_dialog", false) == true) {
+            showWifiDialog = true
+        }
+
         // Handle Google OAuth Deep Link Return
         val data = intent?.data
         if (data != null && data.scheme == "olrac" && data.host == "auth") {
@@ -707,15 +773,46 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
         lastInteractionAtMs = System.currentTimeMillis()
+        val isLockFeatureAvailable = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
+
+        if (ev.action == MotionEvent.ACTION_DOWN) {
+            if (!showPinPrompt && !showServerSetup && !showWifiDialog && isLockFeatureAvailable) {
+                val density = resources.displayMetrics.density
+                val iconTouchArea = 90f * density // 52dp icon + 24dp padding + margin
+                val isTouchOnWifiIcon = ev.rawX >= (window.decorView.width - iconTouchArea) && ev.rawY <= iconTouchArea
+
+                if (showWifiHud) {
+                    if (isTouchOnWifiIcon) {
+                        showWifiDialog = true
+                        showWifiHud = false
+                        hudDismissJob?.cancel()
+                        return true
+                    } else {
+                        // Touched again anywhere else on tablet -> auto-disappear immediately
+                        showWifiHud = false
+                        hudDismissJob?.cancel()
+                    }
+                } else {
+                    // Hidden -> wakes up on touch for 12-15 seconds
+                    triggerWifiHud()
+                }
+            }
+        }
+
         // Touch-only path to the maintenance PIN, for devices with no D-pad remote (touch
         // panels, phones) where the Up-Up-Down-Down-OK gesture is unreachable: seven quick
         // taps in any corner reveal the same PIN prompt. Only over the player, and the pin
         // behind it is still the real control.
-        if (ev.action == MotionEvent.ACTION_DOWN && !showPinPrompt && !showServerSetup) {
+        if (ev.action == MotionEvent.ACTION_DOWN && !showPinPrompt && !showServerSetup && !showWifiDialog) {
             val inCorner = CornerTapCounter.isCorner(ev.rawX, ev.rawY, window.decorView.width, window.decorView.height)
-            if (inCorner) {
+            val isTopRightCorner = ev.rawX > window.decorView.width * (1f - CornerTapCounter.CORNER_FRACTION) &&
+                    ev.rawY < window.decorView.height * CornerTapCounter.CORNER_FRACTION
+
+            if (inCorner && (!isLockFeatureAvailable || !isTopRightCorner)) {
                 if (cornerTaps.record(System.currentTimeMillis())) {
                     showPinPrompt = true
+                    showWifiHud = false
+                    hudDismissJob?.cancel()
                     return true
                 }
             } else {
@@ -742,9 +839,36 @@ class MainActivity : ComponentActivity() {
      */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         lastInteractionAtMs = System.currentTimeMillis()
+
+        if (showWifiDialog) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+                if (event.action == KeyEvent.ACTION_UP) {
+                    showWifiDialog = false
+                }
+                return true
+            }
+            return super.dispatchKeyEvent(event)
+        }
+
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val isLockFeatureAvailable = com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
+            if (isLockFeatureAvailable) {
+                if (event.keyCode == KeyEvent.KEYCODE_MENU ||
+                    event.keyCode == KeyEvent.KEYCODE_INFO ||
+                    event.keyCode == KeyEvent.KEYCODE_SETTINGS
+                ) {
+                    showWifiDialog = true
+                    showWifiHud = false
+                    hudDismissJob?.cancel()
+                    return true
+                }
+                triggerWifiHud()
+            }
+        }
+
         // Not on the pin prompt or the setup screen: there these keys are navigation, and
         // matching would swallow a press mid-form.
-        val gestureEnabled = !showPinPrompt && !showServerSetup
+        val gestureEnabled = !showPinPrompt && !showServerSetup && !showWifiDialog
         val surface = when {
             showPinPrompt -> com.olrac.signage.data.KeySurface.PIN_PROMPT
             showServerSetup -> com.olrac.signage.data.KeySurface.SERVER_SETUP
@@ -765,6 +889,7 @@ class MainActivity : ComponentActivity() {
                 // entered (see onUnlocked). Dropping lock-task here let the gesture alone
                 // un-pin the TV, and cancelling then left it open until the next reboot.
                 showPinPrompt = true
+                showWifiHud = false
                 true
             }
             KeyOutcome.CANCEL_PIN -> {

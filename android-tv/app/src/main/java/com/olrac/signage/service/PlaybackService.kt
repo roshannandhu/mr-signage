@@ -186,7 +186,7 @@ class PlaybackService : Service() {
                     val lockEnabled = msg.optBoolean("lock_enabled", true)
                     Log.i(TAG, "Received WS lock_state_changed: lock_enabled=$lockEnabled")
                     getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-                        .edit().putBoolean("kiosk_lock", lockEnabled).apply()
+                        .edit().putBoolean("kiosk_lock", lockEnabled).commit()
                     MainActivity.onKioskLockChanged(this@PlaybackService, lockEnabled)
                     emitCommand(ServiceCommandEvent.KioskLockChanged(lockEnabled))
                 }
@@ -197,7 +197,7 @@ class PlaybackService : Service() {
                         val isLocked = msg.optBoolean("locked", true)
                         Log.i(TAG, "Received WS screen_lock_changed: locked=$isLocked")
                         getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-                            .edit().putBoolean("kiosk_lock", isLocked).apply()
+                            .edit().putBoolean("kiosk_lock", isLocked).commit()
                         MainActivity.onKioskLockChanged(this@PlaybackService, isLocked)
                         emitCommand(ServiceCommandEvent.KioskLockChanged(isLocked))
                     }
@@ -208,23 +208,23 @@ class PlaybackService : Service() {
                 }
                 command == "remote_unlock" || (type == "device_command" && msg.optString("command") == "remote_unlock") -> {
                     val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
-                    Log.i(TAG, "Received WS remote_unlock command (id=$commandId)")
+                    Log.i(TAG, "Received WS remote_unlock command (id=$commandId); unlocking instantly")
                     getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
                         .edit()
                         .putBoolean("kiosk_lock", false)
-                        .putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, true)
-                        .apply()
+                        .putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, false)
+                        .commit()
                     MainActivity.onKioskLockChanged(this@PlaybackService, false)
                     emitCommand(ServiceCommandEvent.RemoteUnlock(commandId))
                 }
                 command == "remote_lock" || (type == "device_command" && msg.optString("command") == "remote_lock") -> {
                     val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
-                    Log.i(TAG, "Received WS remote_lock command (id=$commandId)")
+                    Log.i(TAG, "Received WS remote_lock command (id=$commandId); locking instantly")
                     getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
                         .edit()
                         .putBoolean("kiosk_lock", true)
                         .putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, false)
-                        .apply()
+                        .commit()
                     MainActivity.onKioskLockChanged(this@PlaybackService, true)
                     emitCommand(ServiceCommandEvent.KioskLockChanged(true))
                     launchPlayer(delayMs = 0L)
@@ -319,6 +319,7 @@ class PlaybackService : Service() {
 
         connectivityWatcher = ConnectivityWatcher(this) {
             immediateSyncSignals.trySend(Unit)
+            realtimeClient?.forceReconnect()
             // Push the queued proof of play the moment the network is back, rather than
             // waiting out the 15-minute periodic window. After an outage that queue is
             // exactly what the operator is waiting to see. Guarded like scheduleWorkers:

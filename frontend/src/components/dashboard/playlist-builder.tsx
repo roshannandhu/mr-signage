@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, memo, type CSSProperties, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { closestCenter, type CollisionDetection, DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -142,7 +142,9 @@ function DefaultTransitionPanel({ playlist, disabled, pending, onSave }: {
             <Button size="sm" variant="default" disabled={disabled || pending} onClick={() => onSave(transition, durationMs, true)}><Sparkles data-icon="inline-start" /> Apply to all items</Button>
           </div>
         </div>
-        <TransitionPreview transition={transition} durationMs={durationMs} />
+        <div className="hidden sm:block shrink-0">
+          <TransitionPreview transition={transition} durationMs={durationMs} />
+        </div>
       </CardContent>
     </Card>
   )
@@ -460,6 +462,8 @@ function ItemRow({
   )
 }
 
+const MemoizedItemRow = memo(ItemRow)
+
 /**
  * The timeline's drop zone.
  *
@@ -476,6 +480,45 @@ function TimelineDropZone({ children }: { children: ReactNode }) {
     >
       {children}
     </div>
+  )
+}
+
+/**
+ * Droppable target wrapping the Content Library.
+ * Dropping a timeline item here returns it to the library (removes it from playback loop).
+ */
+function LibraryDropZone({
+  children,
+  isDraggingTimelineItem,
+}: {
+  children: ReactNode
+  isDraggingTimelineItem: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'content-library-drop' })
+  return (
+    <aside
+      ref={setNodeRef}
+      className={cn(
+        'rounded-2xl bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1 ring-hairline lg:sticky lg:top-20 transition-all duration-200',
+        isDraggingTimelineItem && 'ring-2 ring-dashed ring-destructive/50 bg-destructive/5',
+        isOver && isDraggingTimelineItem && 'ring-2 ring-destructive bg-destructive/10 scale-[1.01]'
+      )}
+      aria-labelledby="library-title"
+    >
+      {isDraggingTimelineItem && (
+        <div
+          className={cn(
+            'mb-3 rounded-xl border p-2.5 text-center text-xs font-semibold transition-all',
+            isOver
+              ? 'border-destructive bg-destructive text-white shadow-md'
+              : 'border-destructive/30 bg-destructive/10 text-destructive'
+          )}
+        >
+          {isOver ? 'Drop here to remove from playback loop' : 'Drag here to return ad to library'}
+        </div>
+      )}
+      {children}
+    </aside>
   )
 }
 
@@ -567,17 +610,30 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const playlistQuery = useQuery({ queryKey: playlistKey, queryFn: () => api.getPlaylist(playlistId), enabled: Number.isFinite(playlistId) })
   const contentQuery = useQuery({ queryKey: ['content'], queryFn: api.getContent })
   const [localOrder, setLocalOrder] = useState<number[] | null>(null)
+  const [isDraggingTimelineItem, setIsDraggingTimelineItem] = useState(false)
   const [search, setSearch] = useState('')
   const [savingItem, setSavingItem] = useState<number | null>(null)
   const [highlightedItemId, setHighlightedItemId] = useState<number | null>(null)
 
   const serverItems = useMemo(() => [...(playlistQuery.data?.items || [])].sort((a, b) => a.order - b.order), [playlistQuery.data?.items])
+
+  // Synchronize local order with server silently without render flashing
+  useEffect(() => {
+    if (localOrder && serverItems.length === localOrder.length) {
+      const isSynced = serverItems.every((it, idx) => it.id === localOrder[idx])
+      if (isSynced) {
+        setLocalOrder(null)
+      }
+    }
+  }, [serverItems, localOrder])
+
   const items = useMemo(() => {
     if (!localOrder) return serverItems
     const byId = new Map(serverItems.map((item) => [item.id, item]))
     const ordered = localOrder.map((itemId) => byId.get(itemId)).filter((item): item is PlaylistItem => Boolean(item))
     return ordered.length === serverItems.length ? ordered : serverItems
   }, [localOrder, serverItems])
+
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 100, tolerance: 8 } }),
@@ -589,20 +645,41 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
    * Library card drags (string IDs, pointer only) get pointerWithin so dropping back
    * into the library does not trigger an accidental drop.
    *
-   * Timeline reorders (numeric IDs) get closestCenter, with the outer 'timeline' droppable
-   * filtered out so the background dropzone never intercepts closestCenter and cancels the reorder.
+   * Timeline reorders (numeric IDs) get closestCenter, but if the pointer is over the
+   * content library drop target, that takes priority so dropping returns the ad to the library.
    */
   const collisionDetection: CollisionDetection = (args) => {
+    // If dragging a timeline item, prioritize content-library-drop when pointer is over it
+    if (typeof args.active.id === 'number' && args.pointerCoordinates) {
+      const pointerCollisions = pointerWithin(args)
+      const libraryHit = pointerCollisions.find((c) => c.id === 'content-library-drop')
+      if (libraryHit) return [libraryHit]
+    }
     if (typeof args.active.id === 'string') {
       return args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
     }
-    const itemContainers = args.droppableContainers.filter((c) => c.id !== 'timeline')
+    const itemContainers = args.droppableContainers.filter(
+      (c) => c.id !== 'timeline' && c.id !== 'content-library-drop'
+    )
     return closestCenter({
       ...args,
       droppableContainers: itemContainers,
     })
   }
-  const invalidate = () => { queryClient.invalidateQueries({ queryKey: playlistKey }); queryClient.invalidateQueries({ queryKey: ['playlists'] }) }
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: playlistKey })
+    queryClient.invalidateQueries({ queryKey: ['playlists'] })
+  }
+
+  const reorderTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const debouncedReorder = (order: number[]) => {
+    if (reorderTimeoutRef.current) clearTimeout(reorderTimeoutRef.current)
+    reorderTimeoutRef.current = setTimeout(() => {
+      reorderMutation.mutate(order)
+    }, 200)
+  }
+
   const reorderMutation = useMutation({
     mutationFn: (orders: number[]) => api.reorderPlaylistItems(playlistId, orders),
     onMutate: async (newOrderIds: number[]) => {
@@ -634,7 +711,6 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
       playlistQuery.refetch()
     },
     onSuccess: () => {
-      setLocalOrder(null)
       toast.success('Order saved')
     },
     onSettled: () => {
@@ -900,13 +976,26 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   }
 
   const handleDragStart = ({ active }: DragStartEvent) => {
+    const isTimeline = typeof active.id === 'number'
+    setIsDraggingTimelineItem(isTimeline)
     const dragged = active.data.current?.content as ContentItem | undefined
     setDragging(dragged ?? items.find((item) => item.id === active.id)?.content ?? null)
   }
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     setDragging(null)
+    setIsDraggingTimelineItem(false)
     if (!over) return
+
+    // Dropping a timeline item onto the Content Library returns it to library (removes from loop)
+    if (over.id === 'content-library-drop' && typeof active.id === 'number') {
+      const itemToRemove = items.find((it) => it.id === active.id)
+      if (itemToRemove) {
+        removeMutation.mutate(active.id)
+        toast.success(`Removed "${itemToRemove.content.name}" from loop`)
+      }
+      return
+    }
 
     // A card from the library: same path as the + button, so placedContentIds, `instant`
     // and the booking dialog all behave identically. Dropped items append; reorder already
@@ -928,7 +1017,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
 
     const order = arrayMove(items, oldIndex, newIndex).map((item) => item.id)
     setLocalOrder(order)
-    reorderMutation.mutate(order)
+    debouncedReorder(order)
   }
 
   const handleMoveItem = (index: number, direction: 'up' | 'down') => {
@@ -937,7 +1026,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     const newItems = arrayMove(items, index, targetIndex)
     const order = newItems.map((item) => item.id)
     setLocalOrder(order)
-    reorderMutation.mutate(order)
+    debouncedReorder(order)
   }
 
   return (
@@ -965,7 +1054,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
                 {/* A row still being added has no server id yet, so nothing can be done to it until it lands. */}
                 <div className="space-y-3">
                   {items.map((item, index) => (
-                    <ItemRow
+                    <MemoizedItemRow
                       key={item.id}
                       item={item}
                       index={index}
@@ -989,7 +1078,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
           </TimelineDropZone>
         </section>
 
-        <aside className="rounded-2xl bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,.04)] ring-1 ring-hairline lg:sticky lg:top-20" aria-labelledby="library-title">
+        <LibraryDropZone isDraggingTimelineItem={isDraggingTimelineItem}>
           <div><h2 id="library-title" className="font-semibold text-foreground">Content library</h2><p className="mt-1 text-xs text-muted-foreground/70">{library.booked.length + library.notBooked.length} ads{screenId ? (hasCommercial ? ' · booked ones add instantly' : ' · click + to add to loop') : ''}</p></div>
           <div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search assets…" className="pl-9" aria-label="Search library" /></div>
           <div className="mt-4 max-h-[min(60vh,660px)] space-y-5 overflow-y-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
@@ -1053,7 +1142,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
               )
             )}
           </div>
-        </aside>
+        </LibraryDropZone>
       </div>
 
         {/* ONE overlay, with content for BOTH drag kinds. SortableContext derives

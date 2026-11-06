@@ -141,9 +141,20 @@ object HeartbeatReporter {
                     }
                     if (cmd == "remote_unlock") {
                         appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
-                            .edit().putBoolean(com.olrac.signage.MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
-                        android.util.Log.i("HeartbeatReporter", "Received remote_unlock command from server")
-                        com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 500L, reason = "remote_unlock")
+                            .edit()
+                            .putBoolean("kiosk_lock", false)
+                            .commit()
+                        android.util.Log.i("HeartbeatReporter", "Received remote_unlock command from server; unlocking kiosk immediately")
+                        com.olrac.signage.MainActivity.onKioskLockChanged(appContext, false)
+                    }
+                    if (cmd == "remote_lock") {
+                        appContext.getSharedPreferences("signage_prefs", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("kiosk_lock", true)
+                            .commit()
+                        android.util.Log.i("HeartbeatReporter", "Received remote_lock command from server; locking kiosk immediately")
+                        com.olrac.signage.MainActivity.onKioskLockChanged(appContext, true)
+                        com.olrac.signage.boot.PlayerLauncher.launch(appContext, delayMs = 0L, reason = "remote_lock")
                     }
                     if ((cmd == "bring_to_front" || cmd == "launch_app") && com.olrac.signage.boot.RemoteLaunchGate.allow()) {
                         android.util.Log.i("HeartbeatReporter", "Received $cmd command from server; bringing app to front")
