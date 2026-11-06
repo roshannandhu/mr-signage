@@ -113,12 +113,17 @@ object PlayerLauncher {
             Log.i(TAG, "Launch held while the installer is in Settings finishing setup (reason=$reason)")
             return
         }
-        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(context) &&
-            reason != "remote_lock" && !reason.startsWith("manual")
-        ) {
+        val isExplicitCommand = reason == "bring_to_front" ||
+            reason == "service_command" ||
+            reason == "remote_lock" ||
+            reason == "remote_unlock" ||
+            reason.startsWith("manual") ||
+            reason.startsWith("watchdog")
+        if (!com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(context) && !isExplicitCommand) {
             Log.i(TAG, "Screen is unlocked; ignoring background launch request (reason=$reason)")
             return
         }
+        val effectiveDelayMs = if (isExplicitCommand && reason != "boot") 0L else delayMs
         warnIfBackgroundStartsWillBeRefused(context, reason)
         val intent = playerIntent(context)
         context.getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).edit()
@@ -134,7 +139,7 @@ object PlayerLauncher {
         triggerFullScreenNotification(context, intent, reason)
 
         // 4. System-level AlarmManager dispatch (with Android 14+ background launch allowance)
-        scheduleViaAlarm(context, intent, delayMs, reason)
+        scheduleViaAlarm(context, intent, effectiveDelayMs, reason)
     }
 
     /**

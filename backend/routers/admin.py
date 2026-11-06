@@ -609,6 +609,9 @@ async def remote_unlock_screen(
     )
     db.add(cmd_log)
 
+    # Persist unlocked state on the screen row
+    screen.is_locked = False
+
     queued = await queue_device_command(screen.device_id, "remote_unlock")
     db.add(models.KioskUnlockEvent(
         organization_id=organization.id,
@@ -627,13 +630,134 @@ async def remote_unlock_screen(
         payload={
             "command_id": cmd_id,
             "command": "remote_unlock",
+            "screen_id": screen.id,
+            "locked": False,
             "expires_at": int(expires_at.timestamp()),
         },
     )
+    queue_outbox_event(
+        db,
+        channel=f"org:{organization.id}",
+        event_type="screen_lock_changed",
+        payload={"screen_id": screen.id, "locked": False},
+    )
     db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    from .websockets import broadcast_ws_event
+    try:
+        await broadcast_ws_event(
+            f"screen:{screen.device_id}",
+            {"type": "device_command", "command": "remote_unlock", "command_id": cmd_id, "screen_id": screen.id, "locked": False}
+        )
+        await broadcast_ws_event(
+            f"org:{organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": False}
+        )
+        await broadcast_ws_event(
+            f"dashboard:{organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": False}
+        )
+    except Exception as exc:
+        logger.debug("Admin remote unlock broadcast failed: %s", exc)
+
     logger.info(
         "Remote unlock queued for screen %s (org %s) by %s",
+        screen.id, organization.id, scope.user.username,
+    )
+    return schemas.RemoteUnlockResponse(queued=queued)
+
+
+@router.post(
+    "/tenants/{org_id}/screens/{screen_id}/remote-lock",
+    response_model=schemas.RemoteUnlockResponse,
+)
+async def remote_lock_screen(
+    org_id: int,
+    screen_id: int,
+    request: Request,
+    scope: TenantScope = Depends(require_super_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Queue a remote lock for one screen from super-admin."""
+    organization = _get_org(db, org_id)
+    screen = (
+        db.query(models.Screen)
+        .filter(models.Screen.id == screen_id, models.Screen.organization_id == organization.id)
+        .first()
+    )
+    if not screen:
+        raise HTTPException(status_code=404, detail="Screen not found")
+    if not screen.device_id:
+        raise HTTPException(status_code=422, detail="This screen has not paired yet")
+
+    from ..services import queue_device_command
+
+    cmd_id = f"cmd_{uuid4().hex[:12]}"
+    expires_at = models.utcnow() + timedelta(minutes=10)
+
+    cmd_log = models.DeviceCommandLog(
+        id=cmd_id,
+        device_id=screen.device_id,
+        organization_id=organization.id,
+        screen_id=screen.id,
+        command="remote_lock",
+        params_json=json.dumps({"kiosk_lock": True}),
+        status="PENDING",
+        actor_user_id=scope.user.id,
+        actor_username=scope.user.username,
+        created_at=models.utcnow(),
+        expires_at=expires_at,
+    )
+    db.add(cmd_log)
+
+    screen.is_locked = True
+
+    queued = await queue_device_command(screen.device_id, "remote_lock")
+    _audit(db, scope, request, "screen.remote_lock", org=organization,
+           target_type="screen", target_id=screen.id, after={"queued": queued, "command_id": cmd_id})
+
+    outbox_event = queue_outbox_event(
+        db,
+        channel=f"screen:{screen.device_id}",
+        event_type="device_command",
+        payload={
+            "command_id": cmd_id,
+            "command": "remote_lock",
+            "kiosk_lock": True,
+            "screen_id": screen.id,
+            "locked": True,
+            "expires_at": int(expires_at.timestamp()),
+        },
+    )
+    queue_outbox_event(
+        db,
+        channel=f"org:{organization.id}",
+        event_type="screen_lock_changed",
+        payload={"screen_id": screen.id, "locked": True},
+    )
+    db.commit()
+    schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    from .websockets import broadcast_ws_event
+    try:
+        await broadcast_ws_event(
+            f"screen:{screen.device_id}",
+            {"type": "device_command", "command": "remote_lock", "command_id": cmd_id, "screen_id": screen.id, "locked": True}
+        )
+        await broadcast_ws_event(
+            f"org:{organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": True}
+        )
+        await broadcast_ws_event(
+            f"dashboard:{organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": True}
+        )
+    except Exception as exc:
+        logger.debug("Admin remote lock broadcast failed: %s", exc)
+
+    logger.info(
+        "Remote lock queued for screen %s (org %s) by %s",
         screen.id, organization.id, scope.user.username,
     )
     return schemas.RemoteUnlockResponse(queued=queued)
@@ -1972,11 +2096,11 @@ def fleet_overview(
 
 # ------------------------------------------------------------------ screen commands
 
-ALLOWED_SCREEN_COMMANDS = {"check_update", "bring_to_front", "remote_unlock"}
+ALLOWED_SCREEN_COMMANDS = {"check_update", "bring_to_front", "remote_unlock", "remote_lock"}
 
 
 class ScreenCommandIn(BaseModel):
-    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock")
+    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock, remote_lock")
     ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
     reason: Optional[str] = None
 
@@ -1989,7 +2113,7 @@ class ScreenCommandOut(BaseModel):
 
 class BulkScreenCommandIn(BaseModel):
     screen_ids: List[int] = Field(..., max_length=100)
-    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock")
+    command: str = Field(..., description="One of: check_update, bring_to_front, remote_unlock, remote_lock")
     ttl_seconds: Optional[int] = Field(default=None, ge=1, le=86400)
     reason: Optional[str] = None
 
@@ -2026,6 +2150,7 @@ async def send_screen_command(
     queued = await queue_device_command(screen.device_id, req.command, ttl_seconds=req.ttl_seconds)
 
     if req.command == "remote_unlock":
+        screen.is_locked = False
         db.add(
             models.KioskUnlockEvent(
                 organization_id=screen.organization_id,
@@ -2035,6 +2160,8 @@ async def send_screen_command(
                 actor_user_id=scope.user.id,
             )
         )
+    elif req.command == "remote_lock":
+        screen.is_locked = True
 
     org = db.query(models.Organization).filter(models.Organization.id == screen.organization_id).first()
     _audit(
@@ -2048,6 +2175,41 @@ async def send_screen_command(
         after={"command": req.command, "queued": queued, "reason": req.reason},
     )
     db.commit()
+
+    from .websockets import broadcast_ws_event
+    try:
+        if req.command in ("remote_lock", "remote_unlock"):
+            is_locked = (req.command == "remote_lock")
+            await broadcast_ws_event(
+                f"screen:{screen.device_id}",
+                {"type": "device_command", "command": req.command, "screen_id": screen.id, "locked": is_locked}
+            )
+            if screen.organization_id:
+                await broadcast_ws_event(
+                    f"org:{screen.organization_id}",
+                    {"type": "screen_lock_changed", "screen_id": screen.id, "locked": is_locked}
+                )
+                await broadcast_ws_event(
+                    f"dashboard:{screen.organization_id}",
+                    {"type": "screen_lock_changed", "screen_id": screen.id, "locked": is_locked}
+                )
+        elif req.command == "bring_to_front":
+            await broadcast_ws_event(
+                f"screen:{screen.device_id}",
+                {"type": "bring_to_front", "command": "launch_app"}
+            )
+    except Exception as exc:
+        logger.debug("Failed to broadcast screen command: %s", exc)
+
+    logger.info(
+        "Screen command '%s' queued for screen %s (org %s) by %s (queued=%s)",
+        req.command,
+        screen.id,
+        screen.organization_id,
+        scope.user.username,
+        queued,
+    )
+    return ScreenCommandOut(screen_id=screen.id, command=req.command, queued=queued)
 
     logger.info(
         "Screen command '%s' queued for screen %s (org %s) by %s (queued=%s)",
@@ -2093,6 +2255,7 @@ async def send_bulk_screen_commands(
         if q:
             queued_count += 1
         if req.command == "remote_unlock":
+            sc.is_locked = False
             db.add(
                 models.KioskUnlockEvent(
                     organization_id=sc.organization_id,
@@ -2102,6 +2265,20 @@ async def send_bulk_screen_commands(
                     actor_user_id=scope.user.id,
                 )
             )
+        elif req.command == "remote_lock":
+            sc.is_locked = True
+
+        from .websockets import broadcast_ws_event
+        try:
+            if req.command in ("remote_lock", "remote_unlock"):
+                is_locked = (req.command == "remote_lock")
+                await broadcast_ws_event(
+                    f"screen:{sc.device_id}",
+                    {"type": "device_command", "command": req.command, "screen_id": sc.id, "locked": is_locked}
+                )
+        except Exception:
+            pass
+
         results.append(ScreenCommandOut(screen_id=sid, command=req.command, queued=q))
 
     _audit(

@@ -129,7 +129,13 @@ export function GrantLimitsDialog({
                 <input
                   type="checkbox"
                   checked={Boolean(features[feature.key])}
-                  onChange={(e) => setFeatures({ ...features, [feature.key]: e.target.checked })}
+                  onChange={(e) => {
+                    const next = { ...features, [feature.key]: e.target.checked }
+                    if (feature.key === 'scheduling') {
+                      next['payslips'] = e.target.checked
+                    }
+                    setFeatures(next)
+                  }}
                   className="size-4 accent-foreground"
                 />
                 {feature.label}

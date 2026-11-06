@@ -38,7 +38,7 @@ const defaultNewPackage: PackageWrite = {
   max_clients: 10,
   max_storage_bytes: 10 * GIB,
   max_ad_slots: 20,
-  feature_flags: { scheduling: true },
+  feature_flags: { scheduling: true, payslips: true },
   is_active: true,
 }
 
@@ -601,12 +601,16 @@ export default function AdminPackagesPage() {
                                 type="checkbox"
                                 checked={checked}
                                 onChange={(e) => {
+                                  const nextFlags = {
+                                    ...planForm.feature_flags,
+                                    [item.key]: e.target.checked,
+                                  }
+                                  if (item.key === 'scheduling') {
+                                    nextFlags['payslips'] = e.target.checked
+                                  }
                                   setPlanForm({
                                     ...planForm,
-                                    feature_flags: {
-                                      ...planForm.feature_flags,
-                                      [item.key]: e.target.checked,
-                                    },
+                                    feature_flags: nextFlags,
                                   })
                                 }}
                                 className="mt-0.5 size-4 rounded border-border"

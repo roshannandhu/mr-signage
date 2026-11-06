@@ -16,6 +16,7 @@ object DeviceOwnerManager {
     private fun homeFilter() = IntentFilter(Intent.ACTION_MAIN).apply {
         addCategory(Intent.CATEGORY_HOME)
         addCategory(Intent.CATEGORY_DEFAULT)
+        priority = IntentFilter.SYSTEM_HIGH_PRIORITY
     }
 
     /**
@@ -47,6 +48,7 @@ object DeviceOwnerManager {
                     .putString(KEY_EXIT_LAUNCHER, homeLauncher.packageName).apply()
             }
             dpm.setStatusBarDisabled(adminName, false)
+            dpm.setKeyguardDisabled(adminName, false)
             Log.i(TAG, "Kiosk policy released for an operator exit (home -> ${homeLauncher?.packageName})")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to release kiosk policy", e)
@@ -100,7 +102,7 @@ object DeviceOwnerManager {
         val adminName = ComponentName(context, SignageDeviceAdminReceiver::class.java)
 
         try {
-            // 1. LockTask Mode
+            // 1. LockTask Mode: Allow only MR Signage
             dpm.setLockTaskPackages(adminName, arrayOf(context.packageName))
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
                 try {
@@ -112,20 +114,31 @@ object DeviceOwnerManager {
             Log.d(TAG, "Lock task packages and features locked down")
 
             // 2. Persistent preferred activity for HOME intent
-            // Undo an operator exit first: the launcher it pointed Home at must not keep winning.
-            // Isolated, so a failure here can never stop the rest of kiosk being applied.
+            // Aggressively clear persistent preferred activities for all other home launchers
             runCatching {
+                val pm = context.packageManager
+                val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                val resolveInfos = pm.queryIntentActivities(homeIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                for (info in resolveInfos) {
+                    val pkg = info.activityInfo.packageName
+                    if (pkg != context.packageName) {
+                        dpm.clearPackagePersistentPreferredActivities(adminName, pkg)
+                    }
+                }
                 val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 prefs.getString(KEY_EXIT_LAUNCHER, null)?.let { launcherPackage ->
                     dpm.clearPackagePersistentPreferredActivities(adminName, launcherPackage)
                     prefs.edit().remove(KEY_EXIT_LAUNCHER).apply()
                 }
-            }.onFailure { Log.w(TAG, "Could not undo a previous operator exit", it) }
+            }.onFailure { Log.w(TAG, "Could not clear previous home persistent preferred activities", it) }
+
+            // Clear our own previous registration before re-adding with highest priority
+            dpm.clearPackagePersistentPreferredActivities(adminName, context.packageName)
             val activityName = ComponentName(context, com.olrac.signage.MainActivity::class.java)
             dpm.addPersistentPreferredActivity(adminName, homeFilter(), activityName)
-            Log.d(TAG, "Persistent preferred activity set")
+            Log.d(TAG, "Persistent preferred activity set to MainActivity")
 
-            // 3. Disable keyguard and status bar
+            // 3. Disable keyguard and status bar completely
             dpm.setKeyguardDisabled(adminName, true)
             dpm.setStatusBarDisabled(adminName, true)
             Log.d(TAG, "Keyguard and status bar disabled")

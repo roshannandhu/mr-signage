@@ -2,6 +2,9 @@ package com.olrac.signage
 
 import android.content.Context
 import android.content.ComponentName
+import android.app.ActivityManager
+import android.app.admin.DevicePolicyManager
+import com.olrac.signage.receivers.SignageDeviceAdminReceiver
 import android.app.role.RoleManager
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
@@ -510,10 +513,34 @@ class MainActivity : ComponentActivity() {
             com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this)
         ) {
             try {
-                startLockTask()
+                if (DeviceOwnerManager.isDeviceOwner(this)) {
+                    val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                    val adminName = ComponentName(this, SignageDeviceAdminReceiver::class.java)
+                    if (!dpm.isLockTaskPermitted(packageName)) {
+                        dpm.setLockTaskPackages(adminName, arrayOf(packageName))
+                    }
+                }
+                val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                if (am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_NONE) {
+                    startLockTask()
+                    android.util.Log.i("MainActivity", "startLockTask successfully engaged (state=LOCKED)")
+                }
             } catch (e: Exception) {
                 android.util.Log.w("MainActivity", "startLockTask failed", e)
             }
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (com.olrac.signage.sync.PlaylistSynchronizer.kioskLockEnabled(this) &&
+            !operatorExited() && !showPinPrompt && !showServerSetup
+        ) {
+            android.util.Log.i("MainActivity", "onUserLeaveHint intercepted; re-asserting player front")
+            val intent = Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
         }
     }
 
@@ -532,7 +559,15 @@ class MainActivity : ComponentActivity() {
                     .putLong(PREF_WATCHDOG_SUPPRESS_UNTIL, Long.MAX_VALUE).apply()
                 val launcher = systemLauncher()
                 DeviceOwnerManager.releaseKioskPolicy(this, launcher?.let { ComponentName(it.packageName, it.className) })
-                try { stopLockTask() } catch (e: Exception) {}
+                try {
+                    val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    if (am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE) {
+                        stopLockTask()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "stopLockTask failed: ${e.message}")
+                }
+                showPinPrompt = false
                 android.util.Log.i("MainActivity", "Kiosk Lock released (locked=false)")
             }
         }
@@ -1276,6 +1311,10 @@ class MainActivity : ComponentActivity() {
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
             WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        }
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         hideSystemBars()
@@ -1326,7 +1365,9 @@ class MainActivity : ComponentActivity() {
             }
             activeActivity?.setKioskLockState(locked, reportToServer = false)
             if (locked && !visible) {
-                com.olrac.signage.boot.PlayerLauncher.launch(context, delayMs = 200L, reason = "remote_lock")
+                com.olrac.signage.boot.PlayerLauncher.launch(context, delayMs = 0L, reason = "remote_lock")
+            } else if (!locked && activeActivity == null) {
+                DeviceOwnerManager.releaseKioskPolicy(context)
             }
         }
         private const val PAIRING_RETRY_MS = 5_000L

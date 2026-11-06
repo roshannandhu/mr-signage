@@ -1443,7 +1443,7 @@ def get_workspace_lock_enabled(
 
 
 @router.put("/lock-enabled", response_model=schemas.LockEnabledResponse)
-def set_workspace_lock_enabled(
+async def set_workspace_lock_enabled(
     payload: schemas.LockEnabledUpdate,
     scope: TenantScope = Depends(require_tenant_roles("owner")),
     _feature: TenantScope = Depends(require_feature("kiosk_lock")),
@@ -1476,6 +1476,19 @@ def set_workspace_lock_enabled(
     )
     scope.db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
+
+    from .websockets import broadcast_ws_event
+    try:
+        payload_data = {
+            "type": "lock_state_changed",
+            "lock_enabled": organization.lock_enabled,
+            "credentials_version": organization.credentials_version,
+        }
+        await broadcast_ws_event(f"org:{organization.id}", payload_data)
+        await broadcast_ws_event(f"dashboard:{organization.id}", payload_data)
+    except Exception as exc:
+        logger.debug("Broadcast failed for lock_state_changed: %s", exc)
+
     return schemas.LockEnabledResponse(lock_enabled=organization.lock_enabled)
 
 
@@ -1656,6 +1669,9 @@ async def tenant_remote_unlock_screen(
         actor_user_id=scope.user.id,
     ))
 
+    # Persist unlocked state on the screen row so sync and heartbeats do not immediately re-lock
+    screen.is_locked = False
+
     outbox_event = queue_outbox_event(
         scope.db,
         channel=f"screen:{screen.device_id}",
@@ -1663,6 +1679,8 @@ async def tenant_remote_unlock_screen(
         payload={
             "command_id": cmd_id,
             "command": "remote_unlock",
+            "screen_id": screen.id,
+            "locked": False,
             "expires_at": int(expires_at.timestamp()),
         },
     )
@@ -1675,15 +1693,23 @@ async def tenant_remote_unlock_screen(
     scope.db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
 
+    # Deliver immediately via in-memory WebSocket connections and Redis pubsub
+    from .websockets import broadcast_ws_event
     try:
-        from .. import database
-        r = database.get_redis()
-        payload_cmd = json.dumps({"type": "device_command", "command": "remote_unlock", "command_id": cmd_id, "screen_id": screen.id})
-        await r.publish(f"screen:{screen.device_id}", payload_cmd)
-        payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": False})
-        await r.publish(f"org:{scope.organization.id}", payload_lock)
+        await broadcast_ws_event(
+            f"screen:{screen.device_id}",
+            {"type": "device_command", "command": "remote_unlock", "command_id": cmd_id, "screen_id": screen.id, "locked": False}
+        )
+        await broadcast_ws_event(
+            f"org:{scope.organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": False}
+        )
+        await broadcast_ws_event(
+            f"dashboard:{scope.organization.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": False}
+        )
     except Exception as exc:
-        logger.debug("Redis publish failed for remote_unlock: %s", exc)
+        logger.debug("Broadcast failed for remote_unlock: %s", exc)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -1778,16 +1804,23 @@ async def tenant_remote_lock_screen(
     scope.db.commit()
     schedule_immediate_outbox_dispatch(outbox_event.id)
 
-    # Broadcast via websocket channels
+    # Broadcast via websocket channels and Redis pubsub
+    from .websockets import broadcast_ws_event
     try:
-        from .. import database
-        r = database.get_redis()
-        payload_cmd = json.dumps({"type": "device_command", "command": "remote_lock", "command_id": cmd_id, "screen_id": screen.id})
-        await r.publish(f"screen:{screen.device_id}", payload_cmd)
-        payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": True})
-        await r.publish(f"org:{org.id}", payload_lock)
+        await broadcast_ws_event(
+            f"screen:{screen.device_id}",
+            {"type": "device_command", "command": "remote_lock", "command_id": cmd_id, "screen_id": screen.id, "locked": True}
+        )
+        await broadcast_ws_event(
+            f"org:{org.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": True}
+        )
+        await broadcast_ws_event(
+            f"dashboard:{org.id}",
+            {"type": "screen_lock_changed", "screen_id": screen.id, "locked": True}
+        )
     except Exception as exc:
-        logger.debug("Redis publish failed for remote_lock: %s", exc)
+        logger.debug("Broadcast failed for remote_lock: %s", exc)
 
     return schemas.TenantRemoteUnlockResponse(
         queued=True,
@@ -1861,7 +1894,7 @@ async def update_screen_lock_status(
 
 
 @router.post("/{device_id}/kiosk-status")
-def report_device_kiosk_status(
+async def report_device_kiosk_status(
     device_id: str,
     payload: schemas.ScreenLockStatusUpdate,
     db: Session = Depends(database.get_db),
@@ -1880,11 +1913,11 @@ def report_device_kiosk_status(
         )
         db.commit()
         schedule_immediate_outbox_dispatch(outbox_event.id)
+        from .websockets import broadcast_ws_event
         try:
-            r = database.get_redis()
-            payload_lock = json.dumps({"type": "screen_lock_changed", "screen_id": screen.id, "locked": payload.locked})
-            r.publish(f"org:{screen.organization_id}", payload_lock)
-            r.publish(f"dashboard:{screen.organization_id}", payload_lock)
+            payload_lock = {"type": "screen_lock_changed", "screen_id": screen.id, "locked": payload.locked}
+            await broadcast_ws_event(f"org:{screen.organization_id}", payload_lock)
+            await broadcast_ws_event(f"dashboard:{screen.organization_id}", payload_lock)
         except Exception:
             pass
 

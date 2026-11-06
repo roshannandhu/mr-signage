@@ -158,9 +158,9 @@ export const UNLIMITED = -1
  * toggles bite.
  */
 export const FEATURES: { key: string; label: string; enforced: boolean }[] = [
-  { key: 'scheduling', label: 'Scheduling', enforced: true },
+  { key: 'scheduling', label: 'Ad Booking & Scheduling', enforced: true },
   { key: 'transitions', label: 'Transitions', enforced: true },
-  { key: 'payslips', label: 'Payslips & payments', enforced: true },
+  { key: 'payslips', label: 'Payslips & Invoices', enforced: true },
   { key: 'ads_counting', label: 'Ads counting reports', enforced: true },
   { key: 'pdf_reports', label: 'PDF playback reports', enforced: true },
   { key: 'remote_control', label: 'Remote control & alerts', enforced: true },

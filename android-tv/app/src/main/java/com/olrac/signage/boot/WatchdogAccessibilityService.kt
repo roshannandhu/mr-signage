@@ -87,7 +87,7 @@ class WatchdogAccessibilityService : AccessibilityService() {
         if (instance == this) instance = null
     }
 
-    fun forceBringToFront(reason: String = "remote_command"): Boolean {
+    fun forceBringToFront(reason: String = "remote_command", delayMs: Long = 0L): Boolean {
         return try {
             // A bare startActivity from here is silently dropped by Android 14 when the service
             // has no standing to launch -- overlay off, a plain runtime window change -- so the
@@ -97,10 +97,10 @@ class WatchdogAccessibilityService : AccessibilityService() {
             // on this Realtek TV. Route through it so the reclaim works without overlay.
             com.olrac.signage.boot.PlayerLauncher.launch(
                 applicationContext,
-                com.olrac.signage.boot.PlayerLauncher.WARM_RESTART_MS,
+                delayMs,
                 reason = "watchdog_$reason",
             )
-            Log.i(TAG, "forceBringToFront via PlayerLauncher (reason=$reason)")
+            Log.i(TAG, "forceBringToFront via PlayerLauncher (reason=$reason, delay=${delayMs}ms)")
             true
         } catch (e: Exception) {
             Log.e(TAG, "forceBringToFront failed (reason=$reason)", e)
@@ -136,11 +136,13 @@ class WatchdogAccessibilityService : AccessibilityService() {
         if (watchdogSuppressed()) return
         if (!com.olrac.signage.data.DeviceState(applicationContext).isPaired) return
         // One reclaim per burst: opening an app fires several window-state events in a row.
+        val isHome = (currentPkg == defaultHomePackage())
+        val debounce = if (isHome) 300L else RECLAIM_DEBOUNCE_MS
         val now = SystemClock.elapsedRealtime()
-        if (now - lastReclaimAt < RECLAIM_DEBOUNCE_MS) return
+        if (now - lastReclaimAt < debounce) return
         lastReclaimAt = now
-        Log.d(TAG, "Watchdog reclaiming the screen from $currentPkg")
-        forceBringToFront("watchdog_window_event")
+        Log.d(TAG, "Watchdog reclaiming the screen from $currentPkg (instant 0ms)")
+        forceBringToFront("window_event", delayMs = 0L)
     }
 
     /**

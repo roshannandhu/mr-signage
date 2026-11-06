@@ -179,14 +179,28 @@ class PlaybackService : Service() {
             when {
                 (type == "launch_app" || type == "bring_to_front" || command == "launch_app" || command == "bring_to_front") -> {
                     // Arrives on the screen AND org sockets for one press; act on it once.
-                    if (com.olrac.signage.boot.RemoteLaunchGate.allow()) launchPlayer()
+                    if (com.olrac.signage.boot.RemoteLaunchGate.allow()) launchPlayer(delayMs = 0L)
                     else Log.d(TAG, "Ignoring a repeat bring_to_front")
                 }
                 type == "lock_state_changed" -> {
                     val lockEnabled = msg.optBoolean("lock_enabled", true)
                     Log.i(TAG, "Received WS lock_state_changed: lock_enabled=$lockEnabled")
+                    getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+                        .edit().putBoolean("kiosk_lock", lockEnabled).apply()
                     MainActivity.onKioskLockChanged(this@PlaybackService, lockEnabled)
                     emitCommand(ServiceCommandEvent.KioskLockChanged(lockEnabled))
+                }
+                type == "screen_lock_changed" -> {
+                    val targetScreenId = msg.optInt("screen_id", -1)
+                    val currentScreenId = getSharedPreferences("signage_prefs", Context.MODE_PRIVATE).getInt("screen_id", -1)
+                    if (targetScreenId == -1 || targetScreenId == currentScreenId) {
+                        val isLocked = msg.optBoolean("locked", true)
+                        Log.i(TAG, "Received WS screen_lock_changed: locked=$isLocked")
+                        getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
+                            .edit().putBoolean("kiosk_lock", isLocked).apply()
+                        MainActivity.onKioskLockChanged(this@PlaybackService, isLocked)
+                        emitCommand(ServiceCommandEvent.KioskLockChanged(isLocked))
+                    }
                 }
                 type == "credentials_updated" -> {
                     Log.i(TAG, "Received WS credentials_updated event; triggering immediate sync")
@@ -196,18 +210,24 @@ class PlaybackService : Service() {
                     val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
                     Log.i(TAG, "Received WS remote_unlock command (id=$commandId)")
                     getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-                        .edit().putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, true).apply()
+                        .edit()
+                        .putBoolean("kiosk_lock", false)
+                        .putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, true)
+                        .apply()
+                    MainActivity.onKioskLockChanged(this@PlaybackService, false)
                     emitCommand(ServiceCommandEvent.RemoteUnlock(commandId))
-                    launchPlayer()
                 }
                 command == "remote_lock" || (type == "device_command" && msg.optString("command") == "remote_lock") -> {
                     val commandId = msg.optString("command_id").takeIf { it.isNotBlank() }
                     Log.i(TAG, "Received WS remote_lock command (id=$commandId)")
                     getSharedPreferences("signage_prefs", Context.MODE_PRIVATE)
-                        .edit().putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, false).apply()
+                        .edit()
+                        .putBoolean("kiosk_lock", true)
+                        .putBoolean(MainActivity.PREF_PENDING_REMOTE_UNLOCK, false)
+                        .apply()
                     MainActivity.onKioskLockChanged(this@PlaybackService, true)
                     emitCommand(ServiceCommandEvent.KioskLockChanged(true))
-                    launchPlayer()
+                    launchPlayer(delayMs = 0L)
                 }
                 type in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") ||
                     command in setOf("sync", "sync_now", "reload", "reload_playlist", "content_updated", "playlist_updated") -> {
@@ -281,12 +301,12 @@ class PlaybackService : Service() {
         }
     }
 
-    private fun launchPlayer() {
+    private fun launchPlayer(delayMs: Long = 0L) {
         // A foreground service is still a background context for activity-start purposes
         // on Android 10+, so a bare startActivity() here is silently dropped on budget
         // OEM firmware. PlayerLauncher routes through an AlarmManager PendingIntent,
         // which the system process dispatches and is therefore permitted.
-        PlayerLauncher.launch(this, delayMs = 500L, reason = "service_command")
+        PlayerLauncher.launch(this, delayMs = delayMs, reason = "service_command")
     }
 
     private fun isUserUnlocked(): Boolean {
@@ -409,7 +429,7 @@ class PlaybackService : Service() {
         private const val ACTION_SYNC_NOW = "com.olrac.signage.action.SYNC_NOW"
 
         /** How often to ask for a queued remote command. See startCommandPollLoop. */
-        private const val COMMAND_POLL_SECONDS = 10
+        private const val COMMAND_POLL_SECONDS = 3
 
         fun start(context: Context, launchPlayer: Boolean, afterBoot: Boolean = false) {
             val intent = Intent(context, PlaybackService::class.java)
