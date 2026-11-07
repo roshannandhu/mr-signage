@@ -5,10 +5,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, ChevronDown, Clock, Info, ListVideo, Loader2, MapPin, Monitor, MonitorPlay, MoreVertical, PlaySquare, Settings, Smartphone, Trash2, Tv2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Clock, Info, ListVideo, Loader2, MapPin, Monitor, MoreVertical, PlaySquare, Settings, Smartphone, Trash2, Tv2, Wifi } from 'lucide-react'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
-import { OverlayBadge } from '@/components/dashboard/asset-card'
 import { PlaylistBuilder } from '@/components/dashboard/playlist-builder'
 import { ScreenDetailsDrawer } from '@/components/dashboard/screen-details-drawer'
 import { ScreenHoursDialog } from '@/components/dashboard/screen-hours-dialog'
@@ -23,6 +22,7 @@ import { api } from '@/lib/api'
 import { relativeTime } from '@/lib/format'
 import { canEditTenantContent } from '@/lib/roles'
 import { useAuthStore } from '@/lib/store'
+import { cn } from '@/lib/utils'
 import type { Screen } from '@/lib/types'
 
 const orientationLabel = (degrees: number) =>
@@ -150,41 +150,70 @@ export default function ScreenDetailPage() {
       <div className="space-y-4">
         {backLink}
 
-        <header className="ring-hairline bg-card rounded-2xl p-5 ring-1 sm:p-6">
+        <header className="ring-hairline bg-card rounded-2xl p-5 ring-1 sm:p-6 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
-              <div className="bg-muted relative aspect-video w-full shrink-0 overflow-hidden rounded-xl sm:w-44">
-                <div className="text-muted-foreground/40 grid size-full place-items-center"><MonitorPlay className="size-8" aria-hidden="true" /></div>
-                <div className="absolute bottom-2 left-2">
-                  <OverlayBadge tone={online ? 'online' : 'offline'}>{online ? 'Online' : 'Offline'}</OverlayBadge>
+            <div className="min-w-0 flex-1 space-y-3">
+              {/* Title & Live Status Pulse */}
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-foreground truncate text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{label}</h1>
+                <div
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1',
+                    online
+                      ? 'bg-emerald-500/10 text-emerald-700 ring-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-500/40'
+                      : 'bg-muted text-muted-foreground ring-hairline'
+                  )}
+                >
+                  <span className={cn('size-2 rounded-full', online ? 'bg-emerald-500 animate-pulse' : 'bg-muted-foreground/50')} />
+                  {online ? 'Online now' : `Last seen ${relativeTime(screen.last_seen)}`}
                 </div>
               </div>
 
-              <div className="min-w-0">
-                <h1 className="text-foreground truncate text-2xl font-semibold tracking-[-0.03em] sm:text-3xl">{label}</h1>
-                {screen.description && <p className="text-muted-foreground mt-1.5 text-sm">{screen.description}</p>}
-                <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
-                  <span>{online ? 'Online now' : `Last seen ${relativeTime(screen.last_seen)}`}</span>
-                  <span className="flex items-center gap-1.5">
-                    {screen.orientation === 90 || screen.orientation === 270
-                      ? <Smartphone className="size-4" aria-hidden="true" />
-                      : <Monitor className="size-4" aria-hidden="true" />}
-                    {orientationLabel(screen.orientation ?? 0)}
+              {screen.description && <p className="text-muted-foreground text-sm">{screen.description}</p>}
+
+              {/* Hardware Telemetry Pills */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-muted/40 px-2.5 py-1 font-medium">
+                  {screen.orientation === 90 || screen.orientation === 270 ? (
+                    <Smartphone className="size-3.5" aria-hidden="true" />
+                  ) : (
+                    <Monitor className="size-3.5" aria-hidden="true" />
+                  )}
+                  <span>{orientationLabel(screen.orientation ?? 0)}</span>
+                  {screen.screen_width && screen.screen_height && (
+                    <span className="text-muted-foreground/60 font-mono">({screen.screen_width}×{screen.screen_height})</span>
+                  )}
+                </span>
+
+                <span className="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-muted/40 px-2.5 py-1 font-medium">
+                  <Wifi className="size-3.5 text-muted-foreground/80" aria-hidden="true" />
+                  <span>{screen.wifi_ssid || screen.network_type || 'Network active'}</span>
+                  {screen.wifi_signal_bars != null && (
+                    <span className="text-muted-foreground/60 font-mono">({screen.wifi_signal_bars}/4 bars)</span>
+                  )}
+                </span>
+
+                {screen.app_version && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-hairline bg-muted/40 px-2.5 py-1 font-mono font-medium">
+                    Player v{screen.app_version}
                   </span>
-                  {screen.app_version && <span>Player v{screen.app_version}</span>}
-                </div>
+                )}
+
+                {screen.model && (
+                  <span className="inline-flex items-center gap-1 rounded-lg border border-hairline bg-muted/40 px-2.5 py-1 font-medium">
+                    {screen.model}
+                  </span>
+                )}
               </div>
             </div>
 
-            {/* Two real buttons and an overflow, rather than five look-alike text links. */}
-            <div className="flex shrink-0 items-center gap-2">
+            {/* Quick Action Pod */}
+            <div className="flex shrink-0 items-center gap-2 pt-1 sm:pt-0">
               {canEdit && (
                 <Button className="flex-1 sm:flex-none" onClick={() => bringToFrontMutation.mutate()} disabled={bringToFrontMutation.isPending}>
                   <PlaySquare data-icon="inline-start" /> {bringToFrontMutation.isPending ? 'Opening…' : 'Open app on TV'}
                 </Button>
               )}
-              {/* Details lives in the menu at every width. Hiding it only below sm would
-                  leave a viewer -- who has no edit items -- with an empty menu on a laptop. */}
               <DropdownMenu>
                 <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label="More actions" />}>
                   <MoreVertical />

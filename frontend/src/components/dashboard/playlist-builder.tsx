@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { closestCenter, type CollisionDetection, DndContext, DragOverlay, type DragEndEvent, type DragStartEvent, KeyboardSensor, MouseSensor, TouchSensor, pointerWithin, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CalendarClock, Check, ChevronDown, ChevronUp, Clock3, GripVertical, ListVideo, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, ChevronUp, Clock3, GripVertical, ListVideo, Plus, Search, Sparkles, Trash2, X } from 'lucide-react'
+import { Dialog as BaseDialog } from '@base-ui/react/dialog'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/dashboard/empty-state'
 import { ErrorState } from '@/components/dashboard/error-state'
@@ -95,9 +96,9 @@ function TransitionPreview({ transition, durationMs, compact = false }: { transi
     return () => clearInterval(interval)
   }, [transition, durationMs])
   return (
-    <div className={cn('relative overflow-hidden rounded-xl border border-hairline bg-slate-950 font-mono text-white', compact ? 'h-16 w-24' : 'h-24 w-full sm:w-44')}>
-      <div style={previewStyle(transition, false, phase, durationMs)} className="absolute inset-0 flex items-center justify-center bg-slate-800 text-[11px] font-semibold tracking-wider text-slate-200">AD 1</div>
-      <div style={previewStyle(transition, true, phase, durationMs)} className="absolute inset-0 flex items-center justify-center bg-primary text-[11px] font-semibold tracking-wider text-white">AD 2</div>
+    <div className={cn('relative overflow-hidden rounded-lg border border-hairline bg-slate-950 font-mono text-white shadow-xs', compact ? 'h-9 w-20' : 'h-12 w-24')}>
+      <div style={previewStyle(transition, false, phase, durationMs)} className="absolute inset-0 flex items-center justify-center bg-slate-800 text-[10px] font-semibold tracking-wider text-slate-200">AD 1</div>
+      <div style={previewStyle(transition, true, phase, durationMs)} className="absolute inset-0 flex items-center justify-center bg-primary text-[10px] font-semibold tracking-wider text-white">AD 2</div>
     </div>
   )
 }
@@ -112,45 +113,74 @@ function DefaultTransitionPanel({ playlist, disabled, pending, onSave }: {
   const [durationMs, setDurationMs] = useState(playlist.default_transition_ms)
   const dirty = transition !== playlist.default_transition || durationMs !== playlist.default_transition_ms
   return (
-    <Card className="mb-6 border-hairline bg-card/60 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
-      <CardContent className="flex flex-col gap-6 p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0 flex-1 space-y-4">
-          <div>
-            <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Sparkles className="size-4 text-primary" /> Default handoff
-            </p>
-            <p className="text-muted-foreground/80 mt-1 text-xs">
-              Used by every item that does not have its own transition.
-              {playlist.items.length < 2 && (
-                <span className="block mt-1 text-amber-600 dark:text-amber-400 font-medium">
-                  Note: Transitions activate between 2 or more ads in the playback loop.
-                </span>
-              )}
-            </p>
-          </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <Label className="text-muted-foreground mb-2 text-xs">Transition</Label>
-              <Select value={transition} onValueChange={(value: TransitionName | null) => value && setTransition(value)} disabled={disabled}>
-                <SelectTrigger className="w-full"><SelectValue>{(value: TransitionName | null) => (value ? transitionLabel(value) : 'Choose transition')}</SelectValue></SelectTrigger>
-                <SelectContent>{transitionOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-              </Select>
+    <Card className="mb-5 border-hairline bg-card/70 shadow-[0_1px_2px_rgba(15,23,42,.04)]">
+      <CardContent className="p-4 sm:p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary shrink-0">
+              <Sparkles className="size-4" />
             </div>
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <Label htmlFor="default-transition-duration" className="text-muted-foreground text-xs">Duration</Label>
-                <span className="text-muted-foreground font-mono text-xs">{durationMs} ms</span>
-              </div>
-              <input id="default-transition-duration" type="range" min={100} max={3000} step={50} value={durationMs} disabled={disabled} onChange={(event) => setDurationMs(Number(event.target.value))} className="accent-primary h-10 w-full" />
+              <p className="text-sm font-semibold text-foreground">Default handoff transition</p>
+              <p className="text-muted-foreground/80 text-xs">
+                Applies to all ads without custom transitions.
+                {playlist.items.length < 2 && (
+                  <span className="ml-1 text-amber-600 dark:text-amber-400 font-medium">
+                    (Active between 2+ ads)
+                  </span>
+                )}
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Button size="sm" variant="outline" disabled={disabled || pending || !dirty} onClick={() => onSave(transition, durationMs, false)}>Save default</Button>
-            <Button size="sm" variant="default" disabled={disabled || pending} onClick={() => onSave(transition, durationMs, true)}><Sparkles data-icon="inline-start" /> Apply to all items</Button>
+          <div className="flex items-center gap-2 pt-1 sm:pt-0">
+            <Button size="sm" variant="outline" disabled={disabled || pending || !dirty} onClick={() => onSave(transition, durationMs, false)}>
+              Save default
+            </Button>
+            <Button size="sm" variant="default" disabled={disabled || pending} onClick={() => onSave(transition, durationMs, true)}>
+              <Sparkles data-icon="inline-start" /> Apply to all items
+            </Button>
           </div>
         </div>
-        <div className="hidden sm:block shrink-0">
-          <TransitionPreview transition={transition} durationMs={durationMs} />
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)_auto] sm:items-center pt-1 border-t border-hairline">
+          <div>
+            <Label className="text-muted-foreground mb-1.5 block text-xs font-medium">Transition</Label>
+            <Select value={transition} onValueChange={(value: TransitionName | null) => value && setTransition(value)} disabled={disabled}>
+              <SelectTrigger className="w-full">
+                <SelectValue>{(value: TransitionName | null) => (value ? transitionLabel(value) : 'Choose transition')}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {transitionOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <Label htmlFor="default-transition-duration" className="text-muted-foreground text-xs font-medium">Handoff duration</Label>
+              <span className="text-muted-foreground font-mono text-xs font-semibold">{durationMs} ms</span>
+            </div>
+            <input
+              id="default-transition-duration"
+              type="range"
+              min={100}
+              max={3000}
+              step={50}
+              value={durationMs}
+              disabled={disabled}
+              onChange={(event) => setDurationMs(Number(event.target.value))}
+              className="accent-primary h-8 w-full cursor-pointer"
+            />
+          </div>
+
+          <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 pt-1 sm:pt-0">
+            <span className="text-muted-foreground text-xs font-medium sm:hidden">Live preview:</span>
+            <TransitionPreview transition={transition} durationMs={durationMs} compact />
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -290,7 +320,7 @@ function ItemRow({
                 e.stopPropagation()
                 onMoveUp?.()
               }}
-              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all touch-manipulation"
               aria-label={`Move ${item.content.name} up`}
               title="Move up"
             >
@@ -301,7 +331,7 @@ function ItemRow({
               {...attributes}
               {...listeners}
               disabled={!canEdit}
-              className="grid size-7 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/80 hover:bg-background hover:text-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none select-none transition-all"
+              className="grid size-7 shrink-0 cursor-grab touch-none place-items-center rounded text-muted-foreground/80 hover:bg-background hover:text-foreground active:cursor-grabbing disabled:cursor-default focus-visible:ring-ring focus-visible:ring-1 focus-visible:outline-none select-none transition-all touch-manipulation"
               aria-label={`Drag to reorder ${item.content.name}`}
               title="Drag to reorder"
             >
@@ -314,7 +344,7 @@ function ItemRow({
                 e.stopPropagation()
                 onMoveDown?.()
               }}
-              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all"
+              className="flex size-7 items-center justify-center rounded text-muted-foreground/70 hover:bg-background hover:text-foreground active:scale-90 disabled:opacity-20 disabled:pointer-events-none transition-all touch-manipulation"
               aria-label={`Move ${item.content.name} down`}
               title="Move down"
             >
@@ -332,34 +362,62 @@ function ItemRow({
 
           <div className="min-w-0 flex-1">
             <p className="text-foreground truncate font-semibold text-sm sm:text-base">{item.content.name}</p>
-            <p className="text-muted-foreground/70 mt-0.5 sm:mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
-              <span className="inline-flex items-center gap-1"><Clock3 className="size-3" /> {loopDuration(item.duration)}{item.content.type === 'video' && clipDuration(item.content.duration_ms) && <span className="text-muted-foreground/60"> of {clipDuration(item.content.duration_ms)}</span>}</span>
-              <span aria-hidden="true">·</span>
-              <span className="truncate max-w-[120px] sm:max-w-none">{item.transition ? transitionLabel(item.transition) : `${transitionLabel(defaultTransition)} (default)`}</span>
+            <div className="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+              <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
+                <Clock3 className="size-3 text-muted-foreground" /> {loopDuration(item.duration)}
+                {item.content.type === 'video' && clipDuration(item.content.duration_ms) && (
+                  <span className="text-muted-foreground/60"> ({clipDuration(item.content.duration_ms)})</span>
+                )}
+              </span>
+              <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+              <span className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground truncate max-w-[150px] sm:max-w-none">
+                <Sparkles className="size-2.5 text-primary" /> {item.transition ? transitionLabel(item.transition) : `${transitionLabel(defaultTransition)} (default)`}
+              </span>
               {hasCommercial && (
                 <>
-                  <span aria-hidden="true">·</span>
-                  {item.start_at || item.end_at || item.schedule
-                    ? <span className="text-amber-700 dark:text-amber-300 font-medium">Scheduled</span>
-                    : <span>Always on</span>}
+                  <span aria-hidden="true" className="text-muted-foreground/40">·</span>
+                  {item.start_at || item.end_at || item.schedule ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/20">
+                      <span className="size-1.5 rounded-full bg-amber-500" /> Scheduled
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/20">
+                      <span className="size-1.5 rounded-full bg-emerald-500" /> Always active
+                    </span>
+                  )}
                 </>
               )}
-            </p>
+            </div>
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-expanded={open}
-            aria-controls={`item-settings-${item.id}`}
-            onClick={() => setOpen((current) => !current)}
-            className="text-muted-foreground shrink-0 px-2 sm:px-3"
-          >
-            <ChevronDown className={cn('size-4 transition-transform', open && 'rotate-180')} aria-hidden="true" />
-            <span className="sr-only sm:not-sr-only sm:ml-1">{open ? 'Close' : 'Edit'}</span>
-          </Button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              variant={open ? 'secondary' : 'outline'}
+              size="sm"
+              aria-expanded={open}
+              aria-controls={`item-settings-${item.id}`}
+              onClick={() => setOpen((current) => !current)}
+              className="text-foreground shrink-0 h-8 px-2 sm:px-3 text-xs"
+            >
+              <ChevronDown className={cn('size-3.5 transition-transform mr-1', open && 'rotate-180')} aria-hidden="true" />
+              <span>{open ? 'Close' : 'Edit'}</span>
+            </Button>
 
-          {canEdit && <Button variant="ghost" size="icon" className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive shrink-0 size-8 sm:size-9" onClick={onRemove} aria-label={`Remove ${item.content.name}`}><Trash2 className="size-4" /></Button>}
+            <div className="h-5 w-px bg-border/60 mx-0.5 hidden sm:block" />
+
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive shrink-0 size-8"
+                onClick={onRemove}
+                aria-label={`Remove ${item.content.name}`}
+                title="Remove from loop"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            )}
+          </div>
         </div>
 
         {open && (
@@ -601,6 +659,46 @@ function LibraryRow({ content, booked, placed, instant, adding, canEdit, fetched
   )
 }
 
+function MobileLibrarySheet({
+  open,
+  onOpenChange,
+  children,
+  subtitle,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: ReactNode
+  subtitle?: string
+}) {
+  return (
+    <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
+      <BaseDialog.Portal>
+        <BaseDialog.Backdrop className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs transition-opacity animate-in fade-in" />
+        <BaseDialog.Popup className="bg-card fixed inset-x-0 bottom-0 z-50 flex max-h-[85vh] flex-col rounded-t-2xl border-t border-hairline shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center justify-center pt-3 pb-1">
+            <div className="h-1.5 w-12 rounded-full bg-muted-foreground/30" />
+          </div>
+          <div className="flex items-center justify-between px-5 py-2.5 border-b border-hairline">
+            <div>
+              <BaseDialog.Title className="font-semibold text-base text-foreground">Content library</BaseDialog.Title>
+              {subtitle && <p className="text-xs text-muted-foreground/70">{subtitle}</p>}
+            </div>
+            <BaseDialog.Close
+              aria-label="Close library"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground grid size-8 cursor-pointer place-items-center rounded-lg"
+            >
+              <X className="size-4" />
+            </BaseDialog.Close>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {children}
+          </div>
+        </BaseDialog.Popup>
+      </BaseDialog.Portal>
+    </BaseDialog.Root>
+  )
+}
+
 export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   playlistId: number
   showHeader?: boolean
@@ -621,6 +719,7 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
   const [search, setSearch] = useState('')
   const [savingItem, setSavingItem] = useState<number | null>(null)
   const [highlightedItemId, setHighlightedItemId] = useState<number | null>(null)
+  const [mobileLibraryOpen, setMobileLibraryOpen] = useState(false)
 
   const serverItems = useMemo(() => [...(playlistQuery.data?.items || [])].sort((a, b) => a.order - b.order), [playlistQuery.data?.items])
 
@@ -1036,6 +1135,118 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
     debouncedReorder(order)
   }
 
+  const renderLibraryContent = (isMobile = false) => (
+    <>
+      {!isMobile && (
+        <div>
+          <h2 id="library-title" className="font-semibold text-foreground">Content library</h2>
+          <p className="mt-1 text-xs text-muted-foreground/70">
+            {library.booked.length + library.notBooked.length} ads
+            {screenId ? (hasCommercial ? ' · booked ones add instantly' : ' · click + to add to loop') : ''}
+          </p>
+        </div>
+      )}
+      <div className={cn('relative', !isMobile ? 'mt-3' : 'mt-1')}>
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" />
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search assets…"
+          className="pl-9"
+          aria-label="Search library"
+        />
+      </div>
+      <div className={cn(
+        'mt-3 space-y-4 overflow-y-auto pr-1',
+        isMobile ? 'max-h-[55vh]' : 'max-h-[min(60vh,660px)] lg:max-h-[calc(100vh-17rem)]'
+      )}>
+        {contentQuery.isLoading ? (
+          Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-16 rounded-xl" />)
+        ) : !hasCommercial ? (
+          <div>
+            <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Available Media <span className="font-normal normal-case">{library.booked.length + library.notBooked.length}</span>
+            </p>
+            <div className="space-y-2">
+              {[...library.booked, ...library.notBooked].map((content) => (
+                <LibraryRow
+                  key={content.id}
+                  content={content}
+                  booked={false}
+                  placed={placedContentIds.has(content.id)}
+                  instant={true}
+                  adding={addDirectMutation.isPending && addDirectMutation.variables?.id === content.id}
+                  canEdit={canEdit}
+                  fetchedAt={fetchedAt}
+                  onAdd={() => handleAddItem(content, true)}
+                />
+              ))}
+            </div>
+            {!(library.booked.length + library.notBooked.length) && (
+              <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
+                {placedContentIds.size > 0 ? 'All uploaded media is in this loop.' : 'No media uploaded yet. Add media in Content library.'}
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            <div>
+              <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Booked <span className="font-normal normal-case">{library.booked.length}</span>
+              </p>
+              <div className="space-y-2">
+                {library.booked.map((content) => (
+                  <LibraryRow
+                    key={content.id}
+                    content={content}
+                    booked
+                    placed={placedContentIds.has(content.id)}
+                    instant={Boolean(screenId)}
+                    adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                    canEdit={canEdit}
+                    fetchedAt={fetchedAt}
+                    onAdd={() => handleAddItem(content, Boolean(screenId))}
+                  />
+                ))}
+              </div>
+              {!library.booked.length && (
+                <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
+                  {placedContentIds.size > 0 ? 'All booked ads are in this loop.' : 'No ad has a running booking.'}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Not booked <span className="font-normal normal-case">{library.notBooked.length}</span>
+              </p>
+              <p className="mb-2 text-[11px] text-muted-foreground/70">Adding one asks for a plan or a custom booking.</p>
+              <div className="space-y-2">
+                {library.notBooked.map((content) => (
+                  <LibraryRow
+                    key={content.id}
+                    content={content}
+                    booked={false}
+                    placed={placedContentIds.has(content.id)}
+                    instant={false}
+                    adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
+                    canEdit={canEdit}
+                    fetchedAt={fetchedAt}
+                    onAdd={() => handleAddItem(content, false)}
+                  />
+                ))}
+              </div>
+              {!library.notBooked.length && (
+                <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
+                  {placedContentIds.size > 0 ? 'No other ads in library.' : 'Every ad is booked.'}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  )
+
   return (
     <div className="relative space-y-8">
       {showHeader && <PageHeader eyebrow="Playlist builder" title={playlist.name} description="Set the loop order, control each handoff, and schedule exactly when every item may play." actions={<div className="flex items-center gap-2"><Badge variant="outline">{items.length} items</Badge><Badge variant="outline">{loopDuration(totalDuration)} loop</Badge>{!canEdit && <Badge variant="warning">View only</Badge>}</div>} />}
@@ -1047,18 +1258,35 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
         onDragEnd={handleDragEnd}
       >
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <section aria-labelledby="timeline-title">
-          <h2 id="timeline-title" className="mb-4 text-sm font-semibold text-foreground">Playback timeline</h2>
+        <section aria-labelledby="timeline-title" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 id="timeline-title" className="text-sm font-semibold text-foreground">Playback timeline</h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMobileLibraryOpen(true)}
+              className="lg:hidden h-8 text-xs font-medium gap-1.5"
+            >
+              <Plus className="size-3.5" /> Add from library
+            </Button>
+          </div>
+
           {hasTransitions && (
             <DefaultTransitionPanel key={`${playlist.default_transition}-${playlist.default_transition_ms}`} playlist={playlist} disabled={!canEdit} pending={transitionMutation.isPending} onSave={(transition, durationMs, applyToAll) => transitionMutation.mutate({ transition, durationMs, applyToAll })} />
           )}
-          {/* The drop target wraps the empty state as well: an empty loop is exactly when you
-              most want to drag the first advert in. Previously the DndContext lived inside
-              this ternary, so that was impossible. */}
+
           <TimelineDropZone>
-          {!items.length ? <EmptyState icon={ListVideo} title="This playlist has no content" description="Drag an asset in from the library, or press its + button." /> : (
+          {!items.length ? (
+            <div className="space-y-3">
+              <EmptyState icon={ListVideo} title="This playlist has no content" description="Drag an asset in from the library, or press its + button." />
+              <div className="flex justify-center lg:hidden">
+                <Button onClick={() => setMobileLibraryOpen(true)} className="gap-2">
+                  <Plus className="size-4" /> Browse library to add
+                </Button>
+              </div>
+            </div>
+          ) : (
               <SortableContext items={items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
-                {/* A row still being added has no server id yet, so nothing can be done to it until it lands. */}
                 <div className="space-y-3">
                   {items.map((item, index) => (
                     <MemoizedItemRow
@@ -1083,74 +1311,35 @@ export function PlaylistBuilder({ playlistId, showHeader = true, screenId }: {
               </SortableContext>
           )}
           </TimelineDropZone>
+
+          {/* Bottom mobile banner for rapid access without scrolling */}
+          <div className="lg:hidden pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setMobileLibraryOpen(true)}
+              className="w-full h-11 border-dashed border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 gap-2 font-medium"
+            >
+              <Plus className="size-4" /> Add ad from Content Library ({library.booked.length + library.notBooked.length} available)
+            </Button>
+          </div>
         </section>
 
-        <LibraryDropZone isDraggingTimelineItem={isDraggingTimelineItem}>
-          <div><h2 id="library-title" className="font-semibold text-foreground">Content library</h2><p className="mt-1 text-xs text-muted-foreground/70">{library.booked.length + library.notBooked.length} ads{screenId ? (hasCommercial ? ' · booked ones add instantly' : ' · click + to add to loop') : ''}</p></div>
-          <div className="relative mt-4"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground/70" /><Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search assets…" className="pl-9" aria-label="Search library" /></div>
-          <div className="mt-4 max-h-[min(60vh,660px)] space-y-5 overflow-y-auto pr-1 lg:max-h-[calc(100vh-17rem)]">
-            {contentQuery.isLoading ? Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-20" />) : (
-              !hasCommercial ? (
-                <div>
-                  <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Available Media <span className="font-normal normal-case">{library.booked.length + library.notBooked.length}</span>
-                  </p>
-                  <div className="space-y-2">
-                    {[...library.booked, ...library.notBooked].map((content) => (
-                      <LibraryRow
-                        key={content.id}
-                        content={content}
-                        booked={false}
-                        placed={placedContentIds.has(content.id)}
-                        instant={true}
-                        adding={addDirectMutation.isPending && addDirectMutation.variables?.id === content.id}
-                        canEdit={canEdit}
-                        fetchedAt={fetchedAt}
-                        onAdd={() => handleAddItem(content, true)}
-                      />
-                    ))}
-                  </div>
-                  {!(library.booked.length + library.notBooked.length) && (
-                    <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
-                      {placedContentIds.size > 0 ? 'All uploaded media is in this loop.' : 'No media uploaded yet. Add media in Content library.'}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <div>
-                    <p className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Booked <span className="font-normal normal-case">{library.booked.length}</span></p>
-                    <div className="space-y-2">{library.booked.map((content) => (
-                      <LibraryRow key={content.id} content={content} booked placed={placedContentIds.has(content.id)}
-                        instant={Boolean(screenId)} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
-                        canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, Boolean(screenId))} />
-                    ))}</div>
-                    {!library.booked.length && (
-                      <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
-                        {placedContentIds.size > 0 ? 'All booked ads are in this loop.' : 'No ad has a running booking.'}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted-foreground">Not booked <span className="font-normal normal-case">{library.notBooked.length}</span></p>
-                    <p className="mb-2 text-[11px] text-muted-foreground/70">Adding one asks for a plan or a custom booking.</p>
-                    <div className="space-y-2">{library.notBooked.map((content) => (
-                      <LibraryRow key={content.id} content={content} booked={false} placed={placedContentIds.has(content.id)}
-                        instant={false} adding={addBookedMutation.isPending && addBookedMutation.variables?.id === content.id}
-                        canEdit={canEdit} fetchedAt={fetchedAt} onAdd={() => handleAddItem(content, false)} />
-                    ))}</div>
-                    {!library.notBooked.length && (
-                      <p className="rounded-xl border border-dashed border-hairline p-3 text-xs text-muted-foreground/70">
-                        {placedContentIds.size > 0 ? 'No other ads in library.' : 'Every ad is booked.'}
-                      </p>
-                    )}
-                  </div>
-                </>
-              )
-            )}
-          </div>
-        </LibraryDropZone>
+        {/* Desktop Sticky Sidebar */}
+        <div className="hidden lg:block">
+          <LibraryDropZone isDraggingTimelineItem={isDraggingTimelineItem}>
+            {renderLibraryContent(false)}
+          </LibraryDropZone>
+        </div>
       </div>
+
+        {/* Mobile Slide-Up Bottom Sheet */}
+        <MobileLibrarySheet
+          open={mobileLibraryOpen}
+          onOpenChange={setMobileLibraryOpen}
+          subtitle={`${library.booked.length + library.notBooked.length} ads available${screenId ? (hasCommercial ? ' · booked ones add instantly' : ' · click + to add to loop') : ''}`}
+        >
+          {renderLibraryContent(true)}
+        </MobileLibrarySheet>
 
         {/* ONE overlay, with content for BOTH drag kinds. SortableContext derives
             useDragOverlay from whether the overlay has measured a rect, and DragOverlay
